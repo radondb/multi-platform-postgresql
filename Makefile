@@ -9,7 +9,7 @@
 # 	2022.06
 #
 #-------------------------------------------------------------------------
-FILEDESC = "multi platform for appcenter/kubernetes postgresql"
+FILEDESC = "multi platform for computer/kubernetes postgresql"
 
 #docker_version ?= ""
 export platform=amd64# make platform=arm64 build arm
@@ -34,7 +34,7 @@ operator-yaml: operator-image
 	cd platforms/kubernetes/postgres-operator/deploy/; awk -f jq-template.awk postgres-operator.yaml.template > postgres-operator.yaml
 
 format:
-	find ./ -path "./platforms/appcenter/*.py" -o -path "./platforms/kubernetes/postgres-operator/postgres/*.py" | xargs yapf -i -vv
+	find ./ -path "./platforms/kubernetes/postgres-operator/postgres/*.py" | xargs yapf -i -vv
 
 depends:
 	sudo pip install yapf paramiko kubernetes kopf
