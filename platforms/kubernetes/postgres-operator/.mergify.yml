@@ -1,0 +1,22 @@
+---
+pull_request_rules:
+  - actions:
+      queue:
+        method: merge
+        name: default
+    conditions:
+      - label=ready-to-merge
+      - '#approved-reviews-by>=1'
+      - status-success=lint
+      - status-success=docs
+      - status-success=test
+      - status-success=docs/readthedocs.org:crate-operator
+    name: default
+
+queue_rules:
+  - conditions:
+      - check-success=lint
+      - check-success=docs
+      - check-success=test
+      - check-success=docs/readthedocs.org:crate-operator
+    name: default

@@ -1,0 +1,319 @@
+#!/usr/bin/env bash
+#set -Eeo pipefail
+
+# global variable
+do_config=0
+drop_auto_failover=0
+actual_drop_auto_failover=0
+do_hba=0
+do_pause=0
+do_query=0
+query_database=postgres
+timeout=180
+querys=()
+set_auto_failover_config=0
+set_auto_failover=0
+do_restart_postgresql=0
+do_restart_auto_failover=0
+PG_CONFIG=PG_CONFIG_
+PG_HBA=PG_HBA_
+no_error=0
+ready_accept=0
+SUCCESS="exec_success"
+switchover=0
+
+# set env
+DATA=${DATA:-/var/lib/postgresql/data}
+PGDATA=${DATA}/pg_data
+export PGDATA
+#export XDG_CONFIG_HOME=${DATA}/auto_failover
+#export XDG_DATA_HOME=${DATA}/auto_failover
+run_port=$(cat ${XDG_CONFIG_HOME}/pg_autoctl/${PGDATA}/pg_autoctl.cfg | grep -w port | cut -d "=" -f 2 | tr -d " ")
+
+# run as postgres
+if [ "$(id -u)" = '0' ]; then
+	#exec su-exec postgres "$BASH_SOURCE" "$@" alpine
+	#exec gosu postgres "$BASH_SOURCE" "$@" alpine
+	exec gosu postgres "$BASH_SOURCE" "$@"
+fi
+
+# parse argument
+while getopts "acdDe:hHp:q:w:Q:norRs:S:" arg
+do
+	case $arg in
+		a)
+			ready_accept=1
+			;;
+		c)
+			do_config=1
+			;;
+		n)
+			no_error=1
+			;;
+		o)
+			switchover=1
+			;;
+		d)
+			drop_auto_failover=1
+			;;
+		D)
+			actual_drop_auto_failover=1
+			;;
+		e)
+			env_name=${OPTARG%%=*}
+			env_value=${OPTARG#*=}
+			export "$env_name"="$env_value"
+			;;
+		h)
+			echo "pgtools is util for manage postgresql"
+			echo "every command in container run by it"
+			echo "  -a        init finish and connect success."
+			echo "  -c        flush postgresql config file"
+			echo "  -d        drop the auto_failover node"
+			echo "  -D        actual drop the auto_failover node, this node can't start again"
+			echo "  -e env    set environment befor running"
+			echo "  -h        help"
+			echo "  -H        flush hba file"
+			echo "  -p action pause/resume  pause or resume start postgresql"
+			echo "  -q auery  run the query"
+			echo "  -w second timeout for query"
+			echo "  -Q        run the query on this database"
+			echo "  -r        restart postgresql"
+			echo "  -R        stop auto_failover"
+			echo "  -s value  set auto_failover config: pg_autoctl config set.."
+			echo "  -S value  set auto_failover: pg_autoctl set.."
+			echo "  -n        if failed not return error"
+			exit 0
+			;;
+		H)
+			do_hba=1
+			;;
+		p)
+			do_pause="$OPTARG"
+			;;
+		q)
+			do_query=1
+			querys[${#querys[@]}]="$OPTARG"
+			;;
+		w)
+			timeout="$OPTARG"
+			;;
+		Q)
+			query_database="$OPTARG"
+			;;
+		r)
+			do_restart_postgresql=1
+			;;
+		R)
+			do_restart_auto_failover=1
+			;;
+		s)
+			set_auto_failover_config="$OPTARG"
+			;;
+		S)
+			set_auto_failover="$OPTARG"
+			;;
+		?)
+			echo "unknow argument"
+			exit 1
+			;;
+	esac
+done
+
+
+function check_error() {
+	ret_code="$1"
+	msg="$2"
+	if [ "$ret_code" != 0 -a "$no_error" = 0 ]; then
+		echo `date`"$msg"
+		exit 1
+	fi
+}
+
+function reload_postgresql(){
+	pg_ctl reload -D "$PGDATA"
+	check_error "$?" "reload postgresql failed"
+}
+
+function restart_postgresql(){
+	if [ "$PG_MODE" = monitor -o "$PG_MODE" = readwrite -o "$PG_MODE" = readonly ]; then
+		# auto_failover start it
+		pg_ctl stop -D $PGDATA
+	else
+		pg_ctl restart -D $PGDATA
+	fi
+	check_error $? "restart postgresql failed"
+}
+
+function stop_auto_failover(){
+	# auto_failover can't restart. so stop it. k8s or docker will start it
+	touch ${ASSIST}/stop
+	for i in `seq 1 100`
+	do
+		pg_autoctl stop --pgdata=$PGDATA
+		if [ $? == 0 ]; then
+			exit 0
+		fi
+		sleep 6
+	done
+
+	pg_autoctl stop --pgdata=$PGDATA
+	check_error $? "stop auto_failover failed"
+}
+
+if [ "${do_config}" = 1 ]; then
+
+	env | grep "^$PG_CONFIG" | while read item
+	do
+		conf=${item#*${PG_CONFIG}}
+		#conf_name=${conf%%=*}
+		#conf_value=${conf#*=}
+		#name_context=$(eval echo '$'$conf_name)
+		echo "$conf" >> $PGDATA/postgresql.conf
+	done
+
+	reload_postgresql
+	echo $SUCCESS
+fi
+
+
+if [ "${do_hba}" = 1 ]; then
+	hba_file=$PGDATA/pg_hba.conf
+	hba_file_origin=$PGDATA/pg_hba.conf.origin
+
+	if [ ! -e "$hba_file_origin" ]; then
+		cp "$hba_file" "$hba_file_origin"
+	fi
+
+	cp "$hba_file_origin" "$hba_file"
+	env | grep "^$PG_HBA" | while read item
+	do
+		conf=${item#*${PG_HBA}}
+		#conf_name=${conf%%=*}
+		conf_value=${conf#*=}
+		echo "$conf_value" >> "$hba_file"
+	done
+	echo "host all all all md5" >> "$hba_file"
+	echo "host replication all all md5" >> "$hba_file"
+
+	reload_postgresql
+	echo $SUCCESS
+fi
+
+if [ "$ready_accept" = 1 ]; then
+	init_file=init_finish
+
+	pg_isready -p $run_port 1>/dev/null 2>&1
+	if [ $? != 0 ]; then
+		check_error 1 "can't connect database."
+	fi
+
+	cat "${ASSIST}/${init_file}"
+	if [ $? != 0 ]; then
+		check_error 1 "init not finish"
+	fi
+fi
+
+if [ "$switchover" = 1 ]; then
+	for i in `seq 1 100`
+	do
+		pg_autoctl perform switchover --pgdata $PGDATA --formation primary
+		if [ $? == 0 ]; then
+			exit 0
+		fi
+		sleep 6
+	done
+	pg_autoctl perform switchover --pgdata $PGDATA --formation primary
+	check_error 1 "switchover failed"
+fi
+
+if [ "${do_query}" = 1 ]; then
+	try_num=$timeout
+	for i in `seq 1 $try_num`
+	do
+		pg_isready -p $run_port 1>/dev/null 2>&1
+		if [ $? != 0 ]; then
+			echo "database is not ready"
+			if [ $i = "$try_num" ]; then
+				check_error 1 "failed."
+			fi
+			sleep 1
+		else
+			break
+		fi
+	done
+
+	# timeout 0
+	pg_isready -p $run_port 1>/dev/null 2>&1
+	if [ $? != 0 ]; then
+		check_error 1 "failed."
+	fi
+		
+	max_querys=`expr ${#querys[@]} - 1`
+	for i in `seq 0 "$max_querys"`
+	do
+		psql -p $run_port -t -A --dbname $query_database -U postgres -c "${querys[$i]}"
+		check_error $? "run query ${querys[$i]} failed"
+	done
+fi
+
+if [ "${do_restart_postgresql}" = 1 ]; then
+	restart_postgresql
+	echo $SUCCESS
+fi
+
+if [ "${do_restart_auto_failover}" = 1 ]; then
+	# auto_failover can't restart. so stop it. k8s or docker will start it
+	stop_auto_failover
+fi
+
+if [ "${set_auto_failover_config}" != 0 ]; then
+	pg_autoctl config set --pgdata $PGDATA $set_auto_failover_config
+	check_error $? "set auto_failover_config failed"
+	echo $SUCCESS
+fi
+
+if [ "${set_auto_failover}" != 0 ]; then
+	pg_autoctl set $set_auto_failover  --pgdata $PGDATA
+	check_error $? "set auto_failover failed"
+	echo $SUCCESS
+fi
+
+if [ "$do_pause" != 0 ]; then
+	if [ "$do_pause" = pause ]; then
+		touch "${ASSIST}/pause"
+		sleep 1 #waiting flush to disk
+	fi
+	if [ "$do_pause" = resume ]; then
+		rm -rf "${ASSIST}/pause"
+	fi
+fi
+
+if [ "${drop_auto_failover}" = 1 ]; then
+	for i in `seq 1 100`
+	do
+		pg_autoctl drop node --pgdata=$PGDATA
+		if [ $? == 0 ]; then
+			exit 0
+		fi
+		sleep 6
+	done
+	pg_autoctl drop node --pgdata=$PGDATA
+	check_error $? "drop auto_failover failed"
+fi
+
+if [ "${actual_drop_auto_failover}" = 1 ]; then
+	touch ${ASSIST}/actual_drop
+	for i in `seq 1 100`
+	do
+		pg_autoctl drop node --pgdata=$PGDATA
+		if [ $? == 0 ]; then
+			exit 0
+		fi
+		sleep 6
+	done
+	pg_autoctl drop node --pgdata=$PGDATA
+	check_error $? "drop auto_failover failed"
+fi
+
+exit 0

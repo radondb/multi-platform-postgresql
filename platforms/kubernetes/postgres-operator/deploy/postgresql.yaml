@@ -1,0 +1,130 @@
+apiVersion: postgres.radondb.io/v1
+kind: PostgreSQL
+metadata:
+  name: lzzhang
+  #namespace: radondb-postgres-operator
+spec:
+  action: start #stop start
+    #action: stop #stop start
+  deletepvc: true
+  services:
+  - selector: primary # autofailover/primary/standby/readonly/standby-readonly
+    metadata:
+      name: readwrite
+    spec:
+      type: ClusterIP
+      ports:
+      - name: prime # cant' change the name
+        port: 5432
+  - selector: standby-readonly
+    metadata:
+      name: standby-readonly
+    spec:
+      type: ClusterIP
+      ports:
+      - name: prime # cant' change the name
+        port: 5432
+  autofailover:
+    hbas:
+    - host all all all md5
+    configs:
+    - enable_seqscan=on
+    podspec:
+      terminationGracePeriodSeconds: 60
+      containers:
+      - image: radondb-postgresql:12.9-v1.0.0
+        imagePullPolicy: IfNotPresent
+        name: postgresql #can't change the name
+        volumeMounts:
+        - name: data # can't change the name
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: "200Mi"
+            cpu: "0.2"
+          limits:
+            memory: "200Mi"
+            cpu: "0.2"
+    volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 1Gi
+  postgresql:
+    users:
+      admin:
+      - name: root
+        password: root
+      - name: root1
+        password: root1
+      normal:
+      - name: lzzhang
+        password: lzzhang
+    hbas:
+    - host all all all md5
+    configs:
+    - max_connections=133
+    - shared_buffers=133MB
+    - port=5432
+    - enable_seqscan=on
+    readwriteinstance:
+      replicas: 2
+      podspec:
+        terminationGracePeriodSeconds: 60
+        containers:
+        - image: radondb-postgresql:12.9-v1.0.0
+          imagePullPolicy: IfNotPresent
+          name: postgresql #can't change the name
+          volumeMounts:
+          - name: data # can't change the name
+            mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "200Mi"
+              cpu: "0.3"
+            limits:
+              memory: "200Mi"
+              cpu: "0.3"
+      volumeClaimTemplates:
+      - metadata:
+          name: data
+        spec:
+          accessModes: [ "ReadWriteOnce" ]
+          resources:
+            requests:
+              storage: 1Gi
+    readonlyinstance:
+      streaming: async  #sync/async
+      replicas: 0
+      podspec:
+        terminationGracePeriodSeconds: 60
+        containers:
+        - image: radondb-postgresql:12.9-v1.0.0
+          imagePullPolicy: IfNotPresent
+          name: postgresql #can't change the name
+          volumeMounts:
+          - name: data # can't change the name
+            mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "200Mi"
+              cpu: "0.3"
+            limits:
+              memory: "200Mi"
+              cpu: "0.3"
+      volumeClaimTemplates:
+      - metadata:
+          name: data
+        spec:
+          accessModes: [ "ReadWriteOnce" ]
+          resources:
+            requests:
+              storage: 1Gi
+  backup: TODO later. cronbackup, manual backup by kubectl patch
+  #restore:
+  #  fromssh:
+  #    path: /home/lzzhang/xx
+  #    address: root:password:192.168.0.8:22 # or local 'local' restore from the first postgresql node

@@ -1,0 +1,130 @@
+# multi-stage builder
+FROM debian:{{ .debian }} AS builder
+
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list; \
+    sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list; \
+	apt update; \
+	mkdir -p /usr/src/postgresql
+
+ADD postgresql /usr/src/postgresql/
+
+RUN apt install -y --no-install-recommends \
+		git \
+		pax-utils \
+		gosu \
+		bison \
+		flex \
+		gcc \
+		g++ \
+		llvm-dev \
+		clang \
+		libicu-dev \
+		dpkg \
+		dpkg-dev \
+		pkg-config \
+		python3-dev \
+		libreadline-dev \
+		libldap2-dev \
+		libxml2-dev \
+		libgss-dev \
+		openssl \
+		libssl-dev \
+		libxslt-dev \
+		uuid-dev \
+		tcl-dev \
+{{ if .major >= 14 then ( -}}
+        liblz4-dev \
+{{ ) else "" end -}}
+		libperl-dev \
+		libkrb5-dev
+#{{ if env.arch == "aarch64"  then ( -}}
+#        ""
+#{{ ) else "" end -}}
+
+RUN	cd /usr/src/postgresql; \
+#	git reset --hard; \
+	git checkout {{ .tag }}; \
+#	git clean -fqdx; \
+	awk '$1 == "#define" && $2 == "DEFAULT_PGSOCKET_DIR" && $3 == "\"/tmp\"" { $3 = "\"/var/run/postgresql\""; print; next } { print }' src/include/pg_config_manual.h > src/include/pg_config_manual.h.new; \
+	grep '/var/run/postgresql' src/include/pg_config_manual.h.new; \
+	mv src/include/pg_config_manual.h.new src/include/pg_config_manual.h; \
+	./configure \
+		--prefix=/var/lib/postgresql/ \
+		--with-icu \
+		--with-tcl \
+		--with-perl \
+		--with-python \
+		--with-gssapi \
+		--with-ldap \
+		--with-openssl \
+		--with-libxml \
+		--with-libxslt \
+		--with-readline \
+		--with-uuid=e2fs \
+		--with-llvm \
+		--with-libraries=/usr/local/lib \
+		--with-krb5 \
+{{ if .major >= 14 then ( -}}
+		--with-lz4 \
+{{ ) else "" end -}}
+	>/dev/null; \
+	make -j `expr $(nproc) - 2` >/dev/null; \
+	make install; \
+	make -C contrib install;
+
+ADD pg_auto_failover /usr/src/pg_auto_failover
+RUN	cd /usr/src/pg_auto_failover; \
+	git checkout {{ .failover }}; \
+	make PG_CONFIG=/var/lib/postgresql/bin/pg_config -j `expr $(nproc) - 2` >/dev/null; \
+	make install PG_CONFIG=/var/lib/postgresql/bin/pg_config;
+
+RUN cd /var/lib/postgresql; \
+		tar czhvf lib.tar.gz `find . -type f | xargs ldd 2>/dev/null | grep "=>" | cut -d ">" -f 2 | cut -d "(" -f 1 | sort -u`
+	
+# real image
+FROM debian:{{ .debian }}
+
+ENV LANG en_US.utf8
+ENV DATA /var/lib/postgresql/data
+ENV XDG_CONFIG_HOME /var/lib/postgresql/data/auto_failover
+ENV XDG_DATA_HOME /var/lib/postgresql/data/auto_failover
+ENV ASSIST /var/lib/postgresql/data/assist
+ENV PATH /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/postgresql/bin
+ENV PGHOME /var/lib/postgresql
+VOLUME /var/lib/postgresql/data
+
+COPY --from=builder /var/lib/postgresql/ /var/lib/postgresql
+COPY docker-entrypoint.sh /usr/local/bin/
+COPY pgtools /usr/local/bin/
+
+RUN set -eux; \
+	groupadd -r postgres --gid=999; \
+	useradd -r -g postgres --uid=999 --home-dir=/var/lib/postgresql --shell=/bin/bash postgres; \
+	echo 'export PATH=$PATH:/var/lib/postgresql/bin' >> /etc/profile; \
+	tar --skip-old-files -xzf /var/lib/postgresql/lib.tar.gz -C /; \
+	rm -rf /var/lib/postgresql/lib.tar.gz; \
+	mkdir -p "$DATA" && mkdir -p "$ASSIST" && chown -R postgres:postgres /var/lib/postgresql && chmod 777 "$DATA"; \
+	mkdir -p /var/run/postgresql && chown -R postgres:postgres /var/run/postgresql && chmod 775 /var/run/postgresql ; \
+    sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list; \
+    sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list; \
+	apt update; \
+	apt install -y --no-install-recommends vim sysstat inetutils-ping procps net-tools ssh sshpass ; \
+	apt install -y --no-install-recommends gosu locales ; \
+	localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8 ; \
+	apt-get clean; \
+	rm -rf /var/lib/apt/lists/*; \
+	apt-get purge -y --auto-remove ; \
+	echo "* soft    nofile  1024000" >> /etc/security/limits.conf; \
+	echo "* hard    nofile  1024000" >> /etc/security/limits.conf; \
+	echo "* soft    nproc   unlimited" >> /etc/security/limits.conf; \
+	echo "* hard    nproc   unlimited" >> /etc/security/limits.conf; \
+	echo "* soft    core    unlimited" >> /etc/security/limits.conf; \
+	echo "* hard    core    unlimited" >> /etc/security/limits.conf; \
+	echo "* soft    memlock unlimited" >> /etc/security/limits.conf; \
+	echo "* hard    memlock unlimited" >> /etc/security/limits.conf; \
+	/var/lib/postgresql/bin/postgres --version
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+STOPSIGNAL SIGINT
+EXPOSE 5432
+CMD ["postgres"]

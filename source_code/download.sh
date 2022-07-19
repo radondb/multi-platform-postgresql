@@ -1,0 +1,45 @@
+#!/bin/bash
+set -Eeo pipefail
+
+download_dir=$1
+if [ -z $download_dir ]
+then
+	download_dir="."
+fi
+
+cd $download_dir
+echo "download source code to $download_dir"
+
+# postgresql
+#/bin/rm -rf qingcloud-postgresql
+#git clone git@git.internal.yunify.com:RDS/qingcloud-postgresql.git
+if [ -d postgresql ]
+then
+	echo "postgresql exists, skip download."
+else
+	git clone https://git.postgresql.org/git/postgresql.git
+	if [ $? -ne 0 ]
+	then
+		echo "download postgresql failed"
+		exit 1
+	fi
+	echo "download postgresql success"
+fi
+
+# auto_failover
+#/bin/rm -rf polondb-pg_auto_failover
+#git clone git@git.internal.yunify.com:RDS/polondb-pg_auto_failover.git
+if [ -d pg_auto_failover ]
+then
+	echo "pg_auto_failover exists, skip download."
+else
+	git clone https://github.com/citusdata/pg_auto_failover.git
+	if [ $? -ne 0 ]
+	then
+		echo "download auto_failover failed"
+		exit 1
+	fi
+	echo "download pg_auto_failover success"
+fi
+
+exit 0
