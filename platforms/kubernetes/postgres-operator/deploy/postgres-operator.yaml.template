@@ -28,42 +28,57 @@ spec:
       description: The cluster action
       name: Action
       type: string
+      priority: 0           # show in standard view
     - jsonPath: .spec.deletepvc
       description: delete the pvc when cluster is deleted.
       name: DeletePvc
       type: boolean
+      priority: 0           # show in standard view
+    - jsonPath: .status.cluster_create
+      description: The postgresql cluster status
+      name: Clusterstatus
+      type: string
+      priority: 0           # show in standard view
     - jsonPath: .spec.autofailover.podspec.containers[0].image
       description: The autofailover image
       name: FailoverImage
       type: string
+      priority: 1           # show in standard view
     - jsonPath: .spec.postgresql.readwriteinstance.podspec.containers[0].image
       description: The postgresql image
       name: PostgresqlImage
       type: string
+      priority: 1           # show in standard view
     - jsonPath: .spec.postgresql.readwriteinstance.replicas
       description: The readwriteinstance nodes
       name: RWnodes
       type: integer
+      priority: 1           # show in wide view
     - jsonPath: .spec.postgresql.readwriteinstance.podspec.containers[0].resources.limits.cpu
       description: The readwriteinstance cpu
       name: RWcpu
       type: string
+      priority: 1           # show in wide view
     - jsonPath: .spec.postgresql.readwriteinstance.podspec.containers[0].resources.limits.memory
       description: The readwriteinstance memory
       name: RWmemory
       type: string
+      priority: 1           # show in wide view
     - jsonPath: .spec.postgresql.readonlyinstance.replicas
       description: The readonlyinstance nodes
       name: ROnodes
       type: integer
+      priority: 1           # show in wide view
     - jsonPath: .spec.postgresql.readonlyinstance.podspec.containers[0].resources.limits.cpu
       description: The readonlyinstance cpu
       name: ROcpu
       type: string
+      priority: 1           # show in wide view
     - jsonPath: .spec.postgresql.readonlyinstance.podspec.containers[0].resources.limits.memory
       description: The readonlyinstance memory
       name: ROmemory
       type: string
+      priority: 1           # show in wide view
     schema:
       openAPIV3Schema:
         type: object

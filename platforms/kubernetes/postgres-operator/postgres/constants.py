@@ -65,6 +65,14 @@ CLUSTER_CREATE_ADD_READWRITE = "addition readwrite"
 CLUSTER_CREATE_ADD_READONLY = "addition readonly"
 CLUSTER_CREATE_FINISH = "finish"
 
+CLUSTER_STATUS = "status"
+CLUSTER_STATUS_CREATE = "Creating"
+CLUSTER_STATUS_UPDATE = "Updating"
+CLUSTER_STATUS_RUN = "Running"
+CLUSTER_STATUS_CREATE_FAILED = "CreateFailed"
+CLUSTER_STATUS_UPDATE_FAILED = "UpdateFailed"
+CLUSTER_STATUS_TERMINATE = "Terminating"
+
 # base label
 BASE_LABEL_PART_OF = "part-of"
 BASE_LABEL_MANAGED_BY = "managed-by"
