@@ -3,7 +3,8 @@
 # Makefile for multi-platform-postgresql
 #
 # auther:
-# 	lianzhuangzhang@yunify.com
+# 	"张连壮" <lianzhuangzhang@yunify.com>
+# 	"颜博" <jerryyan@yunify.com>
 #
 # Date:
 # 	2022.06
