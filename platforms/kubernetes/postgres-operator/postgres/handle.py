@@ -106,6 +106,13 @@ from constants import (
     LVS_REAL_MAIN_SERVER,
     LVS_REAL_READ_SERVER,
     LVS_SET_NET,
+    CLUSTER_STATUS_CREATE,
+    CLUSTER_STATUS_UPDATE,
+    CLUSTER_STATUS_RUN,
+    CLUSTER_STATUS_CREATE_FAILED,
+    CLUSTER_STATUS_UPDATE_FAILED,
+    CLUSTER_STATUS_TERMINATE,
+    CLUSTER_STATUS,
 )
 
 FIELD_DELIMITER = "-"
@@ -171,8 +178,31 @@ STOP_KEEPALIVED = "systemctl stop keepalived.service"
 STATUS_KEEPALIVED = "systemctl status keepalived.service"
 
 
-def set_create_cluster(patch, state: str) -> None:
-    patch.status[CLUSTER_CREATE_CLUSTER] = state
+def set_cluster_status(meta: kopf.Meta,
+                       statefield: str,
+                       state: str,
+                       logger: logging.Logger) -> None:
+    customer_obj_api = client.CustomObjectsApi()
+    name = meta['name']
+    namespace = meta['namespace']
+
+    # get customer definition
+    body = customer_obj_api.get_namespaced_custom_object(group=API_GROUP, version=API_VERSION_V1,
+                                                         namespace=namespace, plural=RESOURCE_POSTGRESQL,
+                                                         name=name)
+    if CLUSTER_STATUS not in body:
+        cluster_create = {CLUSTER_STATUS: {statefield: state}}
+        body = {**body, **cluster_create}
+    else:
+        body[CLUSTER_STATUS][statefield] = state
+
+    logger.info(f"update {API_GROUP + API_VERSION_V1} crd {name} field .status.{statefield} = {state}, set_cluster_status body = {body}")
+    customer_obj_api.patch_namespaced_custom_object(group=API_GROUP,
+                                                    version=API_VERSION_V1,
+                                                    namespace=namespace,
+                                                    plural=RESOURCE_POSTGRESQL,
+                                                    name=name,
+                                                    body=body)
 
 
 def set_password(patch: kopf.Patch, status: kopf.Status) -> None:
@@ -1863,6 +1893,42 @@ def create_services(
         conns.free_conns()
 
 
+def check_param(spec: kopf.Spec, logger: logging.Logger,) -> None:
+    autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
+    readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
+        MACHINES)
+    # *_replicas will be replace in machine mode
+    readwrite_replicas = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
+        REPLICAS)
+    readonly_machines = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
+        MACHINES)
+    readonly_replicas = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
+        REPLICAS)
+
+    if autofailover_machines != None or readwrite_machines != None or readonly_machines != None:
+        logger.info("running on machines mode")
+        readwrite_replicas = len(readwrite_machines)
+        readonly_replicas = len(readonly_machines)
+
+        if autofailover_machines == None:
+            raise kopf.PermanentError("autofailover machines not set")
+        if readwrite_machines == None:
+            raise kopf.PermanentError("readwrite machines not set")
+        if len(autofailover_machines) != 1:
+            raise kopf.PermanentError("autofailover only support one machine.")
+        if len(readwrite_machines) < 1:
+            raise kopf.PermanentError(
+                "readwrite machines must set at lease one machine")
+    if spec[ACTION] == ACTION_STOP:
+        raise kopf.PermanentError("can't set stop at init cluster.")
+    if readwrite_replicas < 1:
+        raise kopf.PermanentError("readwrite replicas must set at lease one")
+    if readonly_replicas < 0:
+        raise kopf.PermanentError("readonly replicas must large than zero")
+
+    logger.info("parameters are correct")
+
+
 async def create_postgresql_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -1878,7 +1944,7 @@ async def create_postgresql_cluster(
     create_services(meta, spec, patch, status, logger)
 
     # create autofailover
-    set_create_cluster(patch, CLUSTER_CREATE_ADD_FAILOVER)
+    # set_create_cluster(patch, CLUSTER_CREATE_ADD_FAILOVER)
     create_autofailover(meta, spec, patch, status, logger,
                         get_autofailover_labels(meta))
     conns = connections(spec, meta, patch, get_field(AUTOFAILOVER), False,
@@ -1887,7 +1953,7 @@ async def create_postgresql_cluster(
     conns.free_conns()
 
     # create postgresql & readwrite node
-    set_create_cluster(patch, CLUSTER_CREATE_ADD_READWRITE)
+    # set_create_cluster(patch, CLUSTER_CREATE_ADD_READWRITE)
     create_postgresql_readwrite(meta, spec, patch, status, logger,
                                 get_readwrite_labels(meta), 0, True)
     #conns = connections(spec, meta, patch,
@@ -1897,12 +1963,12 @@ async def create_postgresql_cluster(
     #conns.free_conns()
 
     # create postgresql & readonly node
-    set_create_cluster(patch, CLUSTER_CREATE_ADD_READONLY)
+    # set_create_cluster(patch, CLUSTER_CREATE_ADD_READONLY)
     create_postgresql_readonly(meta, spec, patch, status, logger,
                                get_readonly_labels(meta), 0)
 
     # finish
-    set_create_cluster(patch, CLUSTER_CREATE_FINISH)
+    # set_create_cluster(patch, CLUSTER_CREATE_FINISH)
 
 
 async def create_cluster(
@@ -1912,39 +1978,23 @@ async def create_cluster(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
-    set_create_cluster(patch, CLUSTER_CREATE_BEGIN)
+    try:
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_CREATE, logger)
 
-    autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
-    readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
-        MACHINES)
-    readwrite_replicas = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
-        REPLICAS)
-    readonly_machines = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
-        MACHINES)
-    readonly_replicas = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
-        REPLICAS)
+        logging.info("check create_cluster params")
+        check_param(spec, logger)
+        await create_postgresql_cluster(meta, spec, patch, status, logger)
 
-    if autofailover_machines != None or readwrite_machines != None or readonly_machines != None:
-        logger.info("running on machines mode")
-        if autofailover_machines == None:
-            raise kopf.PermanentError("autofailover machines not set")
-        if readwrite_machines == None:
-            raise kopf.PermanentError("readwrite machines not set")
-        if len(autofailover_machines) != 1:
-            raise kopf.PermanentError("autofailover only support one machine.")
-        if len(readwrite_machines) < 1:
-            raise kopf.PermanentError(
-                "readwrite machines must set at lease one machine")
+        logger.info("waiting for create_cluster success")
+        waiting_cluster_correct_status(meta, spec, patch, status, logger)
 
-    if spec[ACTION] == ACTION_STOP:
-        raise kopf.PermanentError("can't set stop at init cluster.")
-    if readwrite_replicas < 1:
-        raise kopf.PermanentError("readwrite replicas must set at lease one")
-    if readonly_replicas < 0:
-        raise kopf.PermanentError("readonly replicas must large than zero")
-
-    logger.info("parameters are correct")
-    await create_postgresql_cluster(meta, spec, patch, status, logger)
+        # wait a few seconds to prevent the pod not running
+        time.sleep(5)
+        # cluster running
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_RUN, logger)
+    except Exception as e:
+        logger.error(f"error occurs, {e.args}")
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_CREATE_FAILED, logger)
 
 
 async def delete_cluster(
@@ -1954,7 +2004,7 @@ async def delete_cluster(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
-
+    set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_TERMINATE, logger)
     await delete_postgresql_cluster(meta, spec, patch, status, logger)
 
 
@@ -2740,20 +2790,36 @@ async def update_cluster(
     logger: logging.Logger,
     diffs: kopf.Diff,
 ) -> None:
-    for diff in diffs:
-        AC = diff[0]
-        FIELD = diff[1]
-        OLD = diff[2]
-        NEW = diff[3]
+    try:
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_UPDATE, logger)
+        logger.info("check update_cluster params")
+        check_param(spec, logger)
 
-        logger.info(diff)
-        update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
-        update_action(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
-        update_service(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
-        update_hbas(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
-        update_users(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
-        update_streaming(meta, spec, patch, status, logger, AC, FIELD, OLD,
-                         NEW)
-        update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
-                              OLD, NEW)
-        update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
+        for diff in diffs:
+            AC = diff[0]
+            FIELD = diff[1]
+            OLD = diff[2]
+            NEW = diff[3]
+
+            logger.info(diff)
+            update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
+            update_action(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
+            update_service(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
+            update_hbas(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
+            update_users(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
+            update_streaming(meta, spec, patch, status, logger, AC, FIELD, OLD,
+                             NEW)
+            update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
+                                  OLD, NEW)
+            update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
+
+        logger.info("waiting for update_cluster success")
+        waiting_cluster_correct_status(meta, spec, patch, status, logger)
+
+        # wait a few seconds to prevent the pod not running
+        time.sleep(5)
+        # set Running
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_RUN, logger)
+    except Exception as e:
+        logger.error(f"error occurs, {e.args}")
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_UPDATE_FAILED, logger)
