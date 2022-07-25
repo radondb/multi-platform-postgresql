@@ -847,7 +847,7 @@ def restore_postgresql_fromssh(
     cmd = ["pgtools", "-d", "-p", POSTGRESQL_PAUSE]
     exec_command(conn, cmd, logger, interrupt=True)
 
-    waiting_instance_ready(tmpconns)
+    waiting_instance_ready(tmpconns, logger)
 
     # remove old data
     cmd = ["rm", "-rf", PG_DATABASE_DIR]
