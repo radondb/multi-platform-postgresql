@@ -200,6 +200,11 @@ main() {
 			sleep 5
 		done
 
+		if [ -s "$PGDATA/postgresql-auto-failover-standby.conf" ]; then
+			echo "delay start(60 seconds) on slave node"
+			sleep 60
+		fi
+
 		init_over
 		exec $cmd
 	else
