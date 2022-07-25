@@ -339,7 +339,7 @@ def waiting_cluster_correct_status(
     for conn in auto_failover_conns.get_conns():
         not_correct_cmd = [
             "pgtools", "-w", "0", "-Q", "pg_auto_failover", "-q",
-            '''" select count(*) from pgautofailover.node where reportedstate <> 'primary' and reportedstate <> 'secondary' and reportedstate <> 'single' and reportedstate <> 'wait_primary' and reportedstate <> 'catchingup' "'''
+            '''" select count(*) from pgautofailover.node where reportedstate <> 'primary' and reportedstate <> 'secondary' and reportedstate <> 'single' and reportedstate <> 'wait_primary' and reportedstate <> 'catchingup' and reportedstate <> 'wait_standby' "'''
         ]
         primary_cmd = [
             "pgtools", "-w", "0", "-Q", "pg_auto_failover", "-q",
