@@ -41,6 +41,7 @@ build_image()
 	echo "copy code ..."
 	cp -r ../../source_code/postgresql "$dir/"
 	cp -r ../../source_code/pg_auto_failover "$dir/"
+	cp -r ../../source_code/pg_dirtyread "$dir/"
 
 	cd "$dir"
 	echo "build docker image $image ..."

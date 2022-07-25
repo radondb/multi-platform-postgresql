@@ -42,4 +42,18 @@ else
 	echo "download pg_auto_failover success"
 fi
 
+# pg_dirtyread
+if [ -d pg_dirtyread ]
+then
+	echo "pg_dirtyread exists, skip download."
+else
+	git clone https://github.com/df7cb/pg_dirtyread.git
+	if [ $? -ne 0 ]
+	then
+		echo "download pg_dirtyread failed"
+		exit 1
+	fi
+	echo "download pg_dirtyread success"
+fi
+
 exit 0

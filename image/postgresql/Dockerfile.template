@@ -78,6 +78,12 @@ RUN	cd /usr/src/pg_auto_failover; \
 	make PG_CONFIG=/var/lib/postgresql/bin/pg_config -j `expr $(nproc) - 2` >/dev/null; \
 	make install PG_CONFIG=/var/lib/postgresql/bin/pg_config;
 
+ADD pg_dirtyread /usr/src/pg_dirtyread
+RUN	cd /usr/src/pg_dirtyread; \
+	git checkout {{ .dirtyread }}; \
+	make PG_CONFIG=/var/lib/postgresql/bin/pg_config -j `expr $(nproc) - 2` >/dev/null; \
+	make install PG_CONFIG=/var/lib/postgresql/bin/pg_config;
+
 RUN cd /var/lib/postgresql; \
 		tar czhvf lib.tar.gz `find . -type f | xargs ldd 2>/dev/null | grep "=>" | cut -d ">" -f 2 | cut -d "(" -f 1 | sort -u`
 	
