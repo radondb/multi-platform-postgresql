@@ -176,6 +176,7 @@ KEEPALIVED_CONF = "/etc/keepalived/keepalived.conf"
 START_KEEPALIVED = "systemctl restart keepalived.service"
 STOP_KEEPALIVED = "systemctl stop keepalived.service"
 STATUS_KEEPALIVED = "systemctl status keepalived.service"
+RECOVERY_CONF_FILE = "postgresql-auto-failover-standby.conf"
 
 
 def set_cluster_status(meta: kopf.Meta,
@@ -825,8 +826,19 @@ def restore_postgresql_fromssh(
     path = spec[RESTORE][RESTORE_FROMSSH][RESTORE_FROMSSH_PATH]
     address = spec[RESTORE][RESTORE_FROMSSH][RESTORE_FROMSSH_ADDRESS]
 
+    # don't free the tmpconns
+    tmpconns: InstanceConnections = InstanceConnections()
+    tmpconns.add(conn)
+
     # create the new instance but use the old data.
     if path == PG_DATABASE_DIR and address == RESTORE_FROMSSH_LOCAL:
+        # remove recovery file
+        cmd = ["echo", "-n", "''", ">", os.path.join(PG_DATABASE_DIR, RECOVERY_CONF_FILE)]
+        exec_command(conn, cmd, logger, interrupt=True)
+
+        # wait postgresql ready
+        waiting_postgresql_ready(tmpconns, logger)
+
         # update password
         correct_user_password(meta, spec, patch, status, logger, conn)
         return
@@ -835,9 +847,6 @@ def restore_postgresql_fromssh(
     cmd = ["pgtools", "-d", "-p", POSTGRESQL_PAUSE]
     exec_command(conn, cmd, logger, interrupt=True)
 
-    # don't free the tmpconns
-    tmpconns: InstanceConnections = InstanceConnections()
-    tmpconns.add(conn)
     waiting_instance_ready(tmpconns)
 
     # remove old data
@@ -862,6 +871,10 @@ def restore_postgresql_fromssh(
         ssh_conn = connect_machine(address)
 
     # copy data
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    # remove recovery file
+    cmd =["echo", "-n", "''", ">", os.path.join(PG_DATABASE_DIR, RECOVERY_CONF_FILE)]
     exec_command(conn, cmd, logger, interrupt=True)
 
     # resume postgresql
