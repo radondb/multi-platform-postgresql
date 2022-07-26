@@ -1906,7 +1906,7 @@ def create_services(
         conns.free_conns()
 
 
-def check_param(spec: kopf.Spec, logger: logging.Logger,) -> None:
+def check_param(spec: kopf.Spec, logger: logging.Logger,create: bool = True) -> None:
     autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
     readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
         MACHINES)
@@ -1932,7 +1932,7 @@ def check_param(spec: kopf.Spec, logger: logging.Logger,) -> None:
         if len(readwrite_machines) < 1:
             raise kopf.PermanentError(
                 "readwrite machines must set at lease one machine")
-    if spec[ACTION] == ACTION_STOP:
+    if create and spec[ACTION] == ACTION_STOP:
         raise kopf.PermanentError("can't set stop at init cluster.")
     if readwrite_replicas < 1:
         raise kopf.PermanentError("readwrite replicas must set at lease one")
@@ -1995,7 +1995,7 @@ async def create_cluster(
         set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_CREATE, logger)
 
         logging.info("check create_cluster params")
-        check_param(spec, logger)
+        check_param(spec, logger, create = True)
         await create_postgresql_cluster(meta, spec, patch, status, logger)
 
         logger.info("waiting for create_cluster success")
@@ -2808,7 +2808,7 @@ async def update_cluster(
     try:
         set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_UPDATE, logger)
         logger.info("check update_cluster params")
-        check_param(spec, logger)
+        check_param(spec, logger, create = False)
 
         for diff in diffs:
             AC = diff[0]
