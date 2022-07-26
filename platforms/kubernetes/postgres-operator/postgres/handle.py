@@ -2319,9 +2319,11 @@ def postgresql_action(
                 % e)
     if conn.get_machine() != None:
         if start:
-            cmd = "start"
+            #cmd = "start"
+            cmd = "up -d"
         else:
-            cmd = "stop"
+            #cmd = "stop"
+            cmd = "down"
 
         logger.info("host " + conn.get_machine().get_host() + " postgresql " +
                     cmd)
