@@ -2639,7 +2639,8 @@ def update_configs(
             cmd.append('-r')
 
         logger.info("update configs(" + str(cmd) + ")")
-        waiting_postgresql_ready(conns, logger)
+        waiting_postgresql_ready(readwrite_conns, logger)
+        waiting_postgresql_ready(readonly_conns, logger)
         for conn in conns:
             if get_primary_host(
                     meta, spec, patch, status,
