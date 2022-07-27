@@ -24,11 +24,11 @@ spec:
     served: true
     storage: true
     additionalPrinterColumns:
-    - jsonPath: .spec.action
-      description: The cluster action
-      name: Action
-      type: string
-      priority: 0           # show in standard view
+#    - jsonPath: .spec.action
+#      description: The cluster action
+#      name: Action
+#      type: string
+#  priority: 0           # show in standard view
     - jsonPath: .spec.deletepvc
       description: delete the pvc when cluster is deleted.
       name: DeletePvc

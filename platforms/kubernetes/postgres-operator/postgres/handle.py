@@ -109,6 +109,7 @@ from constants import (
     CLUSTER_STATUS_CREATE,
     CLUSTER_STATUS_UPDATE,
     CLUSTER_STATUS_RUN,
+    CLUSTER_STATUS_STOP,
     CLUSTER_STATUS_CREATE_FAILED,
     CLUSTER_STATUS_UPDATE_FAILED,
     CLUSTER_STATUS_TERMINATE,
@@ -331,6 +332,9 @@ def waiting_cluster_correct_status(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
+    if spec[ACTION] == ACTION_STOP:
+        return
+
     # waiting for restart
     time.sleep(5)
     auto_failover_conns = connections(spec, meta, patch,
@@ -343,7 +347,7 @@ def waiting_cluster_correct_status(
         ]
         primary_cmd = [
             "pgtools", "-w", "0", "-Q", "pg_auto_failover", "-q",
-            '''" select count(*) from pgautofailover.node where reportedstate = 'primary' or reportedstate ='wait_primary'  "'''
+            '''" select count(*) from pgautofailover.node where reportedstate = 'primary' or reportedstate ='wait_primary' or reportedstate = 'single'  "'''
         ]
         nodes_cmd = [
             "pgtools", "-w", "0", "-Q", "pg_auto_failover", "-q",
@@ -403,9 +407,9 @@ def waiting_postgresql_ready(conns: InstanceConnections,
             if output != INIT_FINISH_MESSAGE:
                 i += 1
                 time.sleep(1)
-                logger.error(f"init is not finish. try {i} times. {output}")
+                logger.error(f"postgresql is not ready. try {i} times. {output}")
                 if i >= maxtry:
-                    logger.warning(f"init is not finish. skip waitting.")
+                    logger.warning(f"postgresql is not ready. skip waitting.")
                     break
             else:
                 break
@@ -2635,6 +2639,7 @@ def update_configs(
             cmd.append('-r')
 
         logger.info("update configs(" + str(cmd) + ")")
+        waiting_postgresql_ready(conns, logger)
         for conn in conns:
             if get_primary_host(
                     meta, spec, patch, status,
@@ -2833,8 +2838,12 @@ async def update_cluster(
 
         # wait a few seconds to prevent the pod not running
         time.sleep(5)
+        if spec[ACTION] == ACTION_STOP:
+            cluster_status = CLUSTER_STATUS_STOP
+        else:
+            cluster_status = CLUSTER_STATUS_RUN
         # set Running
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_RUN, logger)
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, cluster_status, logger)
     except Exception as e:
         logger.error(f"error occurs, {e.args}")
         set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_UPDATE_FAILED, logger)
