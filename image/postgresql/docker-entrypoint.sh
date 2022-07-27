@@ -205,6 +205,9 @@ main() {
 			sleep 60
 		fi
 
+		# delete old pid
+		rm -rf /tmp/pg_autoctl
+
 		init_over
 		exec $cmd
 	else
