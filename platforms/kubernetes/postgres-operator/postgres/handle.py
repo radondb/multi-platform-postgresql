@@ -419,12 +419,13 @@ def waiting_postgresql_ready(conns: InstanceConnections,
 
 def waiting_instance_ready(conns: InstanceConnections, logger: logging.Logger):
     success_message = 'running success'
+    cmd = ['echo', "'%s'" % success_message]
     for conn in conns.get_conns():
         i = 0
         maxtry = 300
         while True:
             output = exec_command(conn,
-                                  "echo '%s'" % success_message,
+                                  cmd,
                                   logger,
                                   interrupt=False)
             if output != success_message:
@@ -847,6 +848,9 @@ def restore_postgresql_fromssh(
         correct_user_password(meta, spec, patch, status, logger, conn)
         return
 
+    # wait postgresql ready
+    waiting_postgresql_ready(tmpconns, logger)
+
     # drop from autofailover and pause start postgresql
     cmd = ["pgtools", "-d", "-p", POSTGRESQL_PAUSE]
     exec_command(conn, cmd, logger, interrupt=True)
@@ -875,11 +879,19 @@ def restore_postgresql_fromssh(
         ssh_conn = connect_machine(address)
 
     # copy data
-    exec_command(conn, cmd, logger, interrupt=True)
+    exec_command(conn, cmd, logger, interrupt=True, user='postgres')
 
     # remove recovery file
     cmd =["echo", "-n", "''", ">", os.path.join(PG_DATABASE_DIR, RECOVERY_CONF_FILE)]
+    exec_command(conn, cmd, logger, interrupt=True, user='postgres')
+
+    # remove old status data
+    cmd = ["rm", "-rf", "/var/lib/postgresql/data/auto_failover/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.init", "/var/lib/postgresql/data/auto_failover/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.state"]
     exec_command(conn, cmd, logger, interrupt=True)
+
+    # change owner
+    #exec_command(conn, ['chown', '-R', 'postgres:postgres', DATA_DIR], logger, interrupt=True)
+    #time.sleep(5)
 
     # resume postgresql
     cmd = ["pgtools", "-p", POSTGRESQL_RESUME]
@@ -1178,29 +1190,31 @@ def machine_sftp_get(sftp: paramiko.SFTPClient, localpath: str,
 def exec_command(conn: InstanceConnection,
                  cmd: [str],
                  logger: logging.Logger,
-                 interrupt: bool = True):
+                 interrupt: bool = True,
+                 user: str = "root"):
     if conn.get_k8s() != None:
         return pod_exec_command(conn.get_k8s().get_podname(),
                                 conn.get_k8s().get_namespace(), cmd, logger,
-                                interrupt)
+                                interrupt, user)
     if conn.get_machine() != None:
         return docker_exec_command(conn.get_machine().get_role(),
                                    conn.get_machine().get_ssh(), cmd, logger,
-                                   interrupt)
+                                   interrupt, user)
 
 
 def pod_exec_command(name: str,
                      namespace: str,
                      cmd: [str],
                      logger: logging.Logger,
-                     interrupt: bool = True) -> str:
+                     interrupt: bool = True,
+                     user: str = "root") -> str:
     try:
         core_v1_api = client.CoreV1Api()
         # stderr stdout all in resp. don't have return code.
         resp = stream(core_v1_api.connect_get_namespaced_pod_exec,
                       name,
                       namespace,
-                      command=["/bin/bash", "-c", " ".join(cmd)],
+                      command=["/bin/bash", "-c", " ".join(['gosu', user] + cmd)],
                       stderr=True,
                       stdin=False,
                       stdout=True,
@@ -1221,7 +1235,8 @@ def docker_exec_command(role: str,
                         ssh: paramiko.SSHClient,
                         cmd: [str],
                         logger: logging.Logger,
-                        interrupt: bool = True) -> str:
+                        interrupt: bool = True,
+                        user: str = "root") -> str:
     if role == AUTOFAILOVER:
         machine_data_path = operator_config.DATA_PATH_AUTOFAILOVER
     if role == POSTGRESQL:
@@ -1229,7 +1244,7 @@ def docker_exec_command(role: str,
     try:
         workdir = os.path.join(machine_data_path, DOCKER_COMPOSE_DIR)
         #cmd = "cd " + workdir + "; docker-compose exec " + role + " " + " ".join(cmd)
-        cmd = "docker exec " + role + " " + " ".join(cmd)
+        cmd = "docker exec " + role + " " + " ".join(['gosu', user] + cmd)
         logger.info(f"docker exec command {cmd}")
         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(cmd, get_pty=True)
     except Exception as e:
@@ -2127,14 +2142,19 @@ def correct_user_password(
 ) -> None:
     PASSWORD_FAILED_MESSAGEd = "password authentication failed for user"
 
+
     if get_conn_role(conn) == AUTOFAILOVER:
         port = 55555
         user = AUTOCTL_NODE
-        password = status.get(AUTOCTL_NODE)
+        password = patch.status.get(AUTOCTL_NODE)
+        if password == None:
+            password = status.get(AUTOCTL_NODE)
     elif get_conn_role(conn) == POSTGRESQL:
         port = get_postgresql_config_port(meta, spec, patch, status, logger)
         user = PGAUTOFAILOVER_REPLICATOR
-        password = status.get(PGAUTOFAILOVER_REPLICATOR)
+        password = patch.status.get(PGAUTOFAILOVER_REPLICATOR)
+        if password == None:
+            password = status.get(PGAUTOFAILOVER_REPLICATOR)
 
     if password == None:
         return
