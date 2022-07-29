@@ -178,27 +178,32 @@ START_KEEPALIVED = "systemctl restart keepalived.service"
 STOP_KEEPALIVED = "systemctl stop keepalived.service"
 STATUS_KEEPALIVED = "systemctl status keepalived.service"
 RECOVERY_CONF_FILE = "postgresql-auto-failover-standby.conf"
+RECOVERY_SET_FILE = "postgresql-auto-failover.conf"
+STANDBY_SIGNAL = "standby.signal"
 
 
-def set_cluster_status(meta: kopf.Meta,
-                       statefield: str,
-                       state: str,
+def set_cluster_status(meta: kopf.Meta, statefield: str, state: str,
                        logger: logging.Logger) -> None:
     customer_obj_api = client.CustomObjectsApi()
     name = meta['name']
     namespace = meta['namespace']
 
     # get customer definition
-    body = customer_obj_api.get_namespaced_custom_object(group=API_GROUP, version=API_VERSION_V1,
-                                                         namespace=namespace, plural=RESOURCE_POSTGRESQL,
-                                                         name=name)
+    body = customer_obj_api.get_namespaced_custom_object(
+        group=API_GROUP,
+        version=API_VERSION_V1,
+        namespace=namespace,
+        plural=RESOURCE_POSTGRESQL,
+        name=name)
     if CLUSTER_STATUS not in body:
         cluster_create = {CLUSTER_STATUS: {statefield: state}}
         body = {**body, **cluster_create}
     else:
         body[CLUSTER_STATUS][statefield] = state
 
-    logger.info(f"update {API_GROUP + API_VERSION_V1} crd {name} field .status.{statefield} = {state}, set_cluster_status body = {body}")
+    logger.info(
+        f"update {API_GROUP + API_VERSION_V1} crd {name} field .status.{statefield} = {state}, set_cluster_status body = {body}"
+    )
     customer_obj_api.patch_namespaced_custom_object(group=API_GROUP,
                                                     version=API_VERSION_V1,
                                                     namespace=namespace,
@@ -407,7 +412,8 @@ def waiting_postgresql_ready(conns: InstanceConnections,
             if output != INIT_FINISH_MESSAGE:
                 i += 1
                 time.sleep(1)
-                logger.error(f"postgresql is not ready. try {i} times. {output}")
+                logger.error(
+                    f"postgresql is not ready. try {i} times. {output}")
                 if i >= maxtry:
                     logger.warning(f"postgresql is not ready. skip waitting.")
                     break
@@ -424,10 +430,7 @@ def waiting_instance_ready(conns: InstanceConnections, logger: logging.Logger):
         i = 0
         maxtry = 300
         while True:
-            output = exec_command(conn,
-                                  cmd,
-                                  logger,
-                                  interrupt=False)
+            output = exec_command(conn, cmd, logger, interrupt=False)
             if output != success_message:
                 i += 1
                 time.sleep(1)
@@ -835,19 +838,6 @@ def restore_postgresql_fromssh(
     tmpconns: InstanceConnections = InstanceConnections()
     tmpconns.add(conn)
 
-    # create the new instance but use the old data.
-    if path == PG_DATABASE_DIR and address == RESTORE_FROMSSH_LOCAL:
-        # remove recovery file
-        cmd = ["echo", "-n", "''", ">", os.path.join(PG_DATABASE_DIR, RECOVERY_CONF_FILE)]
-        exec_command(conn, cmd, logger, interrupt=True)
-
-        # wait postgresql ready
-        waiting_postgresql_ready(tmpconns, logger)
-
-        # update password
-        correct_user_password(meta, spec, patch, status, logger, conn)
-        return
-
     # wait postgresql ready
     waiting_postgresql_ready(tmpconns, logger)
 
@@ -865,6 +855,14 @@ def restore_postgresql_fromssh(
     if address == RESTORE_FROMSSH_LOCAL:
         ssh_conn = conn
         cmd = ["mv", path, PG_DATABASE_DIR]
+
+        # copy data
+        exec_command(conn, cmd, logger, interrupt=True)
+
+        # change owner
+        exec_command(conn, ['chown', '-R', 'postgres:postgres', DATA_DIR],
+                     logger,
+                     interrupt=True)
     else:
         username = address.split(":")[0]
         password = address.split(":")[1]
@@ -877,21 +875,34 @@ def restore_postgresql_fromssh(
             "%s@%s:%s %s" % (username, host, path, PG_DATABASE_DIR)
         ]
         ssh_conn = connect_machine(address)
-
-    # copy data
-    exec_command(conn, cmd, logger, interrupt=True, user='postgres')
+        # copy data
+        exec_command(conn, cmd, logger, interrupt=True, user='postgres')
 
     # remove recovery file
-    cmd =["echo", "-n", "''", ">", os.path.join(PG_DATABASE_DIR, RECOVERY_CONF_FILE)]
+    #cmd =["rm", "-rf", os.path.join(PG_DATABASE_DIR, RECOVERY_CONF_FILE)]
+    cmd = [
+        "truncate", "--size", "0",
+        os.path.join(PG_DATABASE_DIR, RECOVERY_CONF_FILE)
+    ]
     exec_command(conn, cmd, logger, interrupt=True, user='postgres')
 
-    # remove old status data
-    cmd = ["rm", "-rf", "/var/lib/postgresql/data/auto_failover/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.init", "/var/lib/postgresql/data/auto_failover/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.state"]
+    #cmd =["rm", "-rf", os.path.join(PG_DATABASE_DIR, RECOVERY_SET_FILE)]
+    cmd = [
+        "truncate", "--size", "0",
+        os.path.join(PG_DATABASE_DIR, RECOVERY_SET_FILE)
+    ]
+    exec_command(conn, cmd, logger, interrupt=True, user='postgres')
+
+    cmd = ["rm", "-rf", os.path.join(PG_DATABASE_DIR, STANDBY_SIGNAL)]
     exec_command(conn, cmd, logger, interrupt=True)
 
-    # change owner
-    #exec_command(conn, ['chown', '-R', 'postgres:postgres', DATA_DIR], logger, interrupt=True)
-    #time.sleep(5)
+    # remove old status data
+    cmd = [
+        "rm", "-rf",
+        "/var/lib/postgresql/data/auto_failover/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.init",
+        "/var/lib/postgresql/data/auto_failover/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.state"
+    ]
+    exec_command(conn, cmd, logger, interrupt=True)
 
     # resume postgresql
     cmd = ["pgtools", "-p", POSTGRESQL_RESUME]
@@ -1211,14 +1222,15 @@ def pod_exec_command(name: str,
     try:
         core_v1_api = client.CoreV1Api()
         # stderr stdout all in resp. don't have return code.
-        resp = stream(core_v1_api.connect_get_namespaced_pod_exec,
-                      name,
-                      namespace,
-                      command=["/bin/bash", "-c", " ".join(['gosu', user] + cmd)],
-                      stderr=True,
-                      stdin=False,
-                      stdout=True,
-                      tty=False)
+        resp = stream(
+            core_v1_api.connect_get_namespaced_pod_exec,
+            name,
+            namespace,
+            command=["/bin/bash", "-c", " ".join(['gosu', user] + cmd)],
+            stderr=True,
+            stdin=False,
+            stdout=True,
+            tty=False)
         return resp.replace('\n', '')
     except Exception as e:
         if interrupt:
@@ -1925,7 +1937,9 @@ def create_services(
         conns.free_conns()
 
 
-def check_param(spec: kopf.Spec, logger: logging.Logger,create: bool = True) -> None:
+def check_param(spec: kopf.Spec,
+                logger: logging.Logger,
+                create: bool = True) -> None:
     autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
     readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
         MACHINES)
@@ -2011,10 +2025,11 @@ async def create_cluster(
     logger: logging.Logger,
 ) -> None:
     try:
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_CREATE, logger)
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_CREATE,
+                           logger)
 
         logging.info("check create_cluster params")
-        check_param(spec, logger, create = True)
+        check_param(spec, logger, create=True)
         await create_postgresql_cluster(meta, spec, patch, status, logger)
 
         logger.info("waiting for create_cluster success")
@@ -2023,10 +2038,12 @@ async def create_cluster(
         # wait a few seconds to prevent the pod not running
         time.sleep(5)
         # cluster running
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_RUN, logger)
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_RUN,
+                           logger)
     except Exception as e:
         logger.error(f"error occurs, {e.args}")
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_CREATE_FAILED, logger)
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER,
+                           CLUSTER_STATUS_CREATE_FAILED, logger)
 
 
 async def delete_cluster(
@@ -2036,7 +2053,8 @@ async def delete_cluster(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
-    set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_TERMINATE, logger)
+    set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_TERMINATE,
+                       logger)
     await delete_postgresql_cluster(meta, spec, patch, status, logger)
 
 
@@ -2141,7 +2159,6 @@ def correct_user_password(
     conn: InstanceConnection,
 ) -> None:
     PASSWORD_FAILED_MESSAGEd = "password authentication failed for user"
-
 
     if get_conn_role(conn) == AUTOFAILOVER:
         port = 55555
@@ -2658,15 +2675,18 @@ def update_configs(
         elif restart_postgresql == True:
             cmd.append('-r')
 
-        logger.info("update configs(" + str(cmd) + ")")
         waiting_postgresql_ready(readwrite_conns, logger)
         waiting_postgresql_ready(readonly_conns, logger)
+        logger.info("update configs(" + str(cmd) + ")")
         for conn in conns:
             if get_primary_host(
                     meta, spec, patch, status,
                     logger) == get_connhost(conn) and int(
                         spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]) > 1:
                 autofailover_switchover(meta, spec, patch, status, logger)
+
+            waiting_postgresql_ready(readwrite_conns, logger)
+            waiting_postgresql_ready(readonly_conns, logger)
 
             output = exec_command(conn, cmd, logger, interrupt=False)
             if output.find(SUCCESS) == -1:
@@ -2832,9 +2852,10 @@ async def update_cluster(
     diffs: kopf.Diff,
 ) -> None:
     try:
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_UPDATE, logger)
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_UPDATE,
+                           logger)
         logger.info("check update_cluster params")
-        check_param(spec, logger, create = False)
+        check_param(spec, logger, create=False)
 
         for diff in diffs:
             AC = diff[0]
@@ -2843,16 +2864,21 @@ async def update_cluster(
             NEW = diff[3]
 
             logger.info(diff)
-            update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
-            update_action(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
-            update_service(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
+            update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD,
+                            NEW)
+            update_action(meta, spec, patch, status, logger, AC, FIELD, OLD,
+                          NEW)
+            update_service(meta, spec, patch, status, logger, AC, FIELD, OLD,
+                           NEW)
             update_hbas(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
-            update_users(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
+            update_users(meta, spec, patch, status, logger, AC, FIELD, OLD,
+                         NEW)
             update_streaming(meta, spec, patch, status, logger, AC, FIELD, OLD,
                              NEW)
             update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
                                   OLD, NEW)
-            update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
+            update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD,
+                           NEW)
 
         logger.info("waiting for update_cluster success")
         waiting_cluster_correct_status(meta, spec, patch, status, logger)
@@ -2864,7 +2890,9 @@ async def update_cluster(
         else:
             cluster_status = CLUSTER_STATUS_RUN
         # set Running
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, cluster_status, logger)
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, cluster_status,
+                           logger)
     except Exception as e:
         logger.error(f"error occurs, {e.args}")
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_UPDATE_FAILED, logger)
+        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER,
+                           CLUSTER_STATUS_UPDATE_FAILED, logger)
