@@ -330,7 +330,7 @@ def get_primary_host(
     return output.strip()
 
 
-def waiting_cluster_correct_status(
+def waiting_cluster_final_status(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -341,7 +341,80 @@ def waiting_cluster_correct_status(
         return
 
     # waiting for restart
-    time.sleep(5)
+    auto_failover_conns = connections(spec, meta, patch,
+                                      get_field(AUTOFAILOVER), False, None,
+                                      logger, None, status, False)
+    for conn in auto_failover_conns.get_conns():
+        not_correct_cmd = [
+            "pgtools", "-w", "0", "-Q", "pg_auto_failover", "-q",
+            '''" select count(*) from pgautofailover.node where reportedstate <> 'primary' and reportedstate <> 'secondary' and reportedstate <> 'single'  "'''
+        ]
+        primary_cmd = [
+            "pgtools", "-w", "0", "-Q", "pg_auto_failover", "-q",
+            '''" select count(*) from pgautofailover.node where reportedstate = 'primary' or reportedstate = 'single'  "'''
+        ]
+        nodes_cmd = [
+            "pgtools", "-w", "0", "-Q", "pg_auto_failover", "-q",
+            '''" select count(*) from pgautofailover.node  "'''
+        ]
+
+        i = 0
+        maxtry = 60
+        while True:
+            logger.info(
+                f"waiting auto_failover cluster final status, {i} times. ")
+            i += 1
+            time.sleep(1)
+            if i >= maxtry:
+                logger.warning(
+                    f"cluster maybe maybe not right. skip waitting.")
+                break
+            output = exec_command(conn, primary_cmd, logger, interrupt=False)
+            if output != '1':
+                logger.warning(
+                    f"not find primary node in autofailover, output is {output}"
+                )
+                continue
+            output = exec_command(conn,
+                                  not_correct_cmd,
+                                  logger,
+                                  interrupt=False)
+            if output != '0':
+                logger.warning(
+                    f"there are {output} nodes is not primary/secondary/single"
+                )
+                continue
+
+            if conn.get_machine() == None:
+                total_nodes = int(
+                    spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]) + int(
+                        spec[POSTGRESQL][READONLYINSTANCE][REPLICAS])
+            else:
+                total_nodes = len(
+                    spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(MACHINES)
+                ) + len(
+                    spec.get(POSTGRESQL).get(READONLYINSTANCE).get(MACHINES))
+            output = exec_command(conn, nodes_cmd, logger, interrupt=False)
+            if output != str(total_nodes):
+                logger.warning(
+                    f"there are {output} nodes in autofailover, expect {total_nodes} nodes"
+                )
+                continue
+
+            break
+    auto_failover_conns.free_conns()
+
+
+def waiting_cluster_correct_status(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    if spec[ACTION] == ACTION_STOP:
+        return
+
     auto_failover_conns = connections(spec, meta, patch,
                                       get_field(AUTOFAILOVER), False, None,
                                       logger, None, status, False)
@@ -370,15 +443,6 @@ def waiting_cluster_correct_status(
                 logger.warning(
                     f"cluster maybe maybe not right. skip waitting.")
                 break
-            #total_nodes = int(
-            #    spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]) + int(
-            #        spec[POSTGRESQL][READONLYINSTANCE][REPLICAS]) # TODO machinemode len(machines)
-            #output = exec_command(conn, nodes_cmd, logger, interrupt=False)
-            #if output != str(total_nodes):
-            #    logger.warning(
-            #        f"there are {output} nodes in autofailover, expect {total_nodes} nodes"
-            #    )
-            #    continue
             output = exec_command(conn, primary_cmd, logger, interrupt=False)
             if output != '1':
                 logger.warning(
@@ -395,12 +459,28 @@ def waiting_cluster_correct_status(
                 )
                 continue
 
+            if conn.get_machine() == None:
+                total_nodes = int(
+                    spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]) + int(
+                        spec[POSTGRESQL][READONLYINSTANCE][REPLICAS])
+            else:
+                total_nodes = len(
+                    spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(MACHINES)
+                ) + len(
+                    spec.get(POSTGRESQL).get(READONLYINSTANCE).get(MACHINES))
+            output = exec_command(conn, nodes_cmd, logger, interrupt=False)
+            if output != str(total_nodes):
+                logger.warning(
+                    f"there are {output} nodes in autofailover, expect {total_nodes} nodes"
+                )
+                continue
+
             break
     auto_failover_conns.free_conns()
 
 
 def waiting_postgresql_ready(conns: InstanceConnections,
-                             logger: logging.Logger):
+                             logger: logging.Logger) -> bool:
     for conn in conns.get_conns():
         i = 0
         maxtry = 300
@@ -416,11 +496,10 @@ def waiting_postgresql_ready(conns: InstanceConnections,
                     f"postgresql is not ready. try {i} times. {output}")
                 if i >= maxtry:
                     logger.warning(f"postgresql is not ready. skip waitting.")
-                    break
+                    return False
             else:
                 break
-    # wait service refresh endpoint
-    time.sleep(10)
+    return True
 
 
 def waiting_instance_ready(conns: InstanceConnections, logger: logging.Logger):
@@ -1210,7 +1289,8 @@ def exec_command(conn: InstanceConnection,
     if conn.get_machine() != None:
         return docker_exec_command(conn.get_machine().get_role(),
                                    conn.get_machine().get_ssh(), cmd, logger,
-                                   interrupt, user)
+                                   interrupt, user,
+                                   conn.get_machine().get_host())
 
 
 def pod_exec_command(name: str,
@@ -1248,7 +1328,8 @@ def docker_exec_command(role: str,
                         cmd: [str],
                         logger: logging.Logger,
                         interrupt: bool = True,
-                        user: str = "root") -> str:
+                        user: str = "root",
+                        host: str = None) -> str:
     if role == AUTOFAILOVER:
         machine_data_path = operator_config.DATA_PATH_AUTOFAILOVER
     if role == POSTGRESQL:
@@ -1257,12 +1338,13 @@ def docker_exec_command(role: str,
         workdir = os.path.join(machine_data_path, DOCKER_COMPOSE_DIR)
         #cmd = "cd " + workdir + "; docker-compose exec " + role + " " + " ".join(cmd)
         cmd = "docker exec " + role + " " + " ".join(['gosu', user] + cmd)
-        logger.info(f"docker exec command {cmd}")
+        logger.info(f"docker exec command {cmd} on host {host}")
         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(cmd, get_pty=True)
     except Exception as e:
         if interrupt:
             raise kopf.PermanentError(f"can't run command: {cmd} , {e}")
         else:
+            logger.error(f"can't run command: {cmd} , {e}")
             return FAILED
 
     # see pod_exec_command, don't check ret_code
@@ -1893,7 +1975,7 @@ def create_services(
                 read_vip = service[VIP]
             elif service[SELECTOR] == SERVICE_STANDBY_READONLY:
                 machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
-                    MACHINES)
+                    MACHINES).copy()
                 machines += spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
                     MACHINES)
                 read_vip = service[VIP]
@@ -1926,7 +2008,10 @@ def create_services(
         conns = connections(spec, meta, patch,
                             get_field(POSTGRESQL, READWRITEINSTANCE), False,
                             None, logger, None, status, False)
-        for conn in conns.get_conns():
+        readonly_conns = connections(spec, meta, patch,
+                                     get_field(POSTGRESQL, READONLYINSTANCE),
+                                     False, None, logger, None, status, False)
+        for conn in (conns.get_conns() + readonly_conns.get_conns()):
             machine_sftp_put(conn.get_machine().get_sftp(), lvs_conf,
                              KEEPALIVED_CONF)
             machine_exec_command(
@@ -1935,6 +2020,7 @@ def create_services(
             machine_exec_command(conn.get_machine().get_ssh(),
                                  START_KEEPALIVED)
         conns.free_conns()
+        readonly_conns.free_conns()
 
 
 def check_param(spec: kopf.Spec,
@@ -2005,7 +2091,9 @@ async def create_postgresql_cluster(
     #conns = connections(spec, meta, patch,
     #                    get_field(POSTGRESQL, READWRITEINSTANCE), False, None,
     #                    logger, None, status, False)
-    #create_users(meta, spec, patch, status, logger, conns)
+    #if conns.get_conns()[0].get_machine() != None:
+    #    waiting_postgresql_ready(conns, logger)
+    #    waiting_cluster_final_status(meta, spec, patch, status, logger)
     #conns.free_conns()
 
     # create postgresql & readonly node
@@ -2033,7 +2121,7 @@ async def create_cluster(
         await create_postgresql_cluster(meta, spec, patch, status, logger)
 
         logger.info("waiting for create_cluster success")
-        waiting_cluster_correct_status(meta, spec, patch, status, logger)
+        waiting_cluster_final_status(meta, spec, patch, status, logger)
 
         # wait a few seconds to prevent the pod not running
         time.sleep(5)
@@ -2217,10 +2305,16 @@ async def correct_keepalived(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
-    readwrite_conns = connections(spec, meta, patch,
-                                  get_field(POSTGRESQL, READWRITEINSTANCE),
-                                  False, None, logger, None, status, False)
-    for conn in readwrite_conns.get_conns():
+    conns = connections(spec, meta, patch,
+                        get_field(POSTGRESQL, READWRITEINSTANCE), False, None,
+                        logger, None, status, False)
+    readonly_conns = connections(spec, meta, patch,
+                                 get_field(POSTGRESQL, READONLYINSTANCE),
+                                 False, None, logger, None, status, False)
+    for conn in (conns.get_conns() + readonly_conns.get_conns()):
+        if conn.get_machine() == None:
+            break
+
         output = machine_exec_command(conn.get_machine().get_ssh(),
                                       STATUS_KEEPALIVED,
                                       interrupt=False)
@@ -2228,7 +2322,8 @@ async def correct_keepalived(
             delete_services(meta, spec, patch, status, logger)
             create_services(meta, spec, patch, status, logger)
             break
-    readwrite_conns.free_conns()
+    conns.free_conns()
+    readonly_conns.free_conns()
 
 
 async def correct_postgresql_role(
@@ -2591,11 +2686,15 @@ def delete_services(
         conns = connections(spec, meta, patch,
                             get_field(POSTGRESQL, READWRITEINSTANCE), False,
                             None, logger, None, status, False)
-        for conn in conns.get_conns():
+        readonly_conns = connections(spec, meta, patch,
+                                     get_field(POSTGRESQL, READONLYINSTANCE),
+                                     False, None, logger, None, status, False)
+        for conn in (conns.get_conns() + readonly_conns.get_conns()):
+            machine_exec_command(conn.get_machine().get_ssh(), STOP_KEEPALIVED)
             machine_exec_command(conn.get_machine().get_ssh(),
                                  "rm -rf " + KEEPALIVED_CONF)
-            machine_exec_command(conn.get_machine().get_ssh(), STOP_KEEPALIVED)
         conns.free_conns()
+        readonly_conns.free_conns()
 
 
 def update_service(
@@ -2677,26 +2776,44 @@ def update_configs(
 
         waiting_postgresql_ready(readwrite_conns, logger)
         waiting_postgresql_ready(readonly_conns, logger)
-        logger.info("update configs(" + str(cmd) + ")")
+        primary_conn = None
         for conn in conns:
-            if get_primary_host(
-                    meta, spec, patch, status,
-                    logger) == get_connhost(conn) and int(
-                        spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]) > 1:
-                autofailover_switchover(meta, spec, patch, status, logger)
+            if get_primary_host(meta, spec, patch, status,
+                                logger) == get_connhost(conn):
+                primary_conn = conn
+                continue
 
-            waiting_postgresql_ready(readwrite_conns, logger)
-            waiting_postgresql_ready(readonly_conns, logger)
+            #if conn.get_machine() != None:
+            #    replicas = len(spec[POSTGRESQL][READWRITEINSTANCE][MACHINES])
+            #else:
+            #    replicas = int(spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS])
+            #if replicas > 1 and get_primary_host( meta, spec, patch, status, logger) == get_connhost(conn):
+            #    autofailover_switchover(meta, spec, patch, status, logger)
+            #    if port_change == True or restart_postgresql == True:
+            #        waiting_cluster_correct_status(meta, spec, patch, status, logger)
+            #    else:
+            #        waiting_cluster_final_status(meta, spec, patch, status, logger)
 
+            logger.info("update configs (" + str(cmd) +
+                        ") on %s " % get_connhost(conn))
             output = exec_command(conn, cmd, logger, interrupt=False)
             if output.find(SUCCESS) == -1:
                 logger.error(f"update configs {cmd} failed. {output}")
 
             #if port_change == True or restart_postgresql == True:
-            if port_change == True:
-                logger.info(f"wait readwrite instance update finish")
-                waiting_cluster_correct_status(meta, spec, patch, status,
-                                               logger)
+            #    time.sleep(10)
+            #if port_change == True:
+            #    waiting_cluster_correct_status(meta, spec, patch, status,
+            #                                   logger)
+        if port_change == True or restart_postgresql == True:
+            waiting_cluster_correct_status(meta, spec, patch, status, logger)
+            time.sleep(6)
+
+        logger.info("update configs (" + str(cmd) +
+                    ") on %s " % get_connhost(primary_conn))
+        output = exec_command(primary_conn, cmd, logger, interrupt=False)
+        if output.find(SUCCESS) == -1:
+            logger.error(f"update configs {cmd} failed. {output}")
 
         if port_change == True:
             delete_services(meta, spec, patch, status, logger)
@@ -2864,24 +2981,39 @@ async def update_cluster(
             NEW = diff[3]
 
             logger.info(diff)
-            update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD,
-                            NEW)
+
             update_action(meta, spec, patch, status, logger, AC, FIELD, OLD,
                           NEW)
             update_service(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
+
+        for diff in diffs:
+            AC = diff[0]
+            FIELD = diff[1]
+            OLD = diff[2]
+            NEW = diff[3]
+
+            update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD,
+                            NEW)
+            update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
+                                  OLD, NEW)
+
+        for diff in diffs:
+            AC = diff[0]
+            FIELD = diff[1]
+            OLD = diff[2]
+            NEW = diff[3]
+
             update_hbas(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
             update_users(meta, spec, patch, status, logger, AC, FIELD, OLD,
                          NEW)
             update_streaming(meta, spec, patch, status, logger, AC, FIELD, OLD,
                              NEW)
-            update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
-                                  OLD, NEW)
             update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
 
         logger.info("waiting for update_cluster success")
-        waiting_cluster_correct_status(meta, spec, patch, status, logger)
+        waiting_cluster_final_status(meta, spec, patch, status, logger)
 
         # wait a few seconds to prevent the pod not running
         time.sleep(5)

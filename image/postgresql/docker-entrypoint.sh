@@ -201,8 +201,8 @@ main() {
 		done
 
 		if [ -s "$PGDATA/postgresql-auto-failover-standby.conf" ]; then
-			echo "delay start(60 seconds) on slave node"
-			sleep 60
+			echo "delay start(10 seconds) on slave node"
+			sleep 10
 		fi
 
 		# delete old pid
