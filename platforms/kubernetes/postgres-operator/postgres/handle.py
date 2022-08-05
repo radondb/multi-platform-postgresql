@@ -150,12 +150,14 @@ DIFF_FIELD_READWRITE_VOLUME = (SPEC, POSTGRESQL, READWRITEINSTANCE,
 DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
 STATEFULSET_REPLICAS = 1
+DECREASE_CONFIG = "decrease_config"
 PG_CONFIG_IGONRE = ("block_size", "data_checksums", "data_directory_mode",
                     "debug_assertions", "integer_datetimes", "lc_collate",
                     "lc_ctype", "max_function_args", "max_identifier_length",
                     "max_index_keys", "segment_size", "server_encoding",
                     "server_version", "server_version_num", "ssl_library",
-                    "wal_block_size", "wal_segment_size")
+                    "wal_block_size", "wal_segment_size", DECREASE_CONFIG)
+DECREASE_ITEMS = ["max_connections", "max_prepared_transactions", "max_locks_per_transaction", "max_wal_senders", "max_worker_processes"]
 PG_CONFIG_RESTART = (
     "allow_system_table_mods", "archive_mode", "autovacuum_freeze_max_age",
     "autovacuum_max_workers", "autovacuum_multixact_freeze_max_age", "bonjour",
@@ -1901,6 +1903,21 @@ def get_postgresql_config_port(
 
     return 5432
 
+def get_decrease_config(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> int:
+    configs = spec[POSTGRESQL][CONFIGS]
+    for i, config in enumerate(configs):
+        name = config.split("=")[0].strip()
+        value = config[config.find("=") + 1:].strip()
+        if name == DECREASE_CONFIG:
+            return value
+
+    return "off"
 
 def create_services(
     meta: kopf.Meta,
@@ -2783,7 +2800,6 @@ def update_configs(
         for i, config in enumerate(NEW):
             name = config.split("=")[0].strip()
             value = config[config.find("=") + 1:].strip()
-            config = name + '="' + value + '"'
             if autofailover == True and name == 'port':
                 continue
             if name in PG_CONFIG_IGONRE:
@@ -2792,12 +2808,19 @@ def update_configs(
                 for oldi, oldconfig in enumerate(OLD):
                     oldname = oldconfig.split("=")[0].strip()
                     oldvalue = oldconfig[oldconfig.find("=") + 1:].strip()
-                    oldconfig = oldname + "=" + oldvalue
                     if name == oldname and value != oldvalue:
                         logger.info(f" {name} is restart parameter ")
                         restart_postgresql = True
                         if name == 'port':
                             port_change = True
+            if name in DECREASE_ITEMS and get_decrease_config(meta, spec, patch, status, logger) == "off":
+                for oldi, oldconfig in enumerate(OLD):
+                    oldname = oldconfig.split("=")[0].strip()
+                    oldvalue = oldconfig[oldconfig.find("=") + 1:].strip()
+                    if name == oldname and int(value) < int(oldvalue):
+                        value = oldvalue
+
+            config = name + '="' + value + '"'
             cmd.append('-e')
             cmd.append(PG_CONFIG_PREFIX + config)
 
