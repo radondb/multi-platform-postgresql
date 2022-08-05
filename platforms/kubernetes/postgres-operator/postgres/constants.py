@@ -153,18 +153,13 @@ PG_HBA_PREFIX = "PG_HBA_"
 # real_main_servers
 # real_read_servers
 LVS_BODY = '''
-global_defs {{
-    router_id postgres
-}}
-
 vrrp_instance VI_1 {{
     state BACKUP
     nopreempt
     interface {net}
-    virtual_router_id 100
+    virtual_router_id {routeid}
     priority 100
 
-    advert_int 2
     authentication {{
         auth_type PASS
         auth_pass pass
@@ -179,7 +174,6 @@ virtual_server {main_vip} {port} {{
     delay_loop 10
     lb_algo lc
     lb_kind DR
-    nat_mask 255.255.255.0
     protocol TCP
 
     {real_main_servers}
@@ -188,7 +182,6 @@ virtual_server {read_vip} {port} {{
     delay_loop 10
     lb_algo lc
     lb_kind DR
-    nat_mask 255.255.255.0
     protocol TCP
 
     {real_read_servers}
@@ -219,6 +212,16 @@ real_server {ip} {port} {{
 }}
 '''
 
+LVS_REAL_EMPTY_SERVER = '''
+real_server {ip} {port} {{
+    weight 1
+    MISC_CHECK {{
+        misc_path "ls /tmp/file_not_exists_pg"
+        misc_timeout 60
+    }}
+}}
+'''
+
 # main_vip
 # read_vip
 LVS_SET_NET = '''
@@ -232,4 +235,14 @@ echo 2 > /proc/sys/net/ipv4/conf/all/arp_announce;
 /sbin/route add -host {main_vip} dev lo:0;
 /sbin/ifconfig lo:1 {read_vip} broadcast {read_vip} netmask 255.255.255.255 up;
 /sbin/route add -host {read_vip} dev lo:1;
+'''
+
+# LO net
+LVS_UNSET_NET = '''
+/sbin/ifconfig lo:0 down;
+/sbin/ifconfig lo:1 down;
+echo 0 > /proc/sys/net/ipv4/conf/lo/arp_ignore;
+echo 0 > /proc/sys/net/ipv4/conf/lo/arp_announce;
+echo 0 > /proc/sys/net/ipv4/conf/all/arp_ignore;
+echo 0 > /proc/sys/net/ipv4/conf/all/arp_announce;
 '''

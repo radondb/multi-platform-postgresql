@@ -105,7 +105,9 @@ from constants import (
     LVS_BODY,
     LVS_REAL_MAIN_SERVER,
     LVS_REAL_READ_SERVER,
+    LVS_REAL_EMPTY_SERVER,
     LVS_SET_NET,
+    LVS_UNSET_NET,
     CLUSTER_STATUS_CREATE,
     CLUSTER_STATUS_UPDATE,
     CLUSTER_STATUS_RUN,
@@ -180,6 +182,7 @@ STATUS_KEEPALIVED = "systemctl status keepalived.service"
 RECOVERY_CONF_FILE = "postgresql-auto-failover-standby.conf"
 RECOVERY_SET_FILE = "postgresql-auto-failover.conf"
 STANDBY_SIGNAL = "standby.signal"
+GET_INET_CMD = "ip addr | grep inet"
 
 
 def set_cluster_status(meta: kopf.Meta, statefield: str, state: str,
@@ -1027,6 +1030,7 @@ def restore_postgresql(
         restore_postgresql_fromssh(meta, spec, patch, status, logger, conn)
 
 
+# LABEL: MULTI_PG_VERSIONS
 def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      postgresql_major_version: int) -> None:
     logger.info("create postgresql log table")
@@ -1973,15 +1977,22 @@ def create_services(
                 machines = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
                     MACHINES)
                 read_vip = service[VIP]
+                READ_SERVER = LVS_REAL_READ_SERVER
             elif service[SELECTOR] == SERVICE_STANDBY_READONLY:
                 machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
                     MACHINES).copy()
                 machines += spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
                     MACHINES)
                 read_vip = service[VIP]
+                READ_SERVER = LVS_REAL_READ_SERVER
             else:
                 logger.error(f"unsupport service {service}")
                 continue
+
+            if machines == None or len(machines) == 0:
+                machines = [spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
+                    MACHINES)[0]]
+                READ_SERVER = LVS_REAL_EMPTY_SERVER
 
             for machine in machines:
                 if service[SELECTOR] == SERVICE_PRIMARY:
@@ -1992,7 +2003,7 @@ def create_services(
                                 meta, spec, patch, status, logger)))
                 else:
                     real_read_servers.append(
-                        LVS_REAL_READ_SERVER.format(
+                        READ_SERVER.format(
                             ip=machine.split(':')[2],
                             port=get_postgresql_config_port(
                                 meta, spec, patch, status, logger)))
@@ -2001,6 +2012,7 @@ def create_services(
             net="eth0",
             main_vip=main_vip,
             read_vip=read_vip,
+            routeid=hash(main_vip)%255 + 1,
             port=get_postgresql_config_port(meta, spec, patch, status, logger),
             real_main_servers="\n".join(real_main_servers),
             real_read_servers="\n".join(real_read_servers))
@@ -2314,6 +2326,25 @@ async def correct_keepalived(
     for conn in (conns.get_conns() + readonly_conns.get_conns()):
         if conn.get_machine() == None:
             break
+
+        main_vip = ""
+        read_vip = ""
+        for service in spec[SERVICES]:
+            if service[SELECTOR] == SERVICE_PRIMARY:
+                main_vip = service[VIP]
+            elif service[SELECTOR] == SERVICE_READONLY:
+                read_vip = service[VIP]
+            elif service[SELECTOR] == SERVICE_STANDBY_READONLY:
+                read_vip = service[VIP]
+            else:
+                logger.error(f"unsupport service {service}")
+
+        output = machine_exec_command(conn.get_machine().get_ssh(),
+                                      GET_INET_CMD,
+                                      interrupt=False)
+        if len(main_vip) > 0 and len(read_vip) > 0 and (output.find(main_vip) == -1 or output.find(read_vip) == -1):
+            machine_exec_command(conn.get_machine().get_ssh(),
+                LVS_SET_NET.format(main_vip=main_vip, read_vip=read_vip))
 
         output = machine_exec_command(conn.get_machine().get_ssh(),
                                       STATUS_KEEPALIVED,
@@ -2693,6 +2724,7 @@ def delete_services(
             machine_exec_command(conn.get_machine().get_ssh(), STOP_KEEPALIVED)
             machine_exec_command(conn.get_machine().get_ssh(),
                                  "rm -rf " + KEEPALIVED_CONF)
+            machine_exec_command(conn.get_machine().get_ssh(), LVS_UNSET_NET)
         conns.free_conns()
         readonly_conns.free_conns()
 
