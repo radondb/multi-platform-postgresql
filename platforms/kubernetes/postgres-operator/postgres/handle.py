@@ -3,6 +3,7 @@ import kopf
 import paramiko
 import os
 import string
+import traceback
 import time
 import random
 import tempfile
@@ -569,8 +570,10 @@ def create_statefulset(
 
     logger.info(f"create statefulset with {statefulset_body}")
     kopf.adopt(statefulset_body)
-    apps_v1_api.create_namespaced_stateful_set(namespace=namespace,
-                                               body=statefulset_body)
+    try:
+        apps_v1_api.create_namespaced_stateful_set(namespace=namespace, body=statefulset_body)
+    except Exception as e:
+        logger.error(f"error maybe occurs, please check if pod created. {e}")
 
 
 def get_statefulset_name(name: str, field: str, replica: int) -> str:
@@ -1560,9 +1563,7 @@ def delete_postgresql(
                         conn.get_k8s().get_podname())),
                 conn.get_k8s().get_namespace())
         except Exception as e:
-            logger.error(
-                "Exception when calling CoreV1Api->delete_namespaced_service: %s\n"
-                % e)
+            logger.error(f"Exception when calling CoreV1Api->delete_namespaced_service: {e}")
         #try:
         #    logger.info("delete postgresql instance service from k8s " +
         #                statefulset_name_get_external_service_name(
@@ -2144,7 +2145,9 @@ async def create_cluster(
         set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_RUN,
                            logger)
     except Exception as e:
-        logger.error(f"error occurs, {e.args}")
+        logger.error(f"error occurs, {e}")
+        traceback.print_exc()
+        traceback.format_exc()
         set_cluster_status(meta, CLUSTER_CREATE_CLUSTER,
                            CLUSTER_STATUS_CREATE_FAILED, logger)
 
@@ -3097,6 +3100,8 @@ async def update_cluster(
         set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, cluster_status,
                            logger)
     except Exception as e:
-        logger.error(f"error occurs, {e.args}")
+        logger.error(f"error occurs, {e}")
+        traceback.print_exc()
+        traceback.format_exc()
         set_cluster_status(meta, CLUSTER_CREATE_CLUSTER,
                            CLUSTER_STATUS_UPDATE_FAILED, logger)
