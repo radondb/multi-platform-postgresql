@@ -138,7 +138,7 @@ function reload_postgresql(){
 function restart_postgresql(){
 	if [ "$PG_MODE" = monitor -o "$PG_MODE" = readwrite -o "$PG_MODE" = readonly ]; then
 		# auto_failover start it
-		pg_ctl stop -D $PGDATA
+		pg_ctl restart -D $PGDATA
 	else
 		pg_ctl restart -D $PGDATA
 	fi

@@ -43,12 +43,12 @@ async def startup(settings: kopf.OperatorSettings, **_kwargs):
                 retries=operator_config.BOOTSTRAP_RETRIES,
                 backoff=operator_config.BOOTSTRAP_RETRY_DELAY)
 async def cluster_create(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        **_kwargs,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    **_kwargs,
 ):
     await create_cluster(meta, spec, patch, status, logger)
 
@@ -60,13 +60,13 @@ async def cluster_create(
                 retries=operator_config.BOOTSTRAP_RETRIES,
                 backoff=operator_config.BOOTSTRAP_RETRY_DELAY)
 async def cluster_update(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        diff: kopf.Diff,
-        **_kwargs,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    diff: kopf.Diff,
+    **_kwargs,
 ):
     await update_cluster(meta, spec, patch, status, logger, diff)
 
@@ -78,12 +78,12 @@ async def cluster_update(
                 retries=operator_config.BOOTSTRAP_RETRIES,
                 backoff=operator_config.BOOTSTRAP_RETRY_DELAY)
 async def cluster_delete(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        **_kwargs,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    **_kwargs,
 ):
     await delete_cluster(meta, spec, patch, status, logger)
 
@@ -99,11 +99,11 @@ async def cluster_delete(
     initial_delay=10,
 )
 async def cluster_timer(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        **_kwargs,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    **_kwargs,
 ):
     await timer_cluster(meta, spec, patch, status, logger)

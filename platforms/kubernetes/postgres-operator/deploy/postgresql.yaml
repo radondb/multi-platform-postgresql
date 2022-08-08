@@ -5,7 +5,6 @@ metadata:
   #namespace: radondb-postgres-operator
 spec:
   action: start #stop start
-  #action: stop #stop start
   deletepvc: true
   services:
     - selector: primary # autofailover/primary/standby/readonly/standby-readonly
@@ -66,7 +65,6 @@ spec:
     hbas:
       - host all all all md5
     configs:
-      - decrease_config=off #on enable decrease "max_connections", "max_prepared_transactions", "max_locks_per_transaction", "max_wal_senders", "max_worker_processes"
       - max_connections=133
       - shared_buffers=133MB
       - port=5432

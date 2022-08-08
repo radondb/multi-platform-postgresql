@@ -4,7 +4,9 @@ from typed import Callable
 
 
 def timeout(*, timeout: float) -> Callable:
+
     def decorator(fn: Callable) -> Callable:
+
         @wrapt.decorator
         async def _async_timeout(wrapped, instance, args, kwargs):
             if kwargs["runtime"].total_seconds() >= timeout:

@@ -1,16 +1,16 @@
 import logging
-import os
-import random
-import string
-import tempfile
-import time
-
 import kopf
 import paramiko
-from kubernetes import client
+import os
+import string
+import time
+import random
+import tempfile
+from kubernetes import client, config
 from kubernetes.stream import stream
-
 from config import operator_config
+from typed import LabelType, InstanceConnection, InstanceConnections, TypedDict, InstanceConnectionMachine, InstanceConnectionK8S, Tuple, Any, List
+
 from constants import (
     VIP,
     RADONDB_POSTGRES,
@@ -58,7 +58,13 @@ from constants import (
     API_GROUP,
     API_VERSION_V1,
     RESOURCE_POSTGRESQL,
+    RESOURCE_KIND_POSTGRESQL,
     CLUSTER_CREATE_CLUSTER,
+    CLUSTER_CREATE_BEGIN,
+    CLUSTER_CREATE_ADD_FAILOVER,
+    CLUSTER_CREATE_ADD_READWRITE,
+    CLUSTER_CREATE_ADD_READONLY,
+    CLUSTER_CREATE_FINISH,
     BASE_LABEL_PART_OF,
     BASE_LABEL_MANAGED_BY,
     BASE_LABEL_NAME,
@@ -75,6 +81,7 @@ from constants import (
     LABEL_ROLE,
     LABEL_ROLE_PRIMARY,
     LABEL_ROLE_STANDBY,
+    LABEL_STATEFULSET_NAME,
     MACHINE_MODE,
     K8S_MODE,
     DOCKER_COMPOSE_FILE,
@@ -84,7 +91,9 @@ from constants import (
     DOCKER_COMPOSE_ENVFILE,
     DOCKER_COMPOSE_DIR,
     PGDATA_DIR,
+    ASSIST_DIR,
     DATA_DIR,
+    INIT_FINISH,
     PG_CONFIG_PREFIX,
     PG_HBA_PREFIX,
     RESTORE,
@@ -108,8 +117,6 @@ from constants import (
     CLUSTER_STATUS_TERMINATE,
     CLUSTER_STATUS,
 )
-from typed import LabelType, InstanceConnection, InstanceConnections, TypedDict, InstanceConnectionMachine, \
-    InstanceConnectionK8S, Tuple, Any, List
 
 FIELD_DELIMITER = "-"
 WAITING_POSTGRESQL_READY_COMMAND = ["pgtools", "-a"]
@@ -143,15 +150,12 @@ DIFF_FIELD_READWRITE_VOLUME = (SPEC, POSTGRESQL, READWRITEINSTANCE,
 DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
 STATEFULSET_REPLICAS = 1
-DECREASE_CONFIG = "decrease_config"
 PG_CONFIG_IGONRE = ("block_size", "data_checksums", "data_directory_mode",
                     "debug_assertions", "integer_datetimes", "lc_collate",
                     "lc_ctype", "max_function_args", "max_identifier_length",
                     "max_index_keys", "segment_size", "server_encoding",
                     "server_version", "server_version_num", "ssl_library",
-                    "wal_block_size", "wal_segment_size", DECREASE_CONFIG)
-DECREASE_ITEMS = ["max_connections", "max_prepared_transactions", "max_locks_per_transaction", "max_wal_senders",
-                  "max_worker_processes"]
+                    "wal_block_size", "wal_segment_size")
 PG_CONFIG_RESTART = (
     "allow_system_table_mods", "archive_mode", "autovacuum_freeze_max_age",
     "autovacuum_max_workers", "autovacuum_multixact_freeze_max_age", "bonjour",
@@ -226,13 +230,13 @@ def set_password(patch: kopf.Patch, status: kopf.Status) -> None:
 
 
 def create_statefulset_service(
-        name: str,
-        external_name: str,
-        namespace: str,
-        labels: LabelType,
-        # port: int,
-        logger: logging.Logger,
-        meta: kopf.Meta,
+    name: str,
+    external_name: str,
+    namespace: str,
+    labels: LabelType,
+    #port: int,
+    logger: logging.Logger,
+    meta: kopf.Meta,
 ) -> None:
     core_v1_api = client.CoreV1Api()
 
@@ -242,16 +246,16 @@ def create_statefulset_service(
     statefulset_service_body["metadata"] = {
         "name": name,
         "namespace": namespace
-        # "labels": get_statefulset_service_labels(meta)
+        #"labels": get_statefulset_service_labels(meta)
     }
     statefulset_service_body["spec"] = {
         "clusterIP": "None",
         "selector": labels
         # allow all port
-        # "ports": [{
+        #"ports": [{
         #    "port": port,
         #    "targetPort": port
-        # }]
+        #}]
     }
 
     logger.info(f"create statefulset service with {statefulset_service_body}")
@@ -259,29 +263,30 @@ def create_statefulset_service(
     core_v1_api.create_namespaced_service(namespace=namespace,
                                           body=statefulset_service_body)
 
-    # service_body = {}
-    # service_body["apiVersion"] = "v1"
-    # service_body["kind"] = "Service"
-    # service_body["metadata"] = {
+    #service_body = {}
+    #service_body["apiVersion"] = "v1"
+    #service_body["kind"] = "Service"
+    #service_body["metadata"] = {
     #    "name": external_name,
     #    "namespace": namespace
-    # }
-    # service_body["spec"] = {
+    #}
+    #service_body["spec"] = {
     #    "type": "ClusterIP",
     #    "selector": labels,
     #    "ports": [{
     #        "port": port,
     #        "targetPort": port
     #    }]
-    # }
+    #}
 
-    # logger.info(f"create statefulset external service with {service_body}")
-    # kopf.adopt(service_body)
-    # core_v1_api.create_namespaced_service(namespace=namespace,
+    #logger.info(f"create statefulset external service with {service_body}")
+    #kopf.adopt(service_body)
+    #core_v1_api.create_namespaced_service(namespace=namespace,
     #                                      body=service_body)
 
 
 def get_connhost(conn: InstanceConnection) -> str:
+
     if conn.get_k8s() != None:
         return pod_conn_get_pod_address(conn)
     if conn.get_machine() != None:
@@ -289,11 +294,11 @@ def get_connhost(conn: InstanceConnection) -> str:
 
 
 def autofailover_switchover(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
     auto_failover_conns = connections(spec, meta, patch,
                                       get_field(AUTOFAILOVER), False, None,
@@ -308,11 +313,11 @@ def autofailover_switchover(
 
 
 def get_primary_host(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> str:
     auto_failover_conns = connections(spec, meta, patch,
                                       get_field(AUTOFAILOVER), False, None,
@@ -329,11 +334,11 @@ def get_primary_host(
 
 
 def waiting_cluster_final_status(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
     if spec[ACTION] == ACTION_STOP:
         return
@@ -386,7 +391,7 @@ def waiting_cluster_final_status(
             if conn.get_machine() == None:
                 total_nodes = int(
                     spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]) + int(
-                    spec[POSTGRESQL][READONLYINSTANCE][REPLICAS])
+                        spec[POSTGRESQL][READONLYINSTANCE][REPLICAS])
             else:
                 total_nodes = len(
                     spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(MACHINES)
@@ -404,11 +409,11 @@ def waiting_cluster_final_status(
 
 
 def waiting_cluster_correct_status(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
     if spec[ACTION] == ACTION_STOP:
         return
@@ -460,7 +465,7 @@ def waiting_cluster_correct_status(
             if conn.get_machine() == None:
                 total_nodes = int(
                     spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]) + int(
-                    spec[POSTGRESQL][READONLYINSTANCE][REPLICAS])
+                        spec[POSTGRESQL][READONLYINSTANCE][REPLICAS])
             else:
                 total_nodes = len(
                     spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(MACHINES)
@@ -520,14 +525,15 @@ def waiting_instance_ready(conns: InstanceConnections, logger: logging.Logger):
 
 
 def create_statefulset(
-        name: str,
-        namespace: str,
-        labels: LabelType,
-        podspec_need_copy: TypedDict,
-        vct: TypedDict,
-        env: TypedDict,
-        logger: logging.Logger,
+    name: str,
+    namespace: str,
+    labels: LabelType,
+    podspec_need_copy: TypedDict,
+    vct: TypedDict,
+    env: TypedDict,
+    logger: logging.Logger,
 ) -> None:
+
     apps_v1_api = client.AppsV1Api()
     statefulset_body = {}
     statefulset_body["apiVersion"] = "apps/v1"
@@ -599,36 +605,37 @@ def get_pod_name(name: str, field: str, replica: int) -> str:
 
 
 def pod_conn_get_pod_address(conn: InstanceConnection) -> str:
-    # op-pg-lzzhang-autofailover-0-0.op-pg-lzzhang-autofailover-0.default.svc.cluster.local
-    # podname.svcname.namespace.svc.cluster.local
+    #op-pg-lzzhang-autofailover-0-0.op-pg-lzzhang-autofailover-0.default.svc.cluster.local
+    #podname.svcname.namespace.svc.cluster.local
     return conn.get_k8s().get_podname() + "." + pod_name_get_statefulset_name(
         conn.get_k8s().get_podname()) + "." + conn.get_k8s().get_namespace(
-    ) + ".svc.cluster.local"
+        ) + ".svc.cluster.local"
 
 
 def get_pod_address(name: str, field: str, replica: int,
                     namespace: str) -> str:
-    # op-pg-lzzhang-autofailover-0-0.op-pg-lzzhang-autofailover-0.default.svc.cluster.local
-    # podname.svcname.namespace.svc.cluster.local
+    #op-pg-lzzhang-autofailover-0-0.op-pg-lzzhang-autofailover-0.default.svc.cluster.local
+    #podname.svcname.namespace.svc.cluster.local
     return get_pod_name(
         name, field, replica) + "." + get_statefulset_service_name(
-        name, field, replica) + "." + namespace + ".svc.cluster.local"
-    # return statefulset_name_get_external_service_name(get_statefulset_service_name(name, field, replica))
+            name, field, replica) + "." + namespace + ".svc.cluster.local"
+    #return statefulset_name_get_external_service_name(get_statefulset_service_name(name, field, replica))
 
 
 def create_postgresql(
-        mode: str,
-        spec: kopf.Spec,
-        meta: kopf.Meta,
-        field: str,
-        labels: LabelType,
-        logger: logging.Logger,
-        conns: InstanceConnections,
-        patch: kopf.Patch,
-        create_begin: int,
-        status: kopf.Status,
-        wait_primary: bool,
+    mode: str,
+    spec: kopf.Spec,
+    meta: kopf.Meta,
+    field: str,
+    labels: LabelType,
+    logger: logging.Logger,
+    conns: InstanceConnections,
+    patch: kopf.Patch,
+    create_begin: int,
+    status: kopf.Status,
+    wait_primary: bool,
 ) -> None:
+
     logger.info("create postgresql on " + mode)
 
     if len(field.split(FIELD_DELIMITER)) == 1:
@@ -660,7 +667,7 @@ def create_postgresql(
         if replicas == None:
             replicas = 1
         k8s_env = []
-        # k8s_env.append({"name": "REFRESH_ENV", "value": "0"})
+        #k8s_env.append({"name": "REFRESH_ENV", "value": "0"})
 
     for i, hba in enumerate(hbas):
         env_name = PG_HBA_PREFIX + str(i)
@@ -760,9 +767,9 @@ def create_postgresql(
                 })
                 k8s_env.append({
                     "name":
-                        "EXTERNAL_HOSTNAME",
+                    "EXTERNAL_HOSTNAME",
                     "value":
-                        get_pod_address(meta["name"], field, replica, namespace)
+                    get_pod_address(meta["name"], field, replica, namespace)
                 })
 
         if field == get_field(POSTGRESQL, READWRITEINSTANCE):
@@ -788,9 +795,9 @@ def create_postgresql(
                 })
                 k8s_env.append({
                     "name":
-                        "EXTERNAL_HOSTNAME",
+                    "EXTERNAL_HOSTNAME",
                     "value":
-                        get_pod_address(meta["name"], field, replica, namespace)
+                    get_pod_address(meta["name"], field, replica, namespace)
                 })
                 k8s_env.append({
                     "name": "AUTOCTL_REPLICATOR_PASSWORD",
@@ -798,9 +805,9 @@ def create_postgresql(
                 })
                 k8s_env.append({
                     "name":
-                        "MONITOR_HOSTNAME",
+                    "MONITOR_HOSTNAME",
                     "value":
-                        get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
+                    get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
                 })
         if field == get_field(POSTGRESQL, READONLYINSTANCE):
             if mode == MACHINE_MODE:
@@ -826,9 +833,9 @@ def create_postgresql(
                 })
                 k8s_env.append({
                     "name":
-                        "EXTERNAL_HOSTNAME",
+                    "EXTERNAL_HOSTNAME",
                     "value":
-                        get_pod_address(meta["name"], field, replica, namespace)
+                    get_pod_address(meta["name"], field, replica, namespace)
                 })
                 k8s_env.append({
                     "name": "AUTOCTL_REPLICATOR_PASSWORD",
@@ -840,9 +847,9 @@ def create_postgresql(
                 })
                 k8s_env.append({
                     "name":
-                        "MONITOR_HOSTNAME",
+                    "MONITOR_HOSTNAME",
                     "value":
-                        get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
+                    get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
                 })
 
         if mode == MACHINE_MODE:
@@ -899,12 +906,12 @@ def create_postgresql(
 
 
 def restore_postgresql_fromssh(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        conn: InstanceConnection,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conn: InstanceConnection,
 ) -> None:
     path = spec[RESTORE][RESTORE_FROMSSH][RESTORE_FROMSSH_PATH]
     address = spec[RESTORE][RESTORE_FROMSSH][RESTORE_FROMSSH_ADDRESS]
@@ -954,14 +961,14 @@ def restore_postgresql_fromssh(
         exec_command(conn, cmd, logger, interrupt=True, user='postgres')
 
     # remove recovery file
-    # cmd =["rm", "-rf", os.path.join(PG_DATABASE_DIR, RECOVERY_CONF_FILE)]
+    #cmd =["rm", "-rf", os.path.join(PG_DATABASE_DIR, RECOVERY_CONF_FILE)]
     cmd = [
         "truncate", "--size", "0",
         os.path.join(PG_DATABASE_DIR, RECOVERY_CONF_FILE)
     ]
     exec_command(conn, cmd, logger, interrupt=True, user='postgres')
 
-    # cmd =["rm", "-rf", os.path.join(PG_DATABASE_DIR, RECOVERY_SET_FILE)]
+    #cmd =["rm", "-rf", os.path.join(PG_DATABASE_DIR, RECOVERY_SET_FILE)]
     cmd = [
         "truncate", "--size", "0",
         os.path.join(PG_DATABASE_DIR, RECOVERY_SET_FILE)
@@ -996,11 +1003,11 @@ def restore_postgresql_fromssh(
 
 
 def is_restore_mode(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> bool:
     if spec.get(RESTORE) == None:
         return False
@@ -1012,12 +1019,12 @@ def is_restore_mode(
 
 
 def restore_postgresql(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        conn: InstanceConnection,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conn: InstanceConnection,
 ) -> None:
     if spec[RESTORE].get(RESTORE_FROMSSH) != None:
         restore_postgresql_fromssh(meta, spec, patch, status, logger, conn)
@@ -1038,7 +1045,7 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
     ]
     output = exec_command(conn, cmd, logger, interrupt=False)
     if output.find("CREATE SERVER") == -1:
-        # logging.getLogger().error(
+        #logging.getLogger().error(
         logger.error(f"can't create pg_file_server {cmd}, {output}")
 
     for day in range(1, 32):
@@ -1175,10 +1182,11 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
 
 
 def connect_pods(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        field: str,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    field: str,
 ) -> InstanceConnections:
+
     conns: InstanceConnections = InstanceConnections()
 
     if len(field.split(FIELD_DELIMITER)) == 1:
@@ -1332,7 +1340,7 @@ def docker_exec_command(role: str,
         machine_data_path = operator_config.DATA_PATH_POSTGRESQL
     try:
         workdir = os.path.join(machine_data_path, DOCKER_COMPOSE_DIR)
-        # cmd = "cd " + workdir + "; docker-compose exec " + role + " " + " ".join(cmd)
+        #cmd = "cd " + workdir + "; docker-compose exec " + role + " " + " ".join(cmd)
         cmd = "docker exec " + role + " " + " ".join(['gosu', user] + cmd)
         logger.info(f"docker exec command {cmd} on host {host}")
         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(cmd, get_pty=True)
@@ -1346,8 +1354,8 @@ def docker_exec_command(role: str,
     # see pod_exec_command, don't check ret_code
     std_output = ssh_stdout.read().decode().strip()
     err_output = ssh_stderr.read().decode().strip()
-    # ret_code = ssh_stdout.channel.recv_exit_status()
-    # if ret_code != 0:
+    #ret_code = ssh_stdout.channel.recv_exit_status()
+    #if ret_code != 0:
     #    if interrupt:
     #        raise kopf.PermanentError(
     #            f"docker {ssh} exec command {cmd}  failed, resp is: {err_output} {std_output}"
@@ -1358,7 +1366,7 @@ def docker_exec_command(role: str,
     #        )
     #        return FAILED
 
-    # return str(ssh_stdout.read()).replace('\\r\\n', '').replace('\\n', '')[2:-1]
+    #return str(ssh_stdout.read()).replace('\\r\\n', '').replace('\\n', '')[2:-1]
     return std_output + err_output
 
 
@@ -1381,17 +1389,18 @@ def machine_exec_command(ssh: paramiko.SSHClient,
 
 
 def connections(
-        spec: kopf.Spec,
-        meta: kopf.Meta,
-        patch: kopf.Patch,
-        field: str,
-        create: bool,
-        labels: LabelType,
-        logger: logging.Logger,
-        create_begin: int,
-        status: kopf.Status,
-        wait_primary: bool,
+    spec: kopf.Spec,
+    meta: kopf.Meta,
+    patch: kopf.Patch,
+    field: str,
+    create: bool,
+    labels: LabelType,
+    logger: logging.Logger,
+    create_begin: int,
+    status: kopf.Status,
+    wait_primary: bool,
 ) -> InstanceConnections:
+
     conns: InstanceConnections = InstanceConnections()
     if len(field.split(FIELD_DELIMITER)) == 1:
         machines = spec.get(AUTOFAILOVER).get(MACHINES)
@@ -1435,12 +1444,12 @@ def get_field(*fields):
 
 
 def create_autofailover(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        labels: LabelType,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    labels: LabelType,
 ) -> None:
     logger.info("create autofailover")
     conns = connections(spec, meta, patch, get_field(AUTOFAILOVER), True,
@@ -1449,15 +1458,16 @@ def create_autofailover(
 
 
 def connections_target(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        field: str,
-        target_machines: List,
-        target_k8s: List,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    field: str,
+    target_machines: List,
+    target_k8s: List,
 ) -> InstanceConnections:
+
     conns: InstanceConnections = InstanceConnections()
     if len(field.split(FIELD_DELIMITER)) == 1:
         role = AUTOFAILOVER
@@ -1498,13 +1508,13 @@ def machine_postgresql_down(conn: InstanceConnection,
 
 # only stop the instance not do pgtools -d/-D
 def delete_postgresql(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        delete_disk: bool,
-        conn: InstanceConnection,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    delete_disk: bool,
+    conn: InstanceConnection,
 ) -> None:
     if delete_disk == True:
         logger.info("delete postgresql instance from autofailover")
@@ -1552,7 +1562,7 @@ def delete_postgresql(
             logger.error(
                 "Exception when calling CoreV1Api->delete_namespaced_service: %s\n"
                 % e)
-        # try:
+        #try:
         #    logger.info("delete postgresql instance service from k8s " +
         #                statefulset_name_get_external_service_name(
         #                    pod_name_get_statefulset_name(
@@ -1563,7 +1573,7 @@ def delete_postgresql(
         #            pod_name_get_statefulset_name(
         #                conn.get_k8s().get_podname())),
         #        conn.get_k8s().get_namespace())
-        # except Exception as e:
+        #except Exception as e:
         #    logger.error(
         #        "Exception when calling CoreV1Api->delete_namespaced_service: %s\n"
         #        % e)
@@ -1573,15 +1583,15 @@ def delete_postgresql(
 
 
 def delete_autofailover(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        field: str,
-        target_machines: List,
-        target_k8s: List,  # [begin:int, end: int]
-        delete_disk: bool,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    field: str,
+    target_machines: List,
+    target_k8s: List,  #[begin:int, end: int]
+    delete_disk: bool,
 ) -> None:
     logger.info("delete autofailover instance")
     conns = connections_target(meta, spec, patch, status, logger, field,
@@ -1592,15 +1602,15 @@ def delete_autofailover(
 
 
 def delete_postgresql_readwrite(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        field: str,
-        target_machines: List,
-        target_k8s: List,  # [begin:int, end: int]
-        delete_disk: bool,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    field: str,
+    target_machines: List,
+    target_k8s: List,  #[begin:int, end: int]
+    delete_disk: bool,
 ) -> None:
     logger.info("delete postgresql readwrite instance")
     conns = connections_target(meta, spec, patch, status, logger, field,
@@ -1611,15 +1621,15 @@ def delete_postgresql_readwrite(
 
 
 def delete_postgresql_readonly(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        field: str,
-        target_machines: List,
-        target_k8s: List,  # [begin:int, end: int]
-        delete_disk: bool,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    field: str,
+    target_machines: List,
+    target_k8s: List,  #[begin:int, end: int]
+    delete_disk: bool,
 ) -> None:
     logger.info("delete postgresql readonly instance")
     conns = connections_target(meta, spec, patch, status, logger, field,
@@ -1630,14 +1640,14 @@ def delete_postgresql_readonly(
 
 
 def create_postgresql_readwrite(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        labels: LabelType,
-        create_begin: int,
-        wait_primary: bool,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    labels: LabelType,
+    create_begin: int,
+    wait_primary: bool,
 ) -> None:
     logger.info("create postgresql readwrite instance")
     conns = connections(spec, meta, patch,
@@ -1647,13 +1657,13 @@ def create_postgresql_readwrite(
 
 
 def create_postgresql_readonly(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        labels: LabelType,
-        create_begin: int,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    labels: LabelType,
+    create_begin: int,
 ) -> None:
     logger.info("create postgresql readonly instance")
     conns = connections(spec, meta, patch,
@@ -1807,12 +1817,12 @@ def change_user_password(conn: InstanceConnection, name: str, password: str,
 
 
 def create_users_admin(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        conns: InstanceConnections,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conns: InstanceConnections,
 ) -> None:
     if spec[POSTGRESQL].get(USERS) == None:
         return
@@ -1827,12 +1837,12 @@ def create_users_admin(
 
 
 def create_users_normal(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        conns: InstanceConnections,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conns: InstanceConnections,
 ) -> None:
     if spec[POSTGRESQL].get(USERS) == None:
         return
@@ -1847,12 +1857,12 @@ def create_users_normal(
 
 
 def create_users(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        conns: InstanceConnections,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conns: InstanceConnections,
 ) -> None:
     if spec[POSTGRESQL].get(USERS) == None:
         return
@@ -1876,11 +1886,11 @@ def get_service_labels(meta: kopf.Meta) -> str:
 
 
 def get_postgresql_config_port(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> int:
     configs = spec[POSTGRESQL][CONFIGS]
     for i, config in enumerate(configs):
@@ -1892,29 +1902,12 @@ def get_postgresql_config_port(
     return 5432
 
 
-def get_decrease_config(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-) -> int:
-    configs = spec[POSTGRESQL][CONFIGS]
-    for i, config in enumerate(configs):
-        name = config.split("=")[0].strip()
-        value = config[config.find("=") + 1:].strip()
-        if name == DECREASE_CONFIG:
-            return value
-
-    return "off"
-
-
 def create_services(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
     autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
     # k8s mode
@@ -1997,8 +1990,10 @@ def create_services(
                 continue
 
             if machines == None or len(machines) == 0:
-                machines = [spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
-                    MACHINES)[0]]
+                machines = [
+                    spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(MACHINES)
+                    [0]
+                ]
                 READ_SERVER = LVS_REAL_EMPTY_SERVER
 
             for machine in machines:
@@ -2010,10 +2005,10 @@ def create_services(
                                 meta, spec, patch, status, logger)))
                 else:
                     real_read_servers.append(
-                        READ_SERVER.format(
-                            ip=machine.split(':')[2],
-                            port=get_postgresql_config_port(
-                                meta, spec, patch, status, logger)))
+                        READ_SERVER.format(ip=machine.split(':')[2],
+                                           port=get_postgresql_config_port(
+                                               meta, spec, patch, status,
+                                               logger)))
 
         lvs_conf = LVS_BODY.format(
             net="eth0",
@@ -2081,12 +2076,13 @@ def check_param(spec: kopf.Spec,
 
 
 async def create_postgresql_cluster(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
+
     logger.info("creating postgresql cluster")
     set_password(patch, status)
 
@@ -2106,13 +2102,13 @@ async def create_postgresql_cluster(
     # set_create_cluster(patch, CLUSTER_CREATE_ADD_READWRITE)
     create_postgresql_readwrite(meta, spec, patch, status, logger,
                                 get_readwrite_labels(meta), 0, True)
-    # conns = connections(spec, meta, patch,
+    #conns = connections(spec, meta, patch,
     #                    get_field(POSTGRESQL, READWRITEINSTANCE), False, None,
     #                    logger, None, status, False)
-    # if conns.get_conns()[0].get_machine() != None:
+    #if conns.get_conns()[0].get_machine() != None:
     #    waiting_postgresql_ready(conns, logger)
     #    waiting_cluster_final_status(meta, spec, patch, status, logger)
-    # conns.free_conns()
+    #conns.free_conns()
 
     # create postgresql & readonly node
     # set_create_cluster(patch, CLUSTER_CREATE_ADD_READONLY)
@@ -2124,11 +2120,11 @@ async def create_postgresql_cluster(
 
 
 async def create_cluster(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
     try:
         set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_CREATE,
@@ -2153,11 +2149,11 @@ async def create_cluster(
 
 
 async def delete_cluster(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
     set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_TERMINATE,
                        logger)
@@ -2172,13 +2168,14 @@ def delete_pvc(logger: logging.Logger, name: str, namespace: str) -> None:
 
 
 def delete_storage(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        conn: InstanceConnection,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conn: InstanceConnection,
 ) -> None:
+
     if conn.get_k8s() != None:
         delete_pvc(logger, get_pvc_name(conn.get_k8s().get_podname()),
                    conn.get_k8s().get_namespace())
@@ -2195,12 +2192,13 @@ def delete_storage(
 
 
 def delete_storages(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
+
     conns = connections(spec, meta, patch, get_field(AUTOFAILOVER), False,
                         None, logger, None, status, False)
     for conn in conns.get_conns():
@@ -2223,11 +2221,11 @@ def delete_storages(
 
 
 async def delete_postgresql_cluster(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
     if spec[DELETE_PVC]:
         delete_storages(meta, spec, patch, status, logger)
@@ -2255,12 +2253,12 @@ def get_conn_role(conn: InstanceConnection) -> str:
 
 
 def correct_user_password(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        conn: InstanceConnection,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conn: InstanceConnection,
 ) -> None:
     PASSWORD_FAILED_MESSAGEd = "password authentication failed for user"
 
@@ -2293,11 +2291,11 @@ def correct_user_password(
 
 
 async def correct_postgresql_password(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
     autofailover_conns = connections(spec, meta, patch,
                                      get_field(AUTOFAILOVER), False, None,
@@ -2315,11 +2313,11 @@ async def correct_postgresql_password(
 
 
 async def correct_keepalived(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
     conns = connections(spec, meta, patch,
                         get_field(POSTGRESQL, READWRITEINSTANCE), False, None,
@@ -2346,9 +2344,11 @@ async def correct_keepalived(
         output = machine_exec_command(conn.get_machine().get_ssh(),
                                       GET_INET_CMD,
                                       interrupt=False)
-        if len(main_vip) > 0 and len(read_vip) > 0 and (output.find(main_vip) == -1 or output.find(read_vip) == -1):
-            machine_exec_command(conn.get_machine().get_ssh(),
-                                 LVS_SET_NET.format(main_vip=main_vip, read_vip=read_vip))
+        if len(main_vip) > 0 and len(read_vip) > 0 and (
+                output.find(main_vip) == -1 or output.find(read_vip) == -1):
+            machine_exec_command(
+                conn.get_machine().get_ssh(),
+                LVS_SET_NET.format(main_vip=main_vip, read_vip=read_vip))
 
         output = machine_exec_command(conn.get_machine().get_ssh(),
                                       STATUS_KEEPALIVED,
@@ -2362,11 +2362,11 @@ async def correct_keepalived(
 
 
 async def correct_postgresql_role(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
     core_v1_api = client.CoreV1Api()
 
@@ -2406,33 +2406,34 @@ async def correct_postgresql_role(
 
 
 async def timer_cluster(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
+
     await correct_postgresql_role(meta, spec, patch, status, logger)
     await correct_postgresql_password(meta, spec, patch, status, logger)
     await correct_keepalived(meta, spec, patch, status, logger)
 
 
 def update_streaming(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        AC: str,
-        FIELD: Tuple,
-        OLD: Any,
-        NEW: Any,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    AC: str,
+    FIELD: Tuple,
+    OLD: Any,
+    NEW: Any,
 ) -> None:
     if FIELD == DIFF_FIELD_STREAMING:
         if AC != DIFF_CHANGE:
             logger.error(DIFF_FIELD_STREAMING + " only support " + DIFF_CHANGE)
         else:
-            # pg_autoctl set node replication-quorum 0 --pgdata /var/lib/postgresql/data/pg_data/
+            #pg_autoctl set node replication-quorum 0 --pgdata /var/lib/postgresql/data/pg_data/
             if NEW == STREAMING_SYNC:
                 quorum = 1
             elif NEW == STREAMING_ASYNC:
@@ -2453,13 +2454,13 @@ def update_streaming(
 
 
 def postgresql_action(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        conn: InstanceConnection,
-        start: bool,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conn: InstanceConnection,
+    start: bool,
 ) -> None:
     if start == False:
         cmd = ["pgtools", "-R"]
@@ -2489,10 +2490,10 @@ def postgresql_action(
                 % e)
     if conn.get_machine() != None:
         if start:
-            # cmd = "start"
+            #cmd = "start"
             cmd = "up -d"
         else:
-            # cmd = "stop"
+            #cmd = "stop"
             cmd = "down"
 
         logger.info("host " + conn.get_machine().get_host() + " postgresql " +
@@ -2508,19 +2509,19 @@ def postgresql_action(
 
 
 def update_action(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        AC: str,
-        FIELD: Tuple,
-        OLD: Any,
-        NEW: Any,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    AC: str,
+    FIELD: Tuple,
+    OLD: Any,
+    NEW: Any,
 ) -> None:
     if FIELD == DIFF_FIELD_ACTION:
         if AC != DIFF_CHANGE:
-            # raise kopf.TemporaryError("Exception when calling list_pod_for_all_namespaces: %s\n" % e)
+            #raise kopf.TemporaryError("Exception when calling list_pod_for_all_namespaces: %s\n" % e)
             logger.error(
                 str(DIFF_FIELD_ACTION) + " only support " + DIFF_CHANGE)
         else:
@@ -2552,20 +2553,21 @@ def update_action(
 
 
 def update_podspec_volume(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        AC: str,
-        FIELD: Tuple,
-        OLD: Any,
-        NEW: Any,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    AC: str,
+    FIELD: Tuple,
+    OLD: Any,
+    NEW: Any,
 ) -> None:
+
     if FIELD[0:len(DIFF_FIELD_AUTOFAILOVER_PODSPEC
                    )] == DIFF_FIELD_AUTOFAILOVER_PODSPEC or FIELD[
-                                                            0:len(DIFF_FIELD_AUTOFAILOVER_VOLUME
-                                                                  )] == DIFF_FIELD_AUTOFAILOVER_VOLUME:
+                       0:len(DIFF_FIELD_AUTOFAILOVER_VOLUME
+                             )] == DIFF_FIELD_AUTOFAILOVER_VOLUME:
         autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
         if autofailover_machines != None:
             delete_autofailover(meta, spec, patch, status, logger,
@@ -2578,8 +2580,8 @@ def update_podspec_volume(
                             get_autofailover_labels(meta))
     if FIELD[0:len(DIFF_FIELD_READWRITE_PODSPEC
                    )] == DIFF_FIELD_READWRITE_PODSPEC or FIELD[
-                                                         0:len(DIFF_FIELD_READWRITE_VOLUME
-                                                               )] == DIFF_FIELD_READWRITE_VOLUME:
+                       0:len(DIFF_FIELD_READWRITE_VOLUME
+                             )] == DIFF_FIELD_READWRITE_VOLUME:
         readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
             MACHINES)
         if readwrite_machines != None:
@@ -2596,8 +2598,8 @@ def update_podspec_volume(
                                     get_readwrite_labels(meta), 0, False)
     if FIELD[0:len(DIFF_FIELD_READONLY_PODSPEC
                    )] == DIFF_FIELD_READONLY_PODSPEC or FIELD[
-                                                        0:len(DIFF_FIELD_READONLY_VOLUME
-                                                              )] == DIFF_FIELD_READONLY_VOLUME:
+                       0:len(DIFF_FIELD_READONLY_VOLUME
+                             )] == DIFF_FIELD_READONLY_VOLUME:
         readonly_machines = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
             MACHINES)
         if readonly_machines != None:
@@ -2614,19 +2616,19 @@ def update_podspec_volume(
 
 
 def update_replicas(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        AC: str,
-        FIELD: Tuple,
-        OLD: Any,
-        NEW: Any,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    AC: str,
+    FIELD: Tuple,
+    OLD: Any,
+    NEW: Any,
 ) -> None:
     if FIELD == DIFF_FIELD_READWRITE_REPLICAS:
         if AC != DIFF_CHANGE:
-            # raise kopf.TemporaryError("Exception when calling list_pod_for_all_namespaces: %s\n" % e)
+            #raise kopf.TemporaryError("Exception when calling list_pod_for_all_namespaces: %s\n" % e)
             logger.error(
                 str(DIFF_FIELD_ACTION) + " only support " + DIFF_CHANGE)
         else:
@@ -2642,7 +2644,7 @@ def update_replicas(
 
     if FIELD == DIFF_FIELD_READWRITE_MACHINES:
         if AC != DIFF_CHANGE:
-            # raise kopf.TemporaryError("Exception when calling list_pod_for_all_namespaces: %s\n" % e)
+            #raise kopf.TemporaryError("Exception when calling list_pod_for_all_namespaces: %s\n" % e)
             logger.error(
                 str(DIFF_FIELD_ACTION) + " only support " + DIFF_CHANGE)
         else:
@@ -2688,11 +2690,11 @@ def update_replicas(
 
 
 def delete_services(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
 ) -> None:
     autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
     # k8s mode
@@ -2732,15 +2734,15 @@ def delete_services(
 
 
 def update_service(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        AC: str,
-        FIELD: Tuple,
-        OLD: Any,
-        NEW: Any,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    AC: str,
+    FIELD: Tuple,
+    OLD: Any,
+    NEW: Any,
 ) -> None:
     if FIELD == DIFF_FIELD_SERVICE:
         delete_services(meta, spec, patch, status, logger)
@@ -2748,15 +2750,15 @@ def update_service(
 
 
 def update_configs(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        AC: str,
-        FIELD: Tuple,
-        OLD: Any,
-        NEW: Any,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    AC: str,
+    FIELD: Tuple,
+    OLD: Any,
+    NEW: Any,
 ) -> None:
     conns = []
     cmd = ["pgtools", "-c"]
@@ -2798,62 +2800,85 @@ def update_configs(
                         restart_postgresql = True
                         if name == 'port':
                             port_change = True
-            if name in DECREASE_ITEMS and get_decrease_config(meta, spec, patch, status, logger) == "off":
-                for oldi, oldconfig in enumerate(OLD):
-                    oldname = oldconfig.split("=")[0].strip()
-                    oldvalue = oldconfig[oldconfig.find("=") + 1:].strip()
-                    if name == oldname and int(value) < int(oldvalue):
-                        value = oldvalue
 
             config = name + '="' + value + '"'
             cmd.append('-e')
             cmd.append(PG_CONFIG_PREFIX + config)
 
-        if port_change == True:
-            cmd.append('-d')
-        elif restart_postgresql == True:
-            cmd.append('-r')
-
         waiting_postgresql_ready(readwrite_conns, logger)
         waiting_postgresql_ready(readonly_conns, logger)
-        primary_conn = None
-        for conn in conns:
-            if get_primary_host(meta, spec, patch, status,
-                                logger) == get_connhost(conn):
-                primary_conn = conn
-                continue
+        primary_host = get_primary_host(meta, spec, patch, status, logger)
+        if port_change == True:
+            cmd.append('-d')
+            # first update slave node
+            for conn in conns:
+                if get_connhost(conn) == primary_host:
+                    continue
 
-            # if conn.get_machine() != None:
-            #    replicas = len(spec[POSTGRESQL][READWRITEINSTANCE][MACHINES])
-            # else:
-            #    replicas = int(spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS])
-            # if replicas > 1 and get_primary_host( meta, spec, patch, status, logger) == get_connhost(conn):
-            #    autofailover_switchover(meta, spec, patch, status, logger)
-            #    if port_change == True or restart_postgresql == True:
-            #        waiting_cluster_correct_status(meta, spec, patch, status, logger)
-            #    else:
-            #        waiting_cluster_final_status(meta, spec, patch, status, logger)
+                logger.info(f"update configs {cmd} on %s" % get_connhost(conn))
+                output = exec_command(conn, cmd, logger, interrupt=False)
+                if output.find(SUCCESS) == -1:
+                    logger.error(f"update configs {cmd} failed. {output}")
 
-            logger.info("update configs (" + str(cmd) +
-                        ") on %s " % get_connhost(conn))
-            output = exec_command(conn, cmd, logger, interrupt=False)
-            if output.find(SUCCESS) == -1:
-                logger.error(f"update configs {cmd} failed. {output}")
-
-            # if port_change == True or restart_postgresql == True:
-            #    time.sleep(10)
-            # if port_change == True:
-            #    waiting_cluster_correct_status(meta, spec, patch, status,
-            #                                   logger)
-        if port_change == True or restart_postgresql == True:
             waiting_cluster_correct_status(meta, spec, patch, status, logger)
-            time.sleep(6)
+            time.sleep(5)
 
-        logger.info("update configs (" + str(cmd) +
-                    ") on %s " % get_connhost(primary_conn))
-        output = exec_command(primary_conn, cmd, logger, interrupt=False)
-        if output.find(SUCCESS) == -1:
-            logger.error(f"update configs {cmd} failed. {output}")
+            # update primary node
+            for conn in conns:
+                if get_connhost(conn) == primary_host:
+                    logger.info(f"update configs {cmd} on %s" %
+                                get_connhost(conn))
+                    output = exec_command(conn, cmd, logger, interrupt=False)
+                    if output.find(SUCCESS) == -1:
+                        logger.error(f"update configs {cmd} failed. {output}")
+            waiting_cluster_correct_status(meta, spec, patch, status, logger)
+        else:
+            primary_cmd = cmd.copy()
+            slave_cmd = cmd.copy()
+            if restart_postgresql == True:
+                primary_cmd.append('-r')
+                slave_cmd.append('-R')
+            # first update primary node
+            for conn in conns:
+                if get_connhost(conn) == primary_host:
+                    logger.info(f"update configs {cmd} on %s" %
+                                get_connhost(conn))
+                    output = exec_command(conn,
+                                          primary_cmd,
+                                          logger,
+                                          interrupt=False)
+                    if output.find(SUCCESS) == -1:
+                        logger.error(f"update configs {cmd} failed. {output}")
+
+            if restart_postgresql == True:
+                waiting_cluster_correct_status(meta, spec, patch, status,
+                                               logger)
+                for conn in conns:
+                    if get_connhost(conn) == primary_host:
+                        checkpoint_cmd = [
+                            "pgtools", "-w", "0", "-q", "'checkpoint'"
+                        ]
+                        output = exec_command(conn,
+                                              checkpoint_cmd,
+                                              logger,
+                                              interrupt=False)
+                        if output.find("CHECKPOINT") == -1:
+                            logger.error(
+                                f"update configs {checkpoint_cmd} failed. {output}"
+                            )
+                time.sleep(20)
+
+            # update slave node
+            for conn in conns:
+                if get_connhost(conn) == primary_host:
+                    continue
+
+                logger.info(f"update configs {cmd} on %s" % get_connhost(conn))
+                output = exec_command(conn, slave_cmd, logger, interrupt=False)
+                if output.find(SUCCESS) == -1:
+                    logger.error(f"update configs {cmd} failed. {output}")
+
+            waiting_cluster_correct_status(meta, spec, patch, status, logger)
 
         if port_change == True:
             delete_services(meta, spec, patch, status, logger)
@@ -2866,15 +2891,15 @@ def update_configs(
 
 
 def update_hbas(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        AC: str,
-        FIELD: Tuple,
-        OLD: Any,
-        NEW: Any,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    AC: str,
+    FIELD: Tuple,
+    OLD: Any,
+    NEW: Any,
 ) -> None:
     conns = []
     cmd = ["pgtools", "-H"]
@@ -2917,15 +2942,15 @@ def update_hbas(
 
 
 def update_users(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        AC: str,
-        FIELD: Tuple,
-        OLD: Any,
-        NEW: Any,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    AC: str,
+    FIELD: Tuple,
+    OLD: Any,
+    NEW: Any,
 ) -> None:
     if FIELD == DIFF_FIELD_POSTGRESQL_USERS or FIELD == DIFF_FIELD_POSTGRESQL_USERS_ADMIN or FIELD == DIFF_FIELD_POSTGRESQL_USERS_NORMAL:
         conns = connections(spec, meta, patch,
@@ -3001,12 +3026,12 @@ def update_users(
 
 # kubectl patch pg lzzhang --patch '{"spec": {"action": "stop"}}' --type=merge
 async def update_cluster(
-        meta: kopf.Meta,
-        spec: kopf.Spec,
-        patch: kopf.Patch,
-        status: kopf.Status,
-        logger: logging.Logger,
-        diffs: kopf.Diff,
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    diffs: kopf.Diff,
 ) -> None:
     try:
         set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_UPDATE,
