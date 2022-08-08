@@ -1,6 +1,5 @@
 ## Summary of changes
 
-
 ## Checklist
 
 - [ ] Relevant changes are reflected in `CHANGES.rst`

@@ -8,7 +8,10 @@
     "dirtyread": "2.4",
     "name": "radondb-postgresql",
     "version": "v1.0.0",
-    "arches": [ "aarch64", "x86_64" ]
+    "arches": [
+      "aarch64",
+      "x86_64"
+    ]
   },
   "13": {
     "major": 13,
@@ -19,7 +22,10 @@
     "dirtyread": "2.4",
     "name": "radondb-postgresql",
     "version": "v1.0.0",
-    "arches": [ "aarch64", "x86_64" ]
+    "arches": [
+      "aarch64",
+      "x86_64"
+    ]
   },
   "14": {
     "major": 14,
@@ -30,6 +36,9 @@
     "dirtyread": "2.4",
     "name": "radondb-postgresql",
     "version": "v1.0.0",
-    "arches": [ "aarch64", "x86_64" ]
+    "arches": [
+      "aarch64",
+      "x86_64"
+    ]
   }
 }

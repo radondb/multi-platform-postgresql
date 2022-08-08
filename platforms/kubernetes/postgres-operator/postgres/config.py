@@ -1,11 +1,13 @@
 import logging
 import os
-from typed import List, Optional
+
 import kopf
+
 from constants import (
     AUTOFAILOVER,
     POSTGRESQL,
 )
+from typed import List, Optional
 
 UNDEFINED = object()
 

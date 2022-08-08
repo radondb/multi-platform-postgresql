@@ -1,11 +1,11 @@
 {
-	"namespace": "radondb-postgres-operator",
-	"account": "radondb-postgres-operator-account",
-	"clusterrole": "radondb-postgres-operator-cluster",
-	"role": "radondb-postgres-operator-role",
-	"clusterrolebinding": "radondb-postgres-operator-rolebinding-cluster",
-	"rolebinding": "radondb-postgres-operator-rolebinding-role",
-	"name": "radondb-postgres-operator",
-	"image": "radondb-postgres-operator:v0.9.0",
-	"datapath": "/data"
+  "namespace": "radondb-postgres-operator",
+  "account": "radondb-postgres-operator-account",
+  "clusterrole": "radondb-postgres-operator-cluster",
+  "role": "radondb-postgres-operator-role",
+  "clusterrolebinding": "radondb-postgres-operator-rolebinding-cluster",
+  "rolebinding": "radondb-postgres-operator-rolebinding-role",
+  "name": "radondb-postgres-operator",
+  "image": "radondb-postgres-operator:v0.9.0",
+  "datapath": "/data"
 }
