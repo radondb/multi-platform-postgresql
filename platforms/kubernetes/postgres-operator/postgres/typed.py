@@ -1,6 +1,9 @@
-from typing import Dict
-
 import paramiko
+from typing import Dict, TypedDict, TypeVar, Optional, List, Optional, Callable, Tuple, Any
+from constants import (
+    AUTOFAILOVER,
+    POSTGRESQL,
+)
 
 LabelType = Dict[str, str]
 

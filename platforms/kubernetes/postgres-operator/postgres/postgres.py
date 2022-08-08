@@ -1,14 +1,14 @@
 import logging
-
 import kopf
-
-from config import operator_config
 from constants import (
     API_GROUP,
     API_VERSION_V1,
     RESOURCE_POSTGRESQL,
 )
+from config import operator_config
 from handle import create_cluster, delete_cluster, timer_cluster, update_cluster
+
+from kubernetes import client, config
 
 
 @kopf.on.startup()
@@ -50,6 +50,7 @@ async def cluster_create(
     logger: logging.Logger,
     **_kwargs,
 ):
+
     await create_cluster(meta, spec, patch, status, logger)
 
 

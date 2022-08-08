@@ -150,7 +150,7 @@ DIFF_FIELD_READWRITE_VOLUME = (SPEC, POSTGRESQL, READWRITEINSTANCE,
 DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
 STATEFULSET_REPLICAS = 1
-PG_CONFIG_IGONRE = ("block_size", "data_checksums", "data_directory_mode",
+PG_CONFIG_IGNORE = ("block_size", "data_checksums", "data_directory_mode",
                     "debug_assertions", "integer_datetimes", "lc_collate",
                     "lc_ctype", "max_function_args", "max_identifier_length",
                     "max_index_keys", "segment_size", "server_encoding",
@@ -183,6 +183,7 @@ RECOVERY_CONF_FILE = "postgresql-auto-failover-standby.conf"
 RECOVERY_SET_FILE = "postgresql-auto-failover.conf"
 STANDBY_SIGNAL = "standby.signal"
 GET_INET_CMD = "ip addr | grep inet"
+SUCCESS_CHECKPOINT = "CHECKPOINT"
 
 
 def set_cluster_status(meta: kopf.Meta, statefield: str, state: str,
@@ -681,7 +682,7 @@ def create_postgresql(
         name = config.split("=")[0].strip()
         value = config[config.find("=") + 1:].strip()
         config = name + "=" + value
-        if name in PG_CONFIG_IGONRE:
+        if name in PG_CONFIG_IGNORE:
             continue
         if field == get_field(AUTOFAILOVER) and name == 'port':
             continue
@@ -2789,7 +2790,7 @@ def update_configs(
             value = config[config.find("=") + 1:].strip()
             if autofailover == True and name == 'port':
                 continue
-            if name in PG_CONFIG_IGONRE:
+            if name in PG_CONFIG_IGNORE:
                 continue
             if name in PG_CONFIG_RESTART:
                 for oldi, oldconfig in enumerate(OLD):
@@ -2833,6 +2834,7 @@ def update_configs(
                         logger.error(f"update configs {cmd} failed. {output}")
             waiting_cluster_correct_status(meta, spec, patch, status, logger)
         else:
+            checkpoint_cmd = [ "pgtools", "-w", "0", "-q", "'checkpoint'" ]
             primary_cmd = cmd.copy()
             slave_cmd = cmd.copy()
             if restart_postgresql == True:
@@ -2843,6 +2845,14 @@ def update_configs(
                 if get_connhost(conn) == primary_host:
                     logger.info(f"update configs {cmd} on %s" %
                                 get_connhost(conn))
+                    output = exec_command(conn,
+                                          checkpoint_cmd,
+                                          logger,
+                                          interrupt=False)
+                    if output.find(SUCCESS_CHECKPOINT) == -1:
+                        logger.error(
+                            f"update configs {checkpoint_cmd} failed. {output}"
+                            )
                     output = exec_command(conn,
                                           primary_cmd,
                                           logger,
@@ -2855,14 +2865,11 @@ def update_configs(
                                                logger)
                 for conn in conns:
                     if get_connhost(conn) == primary_host:
-                        checkpoint_cmd = [
-                            "pgtools", "-w", "0", "-q", "'checkpoint'"
-                        ]
                         output = exec_command(conn,
                                               checkpoint_cmd,
                                               logger,
                                               interrupt=False)
-                        if output.find("CHECKPOINT") == -1:
+                        if output.find(SUCCESS_CHECKPOINT) == -1:
                             logger.error(
                                 f"update configs {checkpoint_cmd} failed. {output}"
                             )

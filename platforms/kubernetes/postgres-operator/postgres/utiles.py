@@ -1,6 +1,5 @@
-import wrapt
-
 from typed import Callable
+import wrapt
 
 
 def timeout(*, timeout: float) -> Callable:
