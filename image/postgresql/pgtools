@@ -75,16 +75,15 @@ do
 			echo "  -h        help"
 			echo "  -H        flush hba file"
 			echo "  -p action pause/resume  pause or resume start postgresql"
-			echo "  -q auery  run the query"
+			echo "  -q query  run the query"
 			echo "  -w second timeout for query"
 			echo "  -Q        run the query on this database"
-			echo "  -n        not return error"
+			echo "  -n        if failed not return error"
 			echo "  -o        perform switchover"
 			echo "  -r        restart postgresql"
 			echo "  -R        stop auto_failover"
 			echo "  -s value  set auto_failover config: pg_autoctl config set.."
 			echo "  -S value  set auto_failover: pg_autoctl set.."
-			echo "  -n        if failed not return error"
 			exit 0
 			;;
 		H)
