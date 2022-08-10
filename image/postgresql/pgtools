@@ -293,13 +293,13 @@ fi
 if [ "${drop_auto_failover}" = 1 ]; then
 	for i in `seq 1 100`
 	do
-		pg_autoctl drop node --pgdata=$PGDATA
+		pg_autoctl drop node --pgdata=$PGDATA --force
 		if [ $? == 0 ]; then
 			exit 0
 		fi
 		sleep 6
 	done
-	pg_autoctl drop node --pgdata=$PGDATA
+	pg_autoctl drop node --pgdata=$PGDATA --force
 	check_error $? "drop auto_failover failed"
 fi
 
@@ -307,13 +307,13 @@ if [ "${actual_drop_auto_failover}" = 1 ]; then
 	touch ${ASSIST}/actual_drop
 	for i in `seq 1 100`
 	do
-		pg_autoctl drop node --pgdata=$PGDATA
+		pg_autoctl drop node --pgdata=$PGDATA --force
 		if [ $? == 0 ]; then
 			exit 0
 		fi
 		sleep 6
 	done
-	pg_autoctl drop node --pgdata=$PGDATA
+	pg_autoctl drop node --pgdata=$PGDATA --force
 	check_error $? "drop auto_failover failed"
 fi
 
