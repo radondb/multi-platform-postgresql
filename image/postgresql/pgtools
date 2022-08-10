@@ -78,6 +78,8 @@ do
 			echo "  -q auery  run the query"
 			echo "  -w second timeout for query"
 			echo "  -Q        run the query on this database"
+			echo "  -n        not return error"
+			echo "  -o        perform switchover"
 			echo "  -r        restart postgresql"
 			echo "  -R        stop auto_failover"
 			echo "  -s value  set auto_failover config: pg_autoctl config set.."

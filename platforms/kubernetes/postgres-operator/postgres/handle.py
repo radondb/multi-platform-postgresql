@@ -2824,18 +2824,21 @@ def update_configs(
                 if output.find(SUCCESS) == -1:
                     logger.error(f"update configs {cmd} failed. {output}")
 
-            waiting_cluster_correct_status(meta, spec, patch, status, logger)
-            time.sleep(5)
+            waiting_cluster_final_status(meta, spec, patch, status, logger)
+            time.sleep(2)
 
             # update primary node
             for conn in conns:
                 if get_connhost(conn) == primary_host:
+                    autofailover_switchover(meta, spec, patch, status, logger)
+                    waiting_cluster_final_status(meta, spec, patch, status, logger)
+                    time.sleep(2)
                     logger.info(f"update configs {cmd} on %s" %
                                 get_connhost(conn))
                     output = exec_command(conn, cmd, logger, interrupt=False)
                     if output.find(SUCCESS) == -1:
                         logger.error(f"update configs {cmd} failed. {output}")
-            waiting_cluster_correct_status(meta, spec, patch, status, logger)
+            waiting_cluster_final_status(meta, spec, patch, status, logger)
         else:
             checkpoint_cmd = [ "pgtools", "-w", "0", "-q", "'checkpoint'" ]
             primary_cmd = cmd.copy()
@@ -2864,8 +2867,7 @@ def update_configs(
                         logger.error(f"update configs {cmd} failed. {output}")
 
             if restart_postgresql == True:
-                waiting_cluster_correct_status(meta, spec, patch, status,
-                                               logger)
+                waiting_cluster_final_status(meta, spec, patch, status, logger)
                 for conn in conns:
                     if get_connhost(conn) == primary_host:
                         output = exec_command(conn,
@@ -2888,7 +2890,7 @@ def update_configs(
                 if output.find(SUCCESS) == -1:
                     logger.error(f"update configs {cmd} failed. {output}")
 
-            waiting_cluster_correct_status(meta, spec, patch, status, logger)
+            waiting_cluster_final_status(meta, spec, patch, status, logger)
 
         if port_change == True:
             delete_services(meta, spec, patch, status, logger)
