@@ -705,6 +705,9 @@ def create_postgresql(
         machine_env += PG_CONFIG_PREFIX + "log_timezone='Asia/Shanghai'" + "\n"
         machine_env += PG_CONFIG_PREFIX + "datestyle='iso, ymd'" + "\n"
         machine_env += PG_CONFIG_PREFIX + "timezone='Asia/Shanghai'" + "\n"
+        machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_idle=60" + "\n"
+        machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_interval=30" + "\n"
+        machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_count=4" + "\n"
     else:
         k8s_env.append({
             "name": PG_CONFIG_PREFIX + "log_truncate_on_rotation",
@@ -745,6 +748,18 @@ def create_postgresql(
         k8s_env.append({
             "name": PG_CONFIG_PREFIX + "timezone",
             "value": "'Asia/Shanghai'"
+        })
+        k8s_env.append({
+            "name": PG_CONFIG_PREFIX + "tcp_keepalives_idle",
+            "value": "60"
+        })
+        k8s_env.append({
+            "name": PG_CONFIG_PREFIX + "tcp_keepalives_interval",
+            "value": "30"
+        })
+        k8s_env.append({
+            "name": PG_CONFIG_PREFIX + "tcp_keepalives_count",
+            "value": "4"
         })
     for replica in range(create_begin, replicas):
         name = get_statefulset_name(meta["name"], field, replica)
