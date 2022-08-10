@@ -2830,9 +2830,10 @@ def update_configs(
             # update primary node
             for conn in conns:
                 if get_connhost(conn) == primary_host:
-                    autofailover_switchover(meta, spec, patch, status, logger)
-                    waiting_cluster_final_status(meta, spec, patch, status, logger)
-                    time.sleep(2)
+                    if len(readwrite_conns.get_conns()) > 1:
+                        autofailover_switchover(meta, spec, patch, status, logger)
+                        waiting_cluster_final_status(meta, spec, patch, status, logger)
+                        time.sleep(2)
                     logger.info(f"update configs {cmd} on %s" %
                                 get_connhost(conn))
                     output = exec_command(conn, cmd, logger, interrupt=False)
