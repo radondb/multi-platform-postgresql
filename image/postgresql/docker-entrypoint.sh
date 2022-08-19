@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash --login
 set -Eeo pipefail
 
 docker_setup_db() {
@@ -73,19 +73,24 @@ init_over() {
 }
 
 main() {
+	# data directory
+	DATA=${DATA:-/var/lib/postgresql/data}
+	PGDATA=${DATA}/pg_data
+	export PGDATA
+
 	if [ "$(id -u)" = '0' ]; then
 		chmod 777 /tmp
 		mkdir -p /var/run/postgresql/
 		chmod 777 /var/run/postgresql/
+		mkdir -p "$DATA"
+		chmod 777 "$DATA"
+		chown -R postgres:postgres "$DATA"
+		# postgresql data directory
+		mkdir -p "$PGDATA"
+		chmod 777 "$PGDATA"
+		chown -R postgres:postgres "$PGDATA"
 	fi
-	# data directory
-	DATA=${DATA:-/var/lib/postgresql/data}
-	chown -R postgres:postgres "$DATA"
 
-	# postgresql data directory
-	PGDATA=${DATA}/pg_data
-	mkdir -p "$PGDATA"
-	export PGDATA
 	export POSTGRES_INITDB_ARGS=${POSTGRES_INITDB_ARGS:-}
 	export POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
 	export POSTGRES_USER=${POSTGRES_USER:-postgres}
@@ -96,6 +101,15 @@ main() {
 			#exec su-exec postgres "$BASH_SOURCE" "$@" #alpine
 			exec gosu postgres "$BASH_SOURCE" "$@"
 		fi
+
+		run_port=$PG_CONFIG_port
+		if [ -z $run_port ]; then
+			run_port=5432
+		fi
+		if [ -s "$PGDATA/PG_VERSION" ]; then
+			run_port=$(cat ${PGDATA}/postgresql.conf | grep -w port | grep '[0-9]' | tail -n 1 | cut -d '=' -f 2 | cut -d "#" -f 1 | tr -d " ")
+		fi
+		export run_port
 
 		# look specifically for PG_VERSION, as it is expected in the DB dir
 		if [ -s "$PGDATA/PG_VERSION" ]; then
