@@ -43,7 +43,7 @@ RUN apt install -y --no-install-recommends \
 
 RUN	cd /usr/src/postgresql; \
 #	git reset --hard; \
-	git checkout {{ .tag }}; \
+	git checkout {{ .tag[env.index | tonumber] }}; \
 #	git clean -fqdx; \
 	awk '$1 == "#define" && $2 == "DEFAULT_PGSOCKET_DIR" && $3 == "\"/tmp\"" { $3 = "\"/var/run/postgresql\""; print; next } { print }' src/include/pg_config_manual.h > src/include/pg_config_manual.h.new; \
 	grep '/var/run/postgresql' src/include/pg_config_manual.h.new; \

@@ -49,17 +49,21 @@ build_image()
 	cd -
 }
 
+
 for version; do
 	#arch="$(uname -m)"
 	#export arch
 	export version
 	#if [ `jq '.[env.version]."arches" | contains([env.arch])' versions.json` == "true" ]; then
-	image=$(jq -r '.[env.version].name' versions.json):$(jq -r '.[env.version].major' versions.json).$(jq -r '.[env.version].minor' versions.json)-$(jq -r '.[env.version].version' versions.json)
-	if [ "$platform" = arm64 ]; then
-		image=${image}-arm64
-	fi
-	build_image "${version}/${platform}" $image "linux/${platform}"
-	#if [ `jq '.[env.version]."arches" | contains(["aarch64"])' versions.json` == "true" ]; then
-	#	build_image "${version}/aarch64" "${image}-aarch64" "linux/arm64"
-	#fi
+	for ((index=0;index<$(jq -r '.[env.version].minor | length' versions.json);index++)); do
+		export index
+		image=$(jq -r '.[env.version].name' versions.json):$(jq -r '.[env.version].major' versions.json).$(jq -r ".[env.version].minor[$index]" versions.json)-$(jq -r '.[env.version].version' versions.json)
+		if [ "$platform" = arm64 ]; then
+			image=${image}-arm64
+		fi
+		build_image "${version}/${platform}" $image "linux/${platform}"
+#		if [ `jq '.[env.version]."arches" | contains(["aarch64"])' versions.json` == "true" ]; then
+#			build_image "${version}/aarch64" "${image}-aarch64" "linux/arm64"
+#		fi
+	done
 done

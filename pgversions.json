@@ -1,9 +1,9 @@
 {
   "12": {
     "major": 12,
-    "minor": 9,
+    "minor": [12],
     "debian": "bullseye-slim",
-    "tag": "REL_12_9",
+    "tag": ["REL_12_12"],
     "failover": "v1.6.4",
     "dirtyread": "2.4",
     "name": "radondb-postgresql",
@@ -15,9 +15,9 @@
   },
   "13": {
     "major": 13,
-    "minor": 7,
+    "minor": [8],
     "debian": "bullseye-slim",
-    "tag": "REL_13_7",
+    "tag": ["REL_13_8"],
     "failover": "v1.6.4",
     "dirtyread": "2.4",
     "name": "radondb-postgresql",
@@ -29,9 +29,9 @@
   },
   "14": {
     "major": 14,
-    "minor": 4,
+    "minor": [5],
     "debian": "bullseye-slim",
-    "tag": "REL_14_4",
+    "tag": ["REL_14_5"],
     "failover": "v1.6.4",
     "dirtyread": "2.4",
     "name": "radondb-postgresql",
