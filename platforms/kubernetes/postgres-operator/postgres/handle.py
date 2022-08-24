@@ -570,10 +570,7 @@ def create_statefulset(
 
     logger.info(f"create statefulset with {statefulset_body}")
     kopf.adopt(statefulset_body)
-    try:
-        apps_v1_api.create_namespaced_stateful_set(namespace=namespace, body=statefulset_body)
-    except Exception as e:
-        logger.error(f"error maybe occurs, please check if pod created. {e}")
+    apps_v1_api.create_namespaced_stateful_set(namespace=namespace, body=statefulset_body)
 
 
 def get_statefulset_name(name: str, field: str, replica: int) -> str:
