@@ -159,6 +159,8 @@ spec:
                           properties:
                             image:
                               type: string
+                            name:
+                              type: string
                             resources:
                               type: object
                               x-kubernetes-preserve-unknown-fields: true
@@ -220,6 +222,8 @@ spec:
                               properties:
                                 image:
                                   type: string
+                                name:
+                                  type: string
                                 resources:
                                   type: object
                                   x-kubernetes-preserve-unknown-fields: true
@@ -261,6 +265,8 @@ spec:
                               type: object
                               properties:
                                 image:
+                                  type: string
+                                name:
                                   type: string
                                 resources:
                                   type: object

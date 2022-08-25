@@ -31,16 +31,13 @@ spec:
     podspec:
       terminationGracePeriodSeconds: 60
       containers:
-        - image: radondb-postgresql:12.9-v1.0.0
+        - image: docker.io/library/radondb-postgresql:14.5-v1.0.0
           imagePullPolicy: IfNotPresent
           name: postgresql #can't change the name
           volumeMounts:
             - name: data # can't change the name
               mountPath: /var/lib/postgresql/data
           resources:
-            requests:
-              memory: "200Mi"
-              cpu: "0.2"
             limits:
               memory: "200Mi"
               cpu: "0.2"
@@ -57,8 +54,6 @@ spec:
       admin:
         - name: root
           password: root
-        - name: root1
-          password: root1
       normal:
         - name: lzzhang
           password: lzzhang
@@ -74,19 +69,16 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: radondb-postgresql:12.9-v1.0.0
+          - image: docker.io/library/radondb-postgresql:14.5-v1.0.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
               - name: data # can't change the name
                 mountPath: /var/lib/postgresql/data
             resources:
-              requests:
-                memory: "200Mi"
-                cpu: "0.3"
               limits:
                 memory: "200Mi"
-                cpu: "0.3"
+                cpu: "0.2"
       volumeClaimTemplates:
         - metadata:
             name: data
@@ -101,19 +93,16 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: radondb-postgresql:12.9-v1.0.0
+          - image: docker.io/library/radondb-postgresql:14.5-v1.0.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
               - name: data # can't change the name
                 mountPath: /var/lib/postgresql/data
             resources:
-              requests:
-                memory: "200Mi"
-                cpu: "0.3"
               limits:
                 memory: "200Mi"
-                cpu: "0.3"
+                cpu: "0.2"
       volumeClaimTemplates:
         - metadata:
             name: data
