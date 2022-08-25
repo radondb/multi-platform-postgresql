@@ -28,8 +28,11 @@ PGDATA=${DATA}/pg_data
 export PGDATA
 #export XDG_CONFIG_HOME=${DATA}/auto_failover
 #export XDG_DATA_HOME=${DATA}/auto_failover
-#run_port=$(cat ${XDG_CONFIG_HOME}/pg_autoctl/${PGDATA}/pg_autoctl.cfg | grep -w port | cut -d "=" -f 2 | tr -d " ")
-run_port=$(cat ${PGDATA}/postgresql.conf | grep -w port | grep '[0-9]' | tail -n 1 | cut -d '=' -f 2 | cut -d "#" -f 1 | tr -d " ")
+if [ "$PG_MODE" = monitor -o "$PG_MODE" = readwrite -o "$PG_MODE" = readonly ]; then
+	run_port=$(cat ${XDG_CONFIG_HOME}/pg_autoctl/${PGDATA}/pg_autoctl.cfg | grep -w port | cut -d "=" -f 2 | tr -d " ")
+else
+	run_port=$(cat ${PGDATA}/postgresql.conf | grep -w port | grep '[0-9]' | tail -n 1 | cut -d '=' -f 2 | cut -d "#" -f 1 | tr -d " ")
+fi
 
 # run as postgres
 if [ "$(id -u)" = '0' ]; then
