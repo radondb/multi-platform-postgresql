@@ -42,9 +42,6 @@ spec:
             - name: data # can't change the name
               mountPath: /var/lib/postgresql/data
           resources:
-            requests:
-              memory: "200Mi"
-              cpu: "0.2"
             limits:
               memory: "200Mi"
               cpu: "0.2"
@@ -61,8 +58,6 @@ spec:
       admin:
         - name: root
           password: root
-        - name: root1
-          password: root1
       normal:
         - name: lzzhang
           password: lzzhang
@@ -85,12 +80,9 @@ spec:
               - name: data # can't change the name
                 mountPath: /var/lib/postgresql/data
             resources:
-              requests:
-                memory: "200Mi"
-                cpu: "0.3"
               limits:
                 memory: "200Mi"
-                cpu: "0.3"
+                cpu: "0.2"
       volumeClaimTemplates:
         - metadata:
             name: data
@@ -112,12 +104,9 @@ spec:
               - name: data # can't change the name
                 mountPath: /var/lib/postgresql/data
             resources:
-              requests:
-                memory: "200Mi"
-                cpu: "0.3"
               limits:
                 memory: "200Mi"
-                cpu: "0.3"
+                cpu: "0.2"
       volumeClaimTemplates:
         - metadata:
             name: data

@@ -30,7 +30,7 @@ from constants import (
     SPEC,
     CONTAINERS,
     CONTAINER_NAME,
-    POSTGRESQL_CONTAINER,
+    PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER,
     PRIME_SERVICE_PORT_NAME,
     HBAS,
     CONFIGS,
@@ -578,7 +578,6 @@ def create_statefulset(
     vct: TypedDict,
     antiaffinity_need_copy: TypedDict,
     env: TypedDict,
-    logger: logging.Logger,
 ) -> None:
 
     apps_v1_api = client.AppsV1Api()
@@ -602,7 +601,7 @@ def create_statefulset(
         podspec.setdefault("affinity", {}).setdefault("podAntiAffinity", {})[spec_antiaffinity] = \
             antiaffinity
     for container in podspec[CONTAINERS]:
-        if container[CONTAINER_NAME] == POSTGRESQL_CONTAINER:
+        if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
             container["args"] = ["auto_failover"]
             container["env"] = env
             container["readinessProbe"] = {
@@ -761,7 +760,7 @@ def create_postgresql(
         machine_data_path = operator_config.DATA_PATH_POSTGRESQL
 
     for container in localspec[PODSPEC][CONTAINERS]:
-        if container[CONTAINER_NAME] == POSTGRESQL_CONTAINER:
+        if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
             postgresql_image = container[IMAGE]
 
     if mode == MACHINE_MODE:
@@ -787,12 +786,14 @@ def create_postgresql(
     for config in configs:
         name = config.split("=")[0].strip()
         value = config[config.find("=") + 1:].strip()
-        config = name + "=" + value
+
         if name in PG_CONFIG_IGNORE:
             continue
-        if field == get_field(AUTOFAILOVER) and name == 'port':
-            continue
 
+        if field == get_field(AUTOFAILOVER) and name == 'port':
+            value = str(AUTO_FAILOVER_PORT)
+
+        config = name + "=" + value
         if mode == MACHINE_MODE:
             machine_env += PG_CONFIG_PREFIX + config + "\n"
         else:
@@ -2437,7 +2438,7 @@ def correct_user_password(
     PASSWORD_FAILED_MESSAGEd = "password authentication failed for user"
 
     if get_conn_role(conn) == AUTOFAILOVER:
-        port = 55555
+        port = AUTO_FAILOVER_PORT
         user = AUTOCTL_NODE
         password = patch.status.get(AUTOCTL_NODE)
         if password == None:
