@@ -106,6 +106,16 @@ LABEL_STATEFULSET_NAME = "statefulset"
 MACHINE_MODE = "machine"
 K8S_MODE = "k8s"
 
+# antiaffinity
+SPEC_ANTIAFFINITY = "antiaffinity"
+SPEC_ANTIAFFINITY_POLICY = "policy"
+SPEC_ANTIAFFINITY_REQUIRED = "required"
+SPEC_ANTIAFFINITY_PREFERRED = "preferred"
+SPEC_ANTIAFFINITY_POLICY_REQUIRED = "requiredDuringSchedulingIgnoredDuringExecution"
+SPEC_ANTIAFFINITY_POLICY_PREFERRED = "preferredDuringSchedulingIgnoredDuringExecution"
+SPEC_ANTIAFFINITY_PODANTIAFFINITYTERM = "podAntiAffinityTerm"
+SPEC_ANTIAFFINITY_TOPOLOGYKEY = "topologyKey"
+
 # docker-compose
 DOCKER_COMPOSE_FILE = "docker-compose.yaml"
 DOCKER_COMPOSE_FILE_DATA = '''

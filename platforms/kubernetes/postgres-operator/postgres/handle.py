@@ -7,6 +7,7 @@ import traceback
 import time
 import random
 import tempfile
+import re
 from kubernetes import client, config
 from kubernetes.stream import stream
 from config import operator_config
@@ -118,6 +119,14 @@ from constants import (
     CLUSTER_STATUS_UPDATE_FAILED,
     CLUSTER_STATUS_TERMINATE,
     CLUSTER_STATUS,
+    SPEC_ANTIAFFINITY,
+    SPEC_ANTIAFFINITY_POLICY,
+    SPEC_ANTIAFFINITY_REQUIRED,
+    SPEC_ANTIAFFINITY_PREFERRED,
+    SPEC_ANTIAFFINITY_POLICY_REQUIRED,
+    SPEC_ANTIAFFINITY_POLICY_PREFERRED,
+    SPEC_ANTIAFFINITY_PODANTIAFFINITYTERM,
+    SPEC_ANTIAFFINITY_TOPOLOGYKEY,
 )
 
 FIELD_DELIMITER = "-"
@@ -152,6 +161,7 @@ DIFF_FIELD_READWRITE_VOLUME = (SPEC, POSTGRESQL, READWRITEINSTANCE,
                                VOLUMECLAIMTEMPLATES)
 DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
+DIFF_FIELD_SPEC_ANTIAFFINITY = (SPEC, SPEC_ANTIAFFINITY)
 STATEFULSET_REPLICAS = 1
 PG_CONFIG_IGNORE = ("block_size", "data_checksums", "data_directory_mode",
                     "debug_assertions", "integer_datetimes", "lc_collate",
@@ -486,11 +496,22 @@ def waiting_cluster_correct_status(
     auto_failover_conns.free_conns()
 
 
-def waiting_postgresql_ready(conns: InstanceConnections,
-                             logger: logging.Logger) -> bool:
-    for conn in conns.get_conns():
+def waiting_postgresql_ready(
+    conns: InstanceConnections,
+    logger: logging.Logger,
+    timeout: int = 300,
+    connect_start: int = None,
+    connect_end: int = None,
+) -> bool:
+    if connect_start is None:
+        connect_start = 0
+    if connect_end is None:
+        connect_end = conns.get_number()
+    conns = conns.get_conns()[connect_start:connect_end]
+
+    for conn in conns:
         i = 0
-        maxtry = 300
+        maxtry = timeout
         while True:
             output = exec_command(conn,
                                   WAITING_POSTGRESQL_READY_COMMAND,
@@ -507,6 +528,28 @@ def waiting_postgresql_ready(conns: InstanceConnections,
             else:
                 break
     return True
+
+
+def waiting_target_postgresql_ready(meta: kopf.Meta,
+                                    spec: kopf.Spec,
+                                    patch: kopf.Patch,
+                                    field: str,
+                                    status: kopf.Status,
+                                    logger: logging.Logger,
+                                    connect_start: int = None,
+                                    connect_end: int = None,
+                                    exit: bool = False,
+                                    timeout: int = 300) -> None:
+    conns: InstanceConnections = connections(spec, meta, patch, field, False,
+                                             None, logger, None, status, False,
+                                             None)
+    status = waiting_postgresql_ready(conns, logger, timeout, connect_start,
+                                      connect_end)
+    conns.free_conns()
+    if not status and exit:
+        logger.error(
+            f"waiting_postgresql_ready timeout, please check logs or events")
+        raise kopf.PermanentError("waiting_postgresql_ready timeout.")
 
 
 def waiting_instance_ready(conns: InstanceConnections, logger: logging.Logger):
@@ -530,15 +573,12 @@ def waiting_instance_ready(conns: InstanceConnections, logger: logging.Logger):
 
 def create_statefulset(
     meta: kopf.Meta,
-    spec: kopf.Spec,
-    patch: kopf.Patch,
-    status: kopf.Status,
-    logger: logging.Logger,
     name: str,
     namespace: str,
     labels: LabelType,
     podspec_need_copy: TypedDict,
     vct: TypedDict,
+    antiaffinity_need_copy: TypedDict,
     env: TypedDict,
 ) -> None:
 
@@ -555,6 +595,13 @@ def create_statefulset(
         "serviceName"] = statefulset_name_get_service_name(name)
     podspec = podspec_need_copy.copy()
     podspec["restartPolicy"] = "Always"
+    antiaffinity = antiaffinity_need_copy.copy()
+    is_required = antiaffinity[SPEC_ANTIAFFINITY_POLICY] == SPEC_ANTIAFFINITY_REQUIRED
+    antiaffinity = get_antiaffinity(meta, labels, antiaffinity)
+    if antiaffinity:
+        spec_antiaffinity = SPEC_ANTIAFFINITY_POLICY_REQUIRED if is_required else SPEC_ANTIAFFINITY_POLICY_PREFERRED
+        podspec.setdefault("affinity", {}).setdefault("podAntiAffinity", {})[spec_antiaffinity] = \
+            antiaffinity
     for container in podspec[CONTAINERS]:
         if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
             container["args"] = ["auto_failover"]
@@ -577,6 +624,58 @@ def create_statefulset(
     logger.info(f"create statefulset with {statefulset_body}")
     kopf.adopt(statefulset_body)
     apps_v1_api.create_namespaced_stateful_set(namespace=namespace, body=statefulset_body)
+
+
+def get_antiaffinity(meta: kopf.Meta, labels: LabelType,
+                     antiaffinity: TypedDict) -> List:
+    podAntiAffinityTerm = antiaffinity[
+        SPEC_ANTIAFFINITY_PODANTIAFFINITYTERM].strip()
+    if not antiaffinity or podAntiAffinityTerm == "none" or labels[
+            LABEL_SUBNODE] not in [
+                value for value in podAntiAffinityTerm.split(FIELD_DELIMITER)
+                if value != AUTOFAILOVER
+            ]:
+        return {}
+    if antiaffinity[SPEC_ANTIAFFINITY_POLICY] == SPEC_ANTIAFFINITY_REQUIRED:
+        antiaffinity[SPEC_ANTIAFFINITY_TOPOLOGYKEY] = "kubernetes.io/hostname"
+
+    return get_antiaffinity_from_template(meta, antiaffinity)
+
+
+def get_antiaffinity_from_template(
+        meta: kopf.Meta, antiaffinity: TypedDict) -> List:
+    podAntiAffinityTerm = antiaffinity[
+        SPEC_ANTIAFFINITY_PODANTIAFFINITYTERM].strip()
+    node = '-'.join(
+        set(
+            re.sub(LABEL_SUBNODE_READWRITE + "|" + LABEL_SUBNODE_READONLY,
+                   LABEL_NODE_POSTGRESQL, podAntiAffinityTerm).split("-")))
+    subnode = podAntiAffinityTerm
+
+    labelSelector = {
+        SPEC_ANTIAFFINITY_TOPOLOGYKEY:
+        antiaffinity[SPEC_ANTIAFFINITY_TOPOLOGYKEY],
+        "labelSelector": {
+            "matchExpressions":
+            get_antiaffinity_matchExpressions(
+                get_antiaffinity_labels(meta, node, subnode))
+        }
+    }
+
+    res = list()
+    if SPEC_ANTIAFFINITY_REQUIRED in antiaffinity[
+            SPEC_ANTIAFFINITY_POLICY]:
+        res = [labelSelector]
+    elif SPEC_ANTIAFFINITY_PREFERRED in antiaffinity[
+            SPEC_ANTIAFFINITY_POLICY]:
+        res = [{
+            "weight":
+            100,
+            "podAffinityTerm":
+            labelSelector
+        }]
+
+    return res
 
 
 def get_statefulset_name(name: str, field: str, replica: int) -> str:
@@ -641,10 +740,12 @@ def create_postgresql(
     create_begin: int,
     status: kopf.Status,
     wait_primary: bool,
+    create_end: int,
 ) -> None:
 
     logger.info("create postgresql on " + mode)
 
+    antiaffinity = spec.get(SPEC_ANTIAFFINITY)
     if len(field.split(FIELD_DELIMITER)) == 1:
         localspec = spec.get(field)
         hbas = localspec[HBAS]
@@ -665,12 +766,12 @@ def create_postgresql(
             postgresql_image = container[IMAGE]
 
     if mode == MACHINE_MODE:
-        replicas = conns.get_number()
+        replicas = conns.get_number() if create_end is None else create_end
         pgdata = os.path.join(machine_data_path, PGDATA_DIR)
         remotepath = os.path.join(machine_data_path, DOCKER_COMPOSE_DIR)
         machine_env = ""
     else:
-        replicas = localspec.get(REPLICAS)
+        replicas = localspec.get(REPLICAS) if create_end is None else create_end
         if replicas == None:
             replicas = 1
         k8s_env = []
@@ -904,9 +1005,9 @@ def create_postgresql(
                 statefulset_name_get_service_name(name),
                 statefulset_name_get_external_service_name(name), namespace,
                 labels, logger, meta)
-            create_statefulset(meta, spec, patch, status, logger,
-                               name, namespace, labels, localspec[PODSPEC],
-                               localspec[VOLUMECLAIMTEMPLATES], k8s_env)
+            create_statefulset(meta, name, namespace, labels, localspec[PODSPEC],
+                               localspec[VOLUMECLAIMTEMPLATES], antiaffinity, k8s_env,
+                               logger)
 
         # wait primary node create finish
         if wait_primary == True and field == get_field(
@@ -1212,22 +1313,10 @@ def connect_pods(
 ) -> InstanceConnections:
 
     conns: InstanceConnections = InstanceConnections()
-
-    if len(field.split(FIELD_DELIMITER)) == 1:
-        localspec = spec.get(field)
-        role = AUTOFAILOVER
-    else:
-        if len(field.split(FIELD_DELIMITER)) != 2:
-            raise kopf.PermanentError(
-                "error parse field, only support one '.'" + field)
-        localspec = spec.get(field.split(FIELD_DELIMITER)[0]).get(
-            field.split(FIELD_DELIMITER)[1])
-        role = POSTGRESQL
-
-    replicas = localspec.get(REPLICAS)
-    if replicas == None:
-        replicas = 1
-
+    
+    replicas = get_field_replicas(spec, field)
+    role = AUTOFAILOVER if len(field.split(FIELD_DELIMITER)) == 1 else POSTGRESQL
+    
     for replica in range(0, replicas):
         name = get_pod_name(meta["name"], field, replica)
         namespace = meta["namespace"]
@@ -1423,6 +1512,7 @@ def connections(
     create_begin: int,
     status: kopf.Status,
     wait_primary: bool,
+    create_end: int = None,
 ) -> InstanceConnections:
 
     conns: InstanceConnections = InstanceConnections()
@@ -1442,7 +1532,8 @@ def connections(
         conns = connect_pods(meta, spec, field)
         if create:
             create_postgresql(K8S_MODE, spec, meta, field, labels, logger,
-                              conns, patch, create_begin, status, wait_primary)
+                              conns, patch, create_begin, status, wait_primary,
+                              create_end)
     else:
         for replica, machine in enumerate(machines):
             conn = connect_machine(machine, role)
@@ -1451,7 +1542,8 @@ def connections(
             conns.add(conn)
         if create:
             create_postgresql(MACHINE_MODE, spec, meta, field, labels, logger,
-                              conns, patch, create_begin, status, wait_primary)
+                              conns, patch, create_begin, status, wait_primary,
+                              create_end)
     return conns
 
 
@@ -1670,11 +1762,12 @@ def create_postgresql_readwrite(
     labels: LabelType,
     create_begin: int,
     wait_primary: bool,
+    create_end: int = None,
 ) -> None:
     logger.info("create postgresql readwrite instance")
     conns = connections(spec, meta, patch,
                         get_field(POSTGRESQL, READWRITEINSTANCE), True, labels,
-                        logger, create_begin, status, wait_primary)
+                        logger, create_begin, status, wait_primary, create_end)
     conns.free_conns()
 
 
@@ -1686,11 +1779,12 @@ def create_postgresql_readonly(
     logger: logging.Logger,
     labels: LabelType,
     create_begin: int,
+    create_end: int = None,
 ) -> None:
     logger.info("create postgresql readonly instance")
     conns = connections(spec, meta, patch,
                         get_field(POSTGRESQL, READONLYINSTANCE), True, labels,
-                        logger, create_begin, status, False)
+                        logger, create_begin, status, False, create_end)
     conns.free_conns()
 
 
@@ -1702,6 +1796,33 @@ def get_base_labels(meta: kopf.Meta) -> TypedDict:
         BASE_LABEL_NAMESPACE: meta["namespace"],
     }
     return base_labels
+
+
+def get_antiaffinity_labels(meta: kopf.Meta, node: str,
+                            subnode: str) -> TypedDict:
+    labels = get_base_labels(meta)
+    labels[LABEL_NODE] = node
+    labels[LABEL_SUBNODE] = subnode
+    return labels
+
+
+def get_antiaffinity_matchExpressions(expressions: TypedDict) -> TypedDict:
+    if not expressions:
+        return {}
+    antiaffinity_matchExpressions = list()
+    for key in expressions:
+        temp = {
+            'key':
+            key,
+            'operator':
+            'In',
+            'values':
+            expressions[key].split(FIELD_DELIMITER)
+            if key in [LABEL_NODE, LABEL_SUBNODE] else [expressions[key]]
+        }
+        antiaffinity_matchExpressions.append(temp)
+
+    return antiaffinity_matchExpressions
 
 
 def get_service_name(meta: kopf.Meta, service: TypedDict) -> str:
@@ -2079,22 +2200,41 @@ def create_services(
         readonly_conns.free_conns()
 
 
-def check_param(spec: kopf.Spec,
-                logger: logging.Logger,
-                create: bool = True) -> None:
+def get_field_replicas(spec: kopf.Spec, field: str=None) -> int:
+
+    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(spec)
+
+    if field is not None:
+        replicas = 1
+        if len(field.split(FIELD_DELIMITER)) == 1:
+            replicas = autofailover_replicas
+        else:
+            if len(field.split(FIELD_DELIMITER)) != 2:
+                raise kopf.PermanentError(
+                    "error parse field, only support one '.'" + field)
+            if field.split(FIELD_DELIMITER)[1] == READWRITEINSTANCE:
+                replicas = readwrite_replicas
+            elif field.split(FIELD_DELIMITER)[1] == READONLYINSTANCE:
+                replicas = readonly_replicas
+    return replicas
+
+
+def get_replicas(spec: kopf.Spec) -> (str, int, int, int):
+    mode = K8S_MODE
     autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
+    # *_replicas will be replace in machine mode
+    autofailover_replicas = 1
     readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
         MACHINES)
-    # *_replicas will be replace in machine mode
     readwrite_replicas = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
         REPLICAS)
     readonly_machines = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
         MACHINES)
     readonly_replicas = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
         REPLICAS)
-
     if autofailover_machines != None or readwrite_machines != None or readonly_machines != None:
-        logger.info("running on machines mode")
+        mode = MACHINE_MODE
+        autofailover_replicas = len(autofailover_machines)
         readwrite_replicas = len(readwrite_machines)
         readonly_replicas = len(readonly_machines)
 
@@ -2102,11 +2242,26 @@ def check_param(spec: kopf.Spec,
             raise kopf.PermanentError("autofailover machines not set")
         if readwrite_machines == None:
             raise kopf.PermanentError("readwrite machines not set")
-        if len(autofailover_machines) != 1:
+
+    return mode, autofailover_replicas, readwrite_replicas, readonly_replicas
+
+
+# Check parameters or get the number of field replicas
+def check_param(spec: kopf.Spec,
+                logger: logging.Logger,
+                create: bool = True) -> int:
+
+    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(spec)
+
+    if mode == MACHINE_MODE:
+        logger.info("running on machines mode")
+        
+        if autofailover_replicas != 1:
             raise kopf.PermanentError("autofailover only support one machine.")
-        if len(readwrite_machines) < 1:
+        if readwrite_replicas < 1:
             raise kopf.PermanentError(
                 "readwrite machines must set at lease one machine")
+
     if create and spec[ACTION] == ACTION_STOP:
         raise kopf.PermanentError("can't set stop at init cluster.")
     if readwrite_replicas < 1:
@@ -2135,10 +2290,8 @@ async def create_postgresql_cluster(
     # set_create_cluster(patch, CLUSTER_CREATE_ADD_FAILOVER)
     create_autofailover(meta, spec, patch, status, logger,
                         get_autofailover_labels(meta))
-    conns = connections(spec, meta, patch, get_field(AUTOFAILOVER), False,
-                        None, logger, None, status, False)
-    waiting_postgresql_ready(conns, logger)
-    conns.free_conns()
+    waiting_target_postgresql_ready(meta, spec, patch, get_field(AUTOFAILOVER),
+                                    status, logger)
 
     # create postgresql & readwrite node
     # set_create_cluster(patch, CLUSTER_CREATE_ADD_READWRITE)
@@ -2596,6 +2749,94 @@ def update_action(
             readonly_conns.free_conns()
 
 
+def rolling_update(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    target_roles: List,
+    exit: bool = False,
+) -> None:
+    if target_roles is None:
+        return
+
+    # rolling update autofailover
+    if get_field(AUTOFAILOVER) in target_roles:
+        autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
+        if autofailover_machines != None:
+            delete_autofailover(meta, spec, patch, status, logger,
+                                get_field(AUTOFAILOVER), autofailover_machines,
+                                None, False)
+        else:
+            delete_autofailover(meta, spec, patch, status, logger,
+                                get_field(AUTOFAILOVER), None, [0, 1], False)
+        create_autofailover(meta, spec, patch, status, logger,
+                            get_autofailover_labels(meta))
+        waiting_target_postgresql_ready(meta, spec, patch, get_field(AUTOFAILOVER),
+                                        status, logger, 0, 1, exit)
+
+    # rolling update readwrite
+    if get_field(POSTGRESQL, READWRITEINSTANCE) in target_roles:
+        readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
+            MACHINES)
+        if readwrite_machines != None:
+            for replica in range(0, len(readwrite_machines)):
+                delete_postgresql_readwrite(
+                    meta, spec, patch, status, logger,
+                    get_field(POSTGRESQL, READWRITEINSTANCE),
+                    readwrite_machines[replica:replica + 1], None, False)
+                create_postgresql_readwrite(meta, spec, patch, status, logger,
+                                            get_readwrite_labels(meta),
+                                            replica, False, replica + 1)
+                waiting_target_postgresql_ready(
+                    meta, spec, patch, get_field(POSTGRESQL,
+                                                 READWRITEINSTANCE), status,
+                    logger, replica, replica + 1, exit)
+        else:
+            for replica in range(0, spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]):
+                delete_postgresql_readwrite(
+                    meta, spec, patch, status, logger,
+                    get_field(POSTGRESQL, READWRITEINSTANCE), None,
+                    [replica, replica + 1], False)
+                create_postgresql_readwrite(meta, spec, patch, status, logger,
+                                            get_readwrite_labels(meta), replica,
+                                            False, replica + 1)
+                waiting_target_postgresql_ready(meta, spec, patch,
+                                                get_field(POSTGRESQL,
+                                                          READWRITEINSTANCE), status,
+                                                logger, replica, replica + 1, exit)
+
+    # rolling update readonly
+    if get_field(POSTGRESQL, READONLYINSTANCE) in target_roles:
+        readonly_machines = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
+            MACHINES)
+        if readonly_machines != None:
+            for replica in range(0, len(readonly_machines)):
+                delete_postgresql_readonly(
+                    meta, spec, patch, status, logger,
+                    get_field(POSTGRESQL, READONLYINSTANCE),
+                    readonly_machines[replica:replica + 1], None, False)
+                create_postgresql_readonly(meta, spec, patch, status, logger,
+                                           get_readonly_labels(meta), replica,
+                                           replica + 1)
+                waiting_target_postgresql_ready(
+                    meta, spec, patch, get_field(POSTGRESQL, READONLYINSTANCE),
+                    status, logger, replica, replica + 1, exit)
+        else:
+            for replica in range(0, spec[POSTGRESQL][READONLYINSTANCE][REPLICAS]):
+                delete_postgresql_readonly(meta, spec, patch, status, logger,
+                                           get_field(POSTGRESQL, READONLYINSTANCE),
+                                           None, [replica, replica + 1], False)
+                create_postgresql_readonly(meta, spec, patch, status, logger,
+                                           get_readonly_labels(meta), replica,
+                                           replica + 1)
+                waiting_target_postgresql_ready(meta, spec, patch,
+                                                get_field(POSTGRESQL,
+                                                          READONLYINSTANCE), status,
+                                                logger, replica, replica + 1, exit)
+
+
 def update_podspec_volume(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -2612,51 +2853,29 @@ def update_podspec_volume(
                    )] == DIFF_FIELD_AUTOFAILOVER_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_AUTOFAILOVER_VOLUME
                              )] == DIFF_FIELD_AUTOFAILOVER_VOLUME:
-        autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
-        if autofailover_machines != None:
-            delete_autofailover(meta, spec, patch, status, logger,
-                                get_field(AUTOFAILOVER), autofailover_machines,
-                                None, False)
-        else:
-            delete_autofailover(meta, spec, patch, status, logger,
-                                get_field(AUTOFAILOVER), None, [0, 1], False)
-        create_autofailover(meta, spec, patch, status, logger,
-                            get_autofailover_labels(meta))
+        rolling_update(meta, spec, patch, status, logger, [get_field(AUTOFAILOVER)])
     if FIELD[0:len(DIFF_FIELD_READWRITE_PODSPEC
                    )] == DIFF_FIELD_READWRITE_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_READWRITE_VOLUME
                              )] == DIFF_FIELD_READWRITE_VOLUME:
-        readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
-            MACHINES)
-        if readwrite_machines != None:
-            delete_postgresql_readwrite(
-                meta, spec, patch, status, logger,
-                get_field(POSTGRESQL, READWRITEINSTANCE), readwrite_machines,
-                None, False)
-        else:
-            delete_postgresql_readwrite(
-                meta, spec, patch, status, logger,
-                get_field(POSTGRESQL, READWRITEINSTANCE), None,
-                [0, spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]], False)
-        create_postgresql_readwrite(meta, spec, patch, status, logger,
-                                    get_readwrite_labels(meta), 0, False)
+        rolling_update(meta, spec, patch, status, logger, [get_field(POSTGRESQL, READWRITEINSTANCE)])
     if FIELD[0:len(DIFF_FIELD_READONLY_PODSPEC
                    )] == DIFF_FIELD_READONLY_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_READONLY_VOLUME
                              )] == DIFF_FIELD_READONLY_VOLUME:
-        readonly_machines = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
-            MACHINES)
-        if readonly_machines != None:
-            delete_postgresql_readonly(meta, spec, patch, status, logger,
-                                       get_field(POSTGRESQL, READONLYINSTANCE),
-                                       readonly_machines, None, False)
-        else:
-            delete_postgresql_readonly(
-                meta, spec, patch, status, logger,
-                get_field(POSTGRESQL, READONLYINSTANCE), None,
-                [0, spec[POSTGRESQL][READONLYINSTANCE][REPLICAS]], False)
-        create_postgresql_readonly(meta, spec, patch, status, logger,
-                                   get_readonly_labels(meta), 0)
+        rolling_update(meta, spec, patch, status, logger, [get_field(POSTGRESQL, READONLYINSTANCE)])
+
+
+def update_antiaffinity(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    target_roles: List,
+    exit: bool = False,
+) -> None:
+    rolling_update(meta, spec, patch, status, logger, target_roles, exit)
 
 
 def update_replicas(
@@ -3107,6 +3326,7 @@ async def update_cluster(
                            logger)
         logger.info("check update_cluster params")
         check_param(spec, logger, create=False)
+        need_roll_update = False
 
         for diff in diffs:
             AC = diff[0]
@@ -3131,6 +3351,15 @@ async def update_cluster(
                             NEW)
             update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
                                   OLD, NEW)
+            if FIELD[0:len(DIFF_FIELD_SPEC_ANTIAFFINITY
+                           )] == DIFF_FIELD_SPEC_ANTIAFFINITY:
+                need_roll_update = True
+
+        if need_roll_update:
+            update_antiaffinity(meta, spec, patch, status, logger, [
+                get_field(POSTGRESQL, READWRITEINSTANCE),
+                get_field(POSTGRESQL, READONLYINSTANCE)
+            ], True)
 
         for diff in diffs:
             AC = diff[0]
