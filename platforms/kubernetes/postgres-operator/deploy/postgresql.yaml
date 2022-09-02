@@ -6,6 +6,10 @@ metadata:
 spec:
   action: start #stop start
   deletepvc: true
+  antiaffinity:
+    policy: preferred                             # preferred/required
+    podAntiAffinityTerm: autofailover-readwrite   # none/autofailover-readwrite/autofailover-readwrite-readonly
+    topologyKey: "kubernetes.io/hostname"         # when policy is required, only allow "kubernetes.io/hostname"
   services:
     - selector: primary # autofailover/primary/standby/readonly/standby-readonly
       metadata:
@@ -31,7 +35,7 @@ spec:
     podspec:
       terminationGracePeriodSeconds: 60
       containers:
-        - image: docker.io/library/radondb-postgresql:14.5-v1.0.0
+        - image: radondb-postgresql:12.12-v1.0.0
           imagePullPolicy: IfNotPresent
           name: postgresql #can't change the name
           volumeMounts:
@@ -69,7 +73,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: docker.io/library/radondb-postgresql:14.5-v1.0.0
+          - image: radondb-postgresql:12.12-v1.0.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
@@ -93,7 +97,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: docker.io/library/radondb-postgresql:14.5-v1.0.0
+          - image: radondb-postgresql:12.12-v1.0.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:

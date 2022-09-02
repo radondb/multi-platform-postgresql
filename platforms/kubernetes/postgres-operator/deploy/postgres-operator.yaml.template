@@ -99,6 +99,23 @@ spec:
                 enum:
                 - true
                 - false
+              antiaffinity:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  policy:
+                    type: string
+                    enum:
+                    - 'preferred'
+                    - 'required'
+                  podAntiAffinityTerm:
+                    type: string
+                    enum:
+                    - 'none'
+                    - 'autofailover-readwrite'
+                    - 'autofailover-readwrite-readonly'
+                  topologyKey:
+                    type: string
               services:
                 type: array
                 items:
