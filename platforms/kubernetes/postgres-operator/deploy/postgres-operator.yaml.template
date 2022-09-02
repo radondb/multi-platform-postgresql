@@ -188,6 +188,11 @@ spec:
                         items:
                           type: object
                           x-kubernetes-preserve-unknown-fields: true
+                      maintenance:
+                        type: array
+                        items:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
                       normal:
                         type: array
                         items:

@@ -31,7 +31,7 @@ spec:
     podspec:
       terminationGracePeriodSeconds: 60
       containers:
-        - image: docker.io/library/radondb-postgresql:14.5-v1.0.0
+        - image: docker.io/library/radondb-postgresql:12.12-v1.0.0
           imagePullPolicy: IfNotPresent
           name: postgresql #can't change the name
           volumeMounts:
@@ -54,6 +54,9 @@ spec:
       admin:
         - name: root
           password: root
+      maintenance:
+        - name: maintenance
+          password: maintenance
       normal:
         - name: lzzhang
           password: lzzhang
@@ -69,7 +72,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: docker.io/library/radondb-postgresql:14.5-v1.0.0
+          - image: docker.io/library/radondb-postgresql:12.12-v1.0.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
@@ -93,7 +96,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: docker.io/library/radondb-postgresql:14.5-v1.0.0
+          - image: docker.io/library/radondb-postgresql:12.12-v1.0.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
