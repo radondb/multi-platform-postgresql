@@ -580,6 +580,7 @@ def create_statefulset(
     vct: TypedDict,
     antiaffinity_need_copy: TypedDict,
     env: TypedDict,
+    logger: logging.Logger,
 ) -> None:
 
     apps_v1_api = client.AppsV1Api()
