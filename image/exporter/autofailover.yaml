@@ -1,0 +1,27 @@
+pg_auto_failover_async:
+  query: "select count(*) as count from pgautofailover.node where reportedrepstate <> 'quorum' and reportedrepstate <> 'unknown'"
+  metrics:
+    - count:
+        usage: "GAUGE"
+        description: "async node number"
+
+pg_auto_failover_invalid:
+  query: "select count(*) as count from pgautofailover.node where reportedstate <> 'single' and reportedstate <> 'primary' and reportedstate <> 'secondary'"
+  metrics:
+    - count:
+        usage: "GAUGE"
+        description: "invalid status node number"
+
+pg_auto_failover_not_running:
+  query: "select count(*) as count from pgautofailover.node where reportedpgisrunning <> 't'"
+  metrics:
+    - count:
+        usage: "GAUGE"
+        description: "pg not running number"
+
+pg_auto_failover_unhealth:
+  query: "select count(*) from pgautofailover.node where health <> 1"
+  metrics:
+    - count:
+        usage: "GAUGE"
+        description: "unhealth node number"

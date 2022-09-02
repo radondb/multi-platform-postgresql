@@ -52,11 +52,12 @@ from constants import (
     SERVICE_STANDBY,
     SERVICE_READONLY,
     SERVICE_STANDBY_READONLY,
-    USERS,
-    ADMIN_USER,
-    NORMAL_USER,
-    USER_NAME,
-    USER_PASSWORD,
+    SPEC_POSTGRESQL_USERS,
+    SPEC_POSTGRESQL_USERS_ADMIN,
+    SPEC_POSTGRESQL_USERS_MAINTENANCE,
+    SPEC_POSTGRESQL_USERS_NORMAL,
+    SPEC_POSTGRESQL_USERS_USER_NAME,
+    SPEC_POSTGRESQL_USERS_USER_PASSWORD,
     API_GROUP,
     API_VERSION_V1,
     RESOURCE_POSTGRESQL,
@@ -143,9 +144,10 @@ DIFF_FIELD_AUTOFAILOVER_HBAS = (SPEC, AUTOFAILOVER, HBAS)
 DIFF_FIELD_POSTGRESQL_HBAS = (SPEC, POSTGRESQL, HBAS)
 DIFF_FIELD_AUTOFAILOVER_CONFIGS = (SPEC, AUTOFAILOVER, CONFIGS)
 DIFF_FIELD_POSTGRESQL_CONFIGS = (SPEC, POSTGRESQL, CONFIGS)
-DIFF_FIELD_POSTGRESQL_USERS = (SPEC, POSTGRESQL, USERS)
-DIFF_FIELD_POSTGRESQL_USERS_ADMIN = (SPEC, POSTGRESQL, USERS, ADMIN_USER)
-DIFF_FIELD_POSTGRESQL_USERS_NORMAL = (SPEC, POSTGRESQL, USERS, NORMAL_USER)
+DIFF_FIELD_POSTGRESQL_USERS = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS)
+DIFF_FIELD_POSTGRESQL_USERS_ADMIN = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS, SPEC_POSTGRESQL_USERS_ADMIN)
+DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS, SPEC_POSTGRESQL_USERS_MAINTENANCE)
+DIFF_FIELD_POSTGRESQL_USERS_NORMAL = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS, SPEC_POSTGRESQL_USERS_NORMAL)
 DIFF_FIELD_STREAMING = (SPEC, POSTGRESQL, READONLYINSTANCE, STREAMING)
 DIFF_FIELD_READWRITE_REPLICAS = (SPEC, POSTGRESQL, READWRITEINSTANCE, REPLICAS)
 DIFF_FIELD_READWRITE_MACHINES = (SPEC, POSTGRESQL, READWRITEINSTANCE, MACHINES)
@@ -1921,9 +1923,9 @@ def get_primary_conn(conns: InstanceConnections,
 
 
 def create_one_user(conn: InstanceConnection, name: str, password: str,
-                    admin: bool, logger: logging.Logger) -> None:
+                    superuser: bool, logger: logging.Logger) -> None:
     cmd = "create user " + name + " "
-    if admin:
+    if superuser:
         cmd = cmd + " SUPERUSER CREATEROLE REPLICATION CREATEDB "
     cmd = cmd + " password '" + password + "'"
     cmd = ["pgtools", "-q", '"' + cmd + '"']
@@ -1965,15 +1967,34 @@ def create_users_admin(
     logger: logging.Logger,
     conns: InstanceConnections,
 ) -> None:
-    if spec[POSTGRESQL].get(USERS) == None:
+    if spec[POSTGRESQL].get(SPEC_POSTGRESQL_USERS) == None:
         return
 
     conn = get_primary_conn(conns, 0, logger)
 
-    if spec[POSTGRESQL][USERS].get(ADMIN_USER) != None:
-        admin_users = spec[POSTGRESQL][USERS][ADMIN_USER]
+    if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(SPEC_POSTGRESQL_USERS_ADMIN) != None:
+        admin_users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][SPEC_POSTGRESQL_USERS_ADMIN]
         for user in admin_users:
-            create_one_user(conn, user[USER_NAME], user[USER_PASSWORD], True,
+            create_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME], user[SPEC_POSTGRESQL_USERS_USER_PASSWORD], True,
+                            logger)
+
+def create_users_maintenance(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conns: InstanceConnections,
+) -> None:
+    if spec[POSTGRESQL].get(SPEC_POSTGRESQL_USERS) == None:
+        return
+
+    conn = get_primary_conn(conns, 0, logger)
+
+    if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(SPEC_POSTGRESQL_USERS_MAINTENANCE) != None:
+        maintenance_users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][SPEC_POSTGRESQL_USERS_MAINTENANCE]
+        for user in maintenance_users:
+            create_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME], user[SPEC_POSTGRESQL_USERS_USER_PASSWORD], True,
                             logger)
 
 
@@ -1985,15 +2006,15 @@ def create_users_normal(
     logger: logging.Logger,
     conns: InstanceConnections,
 ) -> None:
-    if spec[POSTGRESQL].get(USERS) == None:
+    if spec[POSTGRESQL].get(SPEC_POSTGRESQL_USERS) == None:
         return
 
     conn = get_primary_conn(conns, 0, logger)
 
-    if spec[POSTGRESQL][USERS].get(NORMAL_USER) != None:
-        normal_users = spec[POSTGRESQL][USERS][NORMAL_USER]
+    if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(SPEC_POSTGRESQL_USERS_NORMAL) != None:
+        normal_users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][SPEC_POSTGRESQL_USERS_NORMAL]
         for user in normal_users:
-            create_one_user(conn, user[USER_NAME], user[USER_PASSWORD], False,
+            create_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME], user[SPEC_POSTGRESQL_USERS_USER_PASSWORD], False,
                             logger)
 
 
@@ -2005,10 +2026,11 @@ def create_users(
     logger: logging.Logger,
     conns: InstanceConnections,
 ) -> None:
-    if spec[POSTGRESQL].get(USERS) == None:
+    if spec[POSTGRESQL].get(SPEC_POSTGRESQL_USERS) == None:
         return
 
     create_users_admin(meta, spec, patch, status, logger, conns)
+    create_users_maintenance(meta, spec, patch, status, logger, conns)
     create_users_normal(meta, spec, patch, status, logger, conns)
 
 
@@ -3202,7 +3224,10 @@ def update_users(
     OLD: Any,
     NEW: Any,
 ) -> None:
-    if FIELD == DIFF_FIELD_POSTGRESQL_USERS or FIELD == DIFF_FIELD_POSTGRESQL_USERS_ADMIN or FIELD == DIFF_FIELD_POSTGRESQL_USERS_NORMAL:
+    if FIELD == DIFF_FIELD_POSTGRESQL_USERS \
+            or FIELD == DIFF_FIELD_POSTGRESQL_USERS_ADMIN \
+            or FIELD == DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE \
+            or FIELD == DIFF_FIELD_POSTGRESQL_USERS_NORMAL:
         conns = connections(spec, meta, patch,
                             get_field(POSTGRESQL, READWRITEINSTANCE), False,
                             None, logger, None, status, False)
@@ -3213,55 +3238,65 @@ def update_users(
             create_users(meta, spec, patch, status, logger, conns)
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS_ADMIN:
             create_users_admin(meta, spec, patch, status, logger, conns)
+        if FIELD == DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE:
+            create_users_maintenance(meta, spec, patch, status, logger, conns)
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS_NORMAL:
             create_users_normal(meta, spec, patch, status, logger, conns)
     if AC == DIFF_REMOVE:
         users = []
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS:
-            if OLD.get(ADMIN_USER) != None:
-                users += OLD[ADMIN_USER]
-            if OLD.get(NORMAL_USER) != None:
-                users += OLD[NORMAL_USER]
+            if OLD.get(SPEC_POSTGRESQL_USERS_ADMIN) != None:
+                users += OLD[SPEC_POSTGRESQL_USERS_ADMIN]
+            if OLD.get(SPEC_POSTGRESQL_USERS_MAINTENANCE) != None:
+                users += OLD[SPEC_POSTGRESQL_USERS_MAINTENANCE]
+            if OLD.get(SPEC_POSTGRESQL_USERS_NORMAL) != None:
+                users += OLD[SPEC_POSTGRESQL_USERS_NORMAL]
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS_ADMIN:
+            users += OLD
+        if FIELD == DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE:
             users += OLD
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS_NORMAL:
             users += OLD
 
         for user in users:
-            drop_one_user(conn, user[USER_NAME], logger)
+            drop_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME], logger)
 
     if AC == DIFF_CHANGE:
 
         def local_change_user_password(OS: List, NS: List):
             for o in OS:
                 for n in NS:
-                    if o[USER_NAME] == n[USER_NAME]:
-                        if o[USER_PASSWORD] != n[USER_PASSWORD]:
-                            change_user_password(conn, n[USER_NAME],
-                                                 n[USER_PASSWORD], logger)
+                    if o[SPEC_POSTGRESQL_USERS_USER_NAME] == n[SPEC_POSTGRESQL_USERS_USER_NAME]:
+                        if o[SPEC_POSTGRESQL_USERS_USER_PASSWORD] != n[SPEC_POSTGRESQL_USERS_USER_PASSWORD]:
+                            change_user_password(conn, n[SPEC_POSTGRESQL_USERS_USER_NAME],
+                                                 n[SPEC_POSTGRESQL_USERS_USER_PASSWORD], logger)
 
         def local_drop_user(OS: List, NS: List):
             for o in OS:
                 found = False
                 for n in NS:
-                    if o[USER_NAME] == n[USER_NAME]:
+                    if o[SPEC_POSTGRESQL_USERS_USER_NAME] == n[SPEC_POSTGRESQL_USERS_USER_NAME]:
                         found = True
                 if found == False:
-                    drop_one_user(conn, o[USER_NAME], logger)
+                    drop_one_user(conn, o[SPEC_POSTGRESQL_USERS_USER_NAME], logger)
 
-        def local_create_user(OS: List, NS: List, admin: bool):
+        def local_create_user(OS: List, NS: List, superuser: bool):
             for n in NS:
                 found = False
                 for o in OS:
-                    if o[USER_NAME] == n[USER_NAME]:
+                    if o[SPEC_POSTGRESQL_USERS_USER_NAME] == n[SPEC_POSTGRESQL_USERS_USER_NAME]:
                         found = True
                 if found == False:
-                    create_one_user(conn, n[USER_NAME], n[USER_PASSWORD],
-                                    admin, logger)
+                    create_one_user(conn, n[SPEC_POSTGRESQL_USERS_USER_NAME], n[SPEC_POSTGRESQL_USERS_USER_PASSWORD],
+                                    superuser, logger)
 
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS:
             logger.error("UNknow diff action")
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS_ADMIN:
+            local_change_user_password(OLD, NEW)
+            local_drop_user(OLD, NEW)
+            local_create_user(OLD, NEW, True)
+        if FIELD == DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE:
             local_change_user_password(OLD, NEW)
             local_drop_user(OLD, NEW)
             local_create_user(OLD, NEW, True)
@@ -3270,7 +3305,10 @@ def update_users(
             local_drop_user(OLD, NEW)
             local_create_user(OLD, NEW, False)
 
-    if FIELD == DIFF_FIELD_POSTGRESQL_USERS or FIELD == DIFF_FIELD_POSTGRESQL_USERS_ADMIN or FIELD == DIFF_FIELD_POSTGRESQL_USERS_NORMAL:
+    if FIELD == DIFF_FIELD_POSTGRESQL_USERS \
+            or FIELD == DIFF_FIELD_POSTGRESQL_USERS_ADMIN \
+            or FIELD == DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE \
+            or FIELD == DIFF_FIELD_POSTGRESQL_USERS_NORMAL:
         conns.free_conns()
 
 

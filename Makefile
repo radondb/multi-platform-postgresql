@@ -33,6 +33,8 @@ operator-yaml: operator-image
 	cp operatorversions.json platforms/kubernetes/postgres-operator/deploy/versions.json
 	cp jq-template.awk platforms/kubernetes/postgres-operator/deploy/jq-template.awk
 	cd platforms/kubernetes/postgres-operator/deploy/; awk -f jq-template.awk postgres-operator.yaml.template > postgres-operator.yaml
+exporter-image:
+	cd image/exporter; ./generate_image.sh
 
 format:
 	find ./ -path "./platforms/kubernetes/postgres-operator/postgres/*.py" | xargs yapf -i -vv

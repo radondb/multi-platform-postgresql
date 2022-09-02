@@ -58,6 +58,9 @@ spec:
       admin:
         - name: root
           password: root
+      maintenance:
+        - name: maintenance
+          password: maintenance
       normal:
         - name: lzzhang
           password: lzzhang

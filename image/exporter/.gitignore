@@ -1,0 +1,4 @@
+versions.json
+jq-template.awk
+postgres
+autofailover_queries.yaml
