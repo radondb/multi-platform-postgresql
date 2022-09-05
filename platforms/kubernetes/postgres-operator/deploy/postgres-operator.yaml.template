@@ -99,6 +99,11 @@ spec:
                 enum:
                 - true
                 - false
+              volume_type:
+                type: string
+                enum:
+                - 'local'
+                - 'cloud'
               antiaffinity:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
