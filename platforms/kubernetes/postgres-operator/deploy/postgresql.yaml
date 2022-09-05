@@ -6,6 +6,7 @@ metadata:
 spec:
   action: start #stop start
   deletepvc: true
+  volume_type: local       # local/cloud
   antiaffinity:
     policy: preferred                             # preferred/required
     podAntiAffinityTerm: autofailover-readwrite   # none/autofailover-readwrite/autofailover-readwrite-readonly

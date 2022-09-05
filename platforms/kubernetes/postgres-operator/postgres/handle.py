@@ -127,6 +127,13 @@ from constants import (
     SPEC_ANTIAFFINITY_POLICY_PREFERRED,
     SPEC_ANTIAFFINITY_PODANTIAFFINITYTERM,
     SPEC_ANTIAFFINITY_TOPOLOGYKEY,
+    SPEC_VOLUME_TYPE,
+    SPEC_VOLUME_LOCAL,
+    SPEC_VOLUME_CLOUD,
+    SECONDS,
+    MINUTES,
+    HOURS,
+    DAYS,
 )
 
 FIELD_DELIMITER = "-"
@@ -499,7 +506,7 @@ def waiting_cluster_correct_status(
 def waiting_postgresql_ready(
     conns: InstanceConnections,
     logger: logging.Logger,
-    timeout: int = 300,
+    timeout: int = MINUTES * 5,
     connect_start: int = None,
     connect_end: int = None,
 ) -> bool:
@@ -539,7 +546,7 @@ def waiting_target_postgresql_ready(meta: kopf.Meta,
                                     connect_start: int = None,
                                     connect_end: int = None,
                                     exit: bool = False,
-                                    timeout: int = 300) -> None:
+                                    timeout: int = MINUTES * 5) -> None:
     conns: InstanceConnections = connections(spec, meta, patch, field, False,
                                              None, logger, None, status, False,
                                              None)
@@ -2758,11 +2765,13 @@ def rolling_update(
     logger: logging.Logger,
     target_roles: List,
     exit: bool = False,
+    delete_disk: bool = False,
+    timeout: int = MINUTES * 5,
 ) -> None:
     if target_roles is None:
         return
 
-    # rolling update autofailover
+    # rolling update autofailover, not allow autofailover delete disk when update cluster
     if get_field(AUTOFAILOVER) in target_roles:
         autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
         if autofailover_machines != None:
@@ -2775,7 +2784,7 @@ def rolling_update(
         create_autofailover(meta, spec, patch, status, logger,
                             get_autofailover_labels(meta))
         waiting_target_postgresql_ready(meta, spec, patch, get_field(AUTOFAILOVER),
-                                        status, logger, 0, 1, exit)
+                                        status, logger, 0, 1, exit, timeout)
 
     # rolling update readwrite
     if get_field(POSTGRESQL, READWRITEINSTANCE) in target_roles:
@@ -2786,27 +2795,27 @@ def rolling_update(
                 delete_postgresql_readwrite(
                     meta, spec, patch, status, logger,
                     get_field(POSTGRESQL, READWRITEINSTANCE),
-                    readwrite_machines[replica:replica + 1], None, False)
+                    readwrite_machines[replica:replica + 1], None, delete_disk)
                 create_postgresql_readwrite(meta, spec, patch, status, logger,
                                             get_readwrite_labels(meta),
                                             replica, False, replica + 1)
                 waiting_target_postgresql_ready(
                     meta, spec, patch, get_field(POSTGRESQL,
                                                  READWRITEINSTANCE), status,
-                    logger, replica, replica + 1, exit)
+                    logger, replica, replica + 1, exit, timeout)
         else:
             for replica in range(0, spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]):
                 delete_postgresql_readwrite(
                     meta, spec, patch, status, logger,
                     get_field(POSTGRESQL, READWRITEINSTANCE), None,
-                    [replica, replica + 1], False)
+                    [replica, replica + 1], delete_disk)
                 create_postgresql_readwrite(meta, spec, patch, status, logger,
                                             get_readwrite_labels(meta), replica,
                                             False, replica + 1)
                 waiting_target_postgresql_ready(meta, spec, patch,
                                                 get_field(POSTGRESQL,
                                                           READWRITEINSTANCE), status,
-                                                logger, replica, replica + 1, exit)
+                                                logger, replica, replica + 1, exit, timeout)
 
     # rolling update readonly
     if get_field(POSTGRESQL, READONLYINSTANCE) in target_roles:
@@ -2817,25 +2826,25 @@ def rolling_update(
                 delete_postgresql_readonly(
                     meta, spec, patch, status, logger,
                     get_field(POSTGRESQL, READONLYINSTANCE),
-                    readonly_machines[replica:replica + 1], None, False)
+                    readonly_machines[replica:replica + 1], None, delete_disk)
                 create_postgresql_readonly(meta, spec, patch, status, logger,
                                            get_readonly_labels(meta), replica,
                                            replica + 1)
                 waiting_target_postgresql_ready(
                     meta, spec, patch, get_field(POSTGRESQL, READONLYINSTANCE),
-                    status, logger, replica, replica + 1, exit)
+                    status, logger, replica, replica + 1, exit, timeout)
         else:
             for replica in range(0, spec[POSTGRESQL][READONLYINSTANCE][REPLICAS]):
                 delete_postgresql_readonly(meta, spec, patch, status, logger,
                                            get_field(POSTGRESQL, READONLYINSTANCE),
-                                           None, [replica, replica + 1], False)
+                                           None, [replica, replica + 1], delete_disk)
                 create_postgresql_readonly(meta, spec, patch, status, logger,
                                            get_readonly_labels(meta), replica,
                                            replica + 1)
                 waiting_target_postgresql_ready(meta, spec, patch,
                                                 get_field(POSTGRESQL,
                                                           READONLYINSTANCE), status,
-                                                logger, replica, replica + 1, exit)
+                                                logger, replica, replica + 1, exit, timeout)
 
 
 def update_podspec_volume(
@@ -2875,8 +2884,15 @@ def update_antiaffinity(
     logger: logging.Logger,
     target_roles: List,
     exit: bool = False,
+    delete_disk: bool = False,
+    timeout: int = MINUTES * 5,
 ) -> None:
-    rolling_update(meta, spec, patch, status, logger, target_roles, exit)
+    # local volume
+    if spec.get(SPEC_VOLUME_TYPE) == SPEC_VOLUME_LOCAL:
+        delete_disk = True
+        timeout = HOURS * 1
+    rolling_update(meta, spec, patch, status, logger, target_roles, exit,
+                   delete_disk, timeout)
 
 
 def update_replicas(

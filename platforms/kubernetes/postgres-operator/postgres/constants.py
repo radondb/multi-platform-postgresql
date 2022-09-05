@@ -51,6 +51,9 @@ RESTORE_FROMSSH = "fromssh"
 RESTORE_FROMSSH_PATH = "path"
 RESTORE_FROMSSH_ADDRESS = "address"
 RESTORE_FROMSSH_LOCAL = "local"
+SPEC_VOLUME_TYPE = "volume_type"
+SPEC_VOLUME_LOCAL = "local"
+SPEC_VOLUME_CLOUD = "cloud"
 
 # api
 API_GROUP = "postgres.radondb.io"
@@ -115,6 +118,12 @@ SPEC_ANTIAFFINITY_POLICY_REQUIRED = "requiredDuringSchedulingIgnoredDuringExecut
 SPEC_ANTIAFFINITY_POLICY_PREFERRED = "preferredDuringSchedulingIgnoredDuringExecution"
 SPEC_ANTIAFFINITY_PODANTIAFFINITYTERM = "podAntiAffinityTerm"
 SPEC_ANTIAFFINITY_TOPOLOGYKEY = "topologyKey"
+
+# time
+SECONDS = 1
+MINUTES = SECONDS * 60
+HOURS = MINUTES * 60
+DAYS = HOURS * 24
 
 # docker-compose
 DOCKER_COMPOSE_FILE = "docker-compose.yaml"
