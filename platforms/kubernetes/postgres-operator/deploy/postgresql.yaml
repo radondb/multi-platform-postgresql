@@ -46,6 +46,8 @@ spec:
             limits:
               memory: "200Mi"
               cpu: "0.2"
+      tolerations:
+      - operator: "Exists"
     volumeClaimTemplates:
       - metadata:
           name: data
@@ -87,6 +89,8 @@ spec:
               limits:
                 memory: "200Mi"
                 cpu: "0.2"
+        tolerations:
+          - operator: "Exists"
       volumeClaimTemplates:
         - metadata:
             name: data
@@ -111,6 +115,8 @@ spec:
               limits:
                 memory: "200Mi"
                 cpu: "0.2"
+        tolerations:
+          - operator: "Exists"
       volumeClaimTemplates:
         - metadata:
             name: data
