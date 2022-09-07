@@ -17,7 +17,7 @@ export platform=amd64# make platform=arm64 build arm
 export pgversion=all# make pgversion=12 only build postgresql 12 that in versions.json field.
 export forcebuildimage=0# make forcebuildimage=1 even though the image exists, it also compiles.
 
-k8s: download postgres-image operator-yaml operator-image
+k8s: download postgres-image operator-yaml operator-image exporter-image
 all: k8s
 
 download:
