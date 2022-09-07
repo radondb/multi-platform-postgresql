@@ -19,7 +19,9 @@ SPEC = "spec"
 CONTAINERS = "containers"
 CONTAINER_NAME = "name"
 PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER = "postgresql"
+PODSPEC_CONTAINERS_EXPORTER_CONTAINER = "exporter"
 PRIME_SERVICE_PORT_NAME = "prime"
+EXPORTER_SERVICE_PORT_NAME = "exporter"
 HBAS = "hbas"
 CONFIGS = "configs"
 REPLICAS = "replicas"
@@ -142,6 +144,13 @@ services:
       - ./pgenv
     command:
       - auto_failover
+  %s:
+    container_name: %s
+    image: ${exporterimage}
+    network_mode: host
+    restart: always
+    env_file:
+      - ./exporterenv
 '''
 
 # .env
@@ -150,10 +159,12 @@ DOCKER_COMPOSE_ENV_DATA = '''
 image={0}
 host_name={1}
 pgdata={2}
+exporterimage={3}
 '''
 
 # env_file
 DOCKER_COMPOSE_ENVFILE = "pgenv"
+DOCKER_COMPOSE_EXPORTER_ENVFILE = "exporterenv"
 
 # docker-compose data dirctory
 DOCKER_COMPOSE_DIR = "docker_compose"

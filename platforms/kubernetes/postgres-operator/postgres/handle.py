@@ -31,7 +31,9 @@ from constants import (
     CONTAINERS,
     CONTAINER_NAME,
     PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER,
+    PODSPEC_CONTAINERS_EXPORTER_CONTAINER,
     PRIME_SERVICE_PORT_NAME,
+    EXPORTER_SERVICE_PORT_NAME,
     HBAS,
     CONFIGS,
     REPLICAS,
@@ -92,6 +94,7 @@ from constants import (
     DOCKER_COMPOSE_ENV,
     DOCKER_COMPOSE_ENV_DATA,
     DOCKER_COMPOSE_ENVFILE,
+    DOCKER_COMPOSE_EXPORTER_ENVFILE,
     DOCKER_COMPOSE_DIR,
     PGDATA_DIR,
     ASSIST_DIR,
@@ -142,6 +145,7 @@ INIT_FINISH_MESSAGE = "init postgresql finish"
 STOP_FAILED_MESSAGE = "stop auto_failover failed"
 SWITCHOVER_FAILED_MESSAGE = "switchover failed"
 AUTO_FAILOVER_PORT = 55555
+EXPORTER_PORT = 9187
 DIFF_ADD = "add"
 DIFF_CHANGE = "change"
 DIFF_REMOVE = "remove"
@@ -152,9 +156,13 @@ DIFF_FIELD_POSTGRESQL_HBAS = (SPEC, POSTGRESQL, HBAS)
 DIFF_FIELD_AUTOFAILOVER_CONFIGS = (SPEC, AUTOFAILOVER, CONFIGS)
 DIFF_FIELD_POSTGRESQL_CONFIGS = (SPEC, POSTGRESQL, CONFIGS)
 DIFF_FIELD_POSTGRESQL_USERS = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS)
-DIFF_FIELD_POSTGRESQL_USERS_ADMIN = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS, SPEC_POSTGRESQL_USERS_ADMIN)
-DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS, SPEC_POSTGRESQL_USERS_MAINTENANCE)
-DIFF_FIELD_POSTGRESQL_USERS_NORMAL = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS, SPEC_POSTGRESQL_USERS_NORMAL)
+DIFF_FIELD_POSTGRESQL_USERS_ADMIN = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS,
+                                     SPEC_POSTGRESQL_USERS_ADMIN)
+DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE = (SPEC, POSTGRESQL,
+                                           SPEC_POSTGRESQL_USERS,
+                                           SPEC_POSTGRESQL_USERS_MAINTENANCE)
+DIFF_FIELD_POSTGRESQL_USERS_NORMAL = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS,
+                                      SPEC_POSTGRESQL_USERS_NORMAL)
 DIFF_FIELD_STREAMING = (SPEC, POSTGRESQL, READONLYINSTANCE, STREAMING)
 DIFF_FIELD_READWRITE_REPLICAS = (SPEC, POSTGRESQL, READWRITEINSTANCE, REPLICAS)
 DIFF_FIELD_READWRITE_MACHINES = (SPEC, POSTGRESQL, READWRITEINSTANCE, MACHINES)
@@ -204,6 +212,11 @@ RECOVERY_SET_FILE = "postgresql-auto-failover.conf"
 STANDBY_SIGNAL = "standby.signal"
 GET_INET_CMD = "ip addr | grep inet"
 SUCCESS_CHECKPOINT = "CHECKPOINT"
+CONTAINER_ENV = "env"
+CONTAINER_ENV_NAME = "name"
+CONTAINER_ENV_VALUE = "value"
+EXPORTER_CONTAINER_INDEX = 1
+POSTGRESQL_CONTAINER_INDEX = 0
 
 
 def set_cluster_status(meta: kopf.Meta, statefield: str, state: str,
@@ -580,6 +593,7 @@ def waiting_instance_ready(conns: InstanceConnections, logger: logging.Logger):
 
 def create_statefulset(
     meta: kopf.Meta,
+    spec: kopf.Spec,
     name: str,
     namespace: str,
     labels: LabelType,
@@ -588,6 +602,7 @@ def create_statefulset(
     antiaffinity_need_copy: TypedDict,
     env: TypedDict,
     logger: logging.Logger,
+    exporter_env: List,
 ) -> None:
 
     apps_v1_api = client.AppsV1Api()
@@ -604,14 +619,16 @@ def create_statefulset(
     podspec = podspec_need_copy.copy()
     podspec["restartPolicy"] = "Always"
     antiaffinity = antiaffinity_need_copy.copy()
-    is_required = antiaffinity[SPEC_ANTIAFFINITY_POLICY] == SPEC_ANTIAFFINITY_REQUIRED
+    is_required = antiaffinity[
+        SPEC_ANTIAFFINITY_POLICY] == SPEC_ANTIAFFINITY_REQUIRED
     antiaffinity = get_antiaffinity(meta, labels, antiaffinity)
     if antiaffinity:
         spec_antiaffinity = SPEC_ANTIAFFINITY_POLICY_REQUIRED if is_required else SPEC_ANTIAFFINITY_POLICY_PREFERRED
         podspec.setdefault("affinity", {}).setdefault("podAntiAffinity", {})[spec_antiaffinity] = \
             antiaffinity
     for container in podspec[CONTAINERS]:
-        if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
+        if container[
+                CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
             container["args"] = ["auto_failover"]
             container["env"] = env
             container["readinessProbe"] = {
@@ -621,6 +638,8 @@ def create_statefulset(
                     "command": WAITING_POSTGRESQL_READY_COMMAND
                 }
             }
+        if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_EXPORTER_CONTAINER:
+            container["env"] = exporter_env
     statefulset_body["spec"]["template"] = {
         "metadata": {
             "labels": labels
@@ -631,7 +650,8 @@ def create_statefulset(
 
     logger.info(f"create statefulset with {statefulset_body}")
     kopf.adopt(statefulset_body)
-    apps_v1_api.create_namespaced_stateful_set(namespace=namespace, body=statefulset_body)
+    apps_v1_api.create_namespaced_stateful_set(namespace=namespace,
+                                               body=statefulset_body)
 
 
 def get_antiaffinity(meta: kopf.Meta, labels: LabelType,
@@ -650,8 +670,8 @@ def get_antiaffinity(meta: kopf.Meta, labels: LabelType,
     return get_antiaffinity_from_template(meta, antiaffinity)
 
 
-def get_antiaffinity_from_template(
-        meta: kopf.Meta, antiaffinity: TypedDict) -> List:
+def get_antiaffinity_from_template(meta: kopf.Meta,
+                                   antiaffinity: TypedDict) -> List:
     podAntiAffinityTerm = antiaffinity[
         SPEC_ANTIAFFINITY_PODANTIAFFINITYTERM].strip()
     node = '-'.join(
@@ -671,17 +691,10 @@ def get_antiaffinity_from_template(
     }
 
     res = list()
-    if SPEC_ANTIAFFINITY_REQUIRED in antiaffinity[
-            SPEC_ANTIAFFINITY_POLICY]:
+    if SPEC_ANTIAFFINITY_REQUIRED in antiaffinity[SPEC_ANTIAFFINITY_POLICY]:
         res = [labelSelector]
-    elif SPEC_ANTIAFFINITY_PREFERRED in antiaffinity[
-            SPEC_ANTIAFFINITY_POLICY]:
-        res = [{
-            "weight":
-            100,
-            "podAffinityTerm":
-            labelSelector
-        }]
+    elif SPEC_ANTIAFFINITY_PREFERRED in antiaffinity[SPEC_ANTIAFFINITY_POLICY]:
+        res = [{"weight": 100, "podAffinityTerm": labelSelector}]
 
     return res
 
@@ -736,6 +749,90 @@ def get_pod_address(name: str, field: str, replica: int,
     #return statefulset_name_get_external_service_name(get_statefulset_service_name(name, field, replica))
 
 
+def get_exporter_env(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    field: str,
+    container_exporter_need_copy: TypedDict,
+) -> (str, List):
+    container_exporter = container_exporter_need_copy.copy()
+    if field == get_field(AUTOFAILOVER):
+        port = AUTO_FAILOVER_PORT
+        dbname = 'pg_auto_failover'
+        query_path = '/etc/autofailover_queries.yaml'
+    else:
+        port = get_postgresql_config_port(meta, spec, patch, status, logger)
+        dbname = 'postgres'
+        query_path = '/etc/queries.yaml'
+
+    data_source_name = f"user=postgres port={port} host=127.0.0.1 dbname={dbname} sslmode=disable"
+
+    autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
+
+    machine_exporter_env = ""
+    k8s_exporter_env = []
+    container_exporter_envs = container_exporter.get(CONTAINER_ENV)
+    if container_exporter_envs != None:
+        if autofailover_machines == None:
+            k8s_exporter_env += container_exporter_envs
+        else:
+            for env in container_exporter_envs:
+                name = env[CONTAINER_ENV_NAME]
+                value = env[CONTAINER_ENV_VALUE]
+                machine_exporter_env += f'{name}={value}\n'
+
+    if autofailover_machines != None:
+        machine_exporter_env += f'DATA_SOURCE_NAME={data_source_name}\n'
+        machine_exporter_env += f'PG_EXPORTER_EXTEND_QUERY_PATH={query_path}\n'
+    else:
+        k8s_exporter_env.append({
+            CONTAINER_ENV_NAME: "DATA_SOURCE_NAME",
+            CONTAINER_ENV_VALUE: f'{data_source_name}'
+        })
+        k8s_exporter_env.append({
+            CONTAINER_ENV_NAME: "PG_EXPORTER_EXTEND_QUERY_PATH",
+            CONTAINER_ENV_VALUE: f'{query_path}'
+        })
+
+    return (machine_exporter_env, k8s_exporter_env)
+
+
+def get_machine_exporter_env(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    field: str,
+    container_exporter_need_copy: TypedDict,
+) -> str:
+
+    (machine_exporter_env,
+     k8s_exporter_env) = get_exporter_env(meta, spec, patch, status, logger,
+                                          field,
+                                          container_exporter_need_copy.copy())
+    return machine_exporter_env
+
+
+def get_k8s_exporter_env(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    field: str,
+    container_exporter_need_copy: TypedDict,
+) -> List:
+    (machine_exporter_env,
+     k8s_exporter_env) = get_exporter_env(meta, spec, patch, status, logger,
+                                          field,
+                                          container_exporter_need_copy.copy())
+    return k8s_exporter_env
+
+
 def create_postgresql(
     mode: str,
     spec: kopf.Spec,
@@ -770,20 +867,29 @@ def create_postgresql(
         machine_data_path = operator_config.DATA_PATH_POSTGRESQL
 
     for container in localspec[PODSPEC][CONTAINERS]:
-        if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
+        if container[
+                CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
             postgresql_image = container[IMAGE]
+        if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_EXPORTER_CONTAINER:
+            exporter_image = container[IMAGE]
 
     if mode == MACHINE_MODE:
         replicas = conns.get_number() if create_end is None else create_end
         pgdata = os.path.join(machine_data_path, PGDATA_DIR)
         remotepath = os.path.join(machine_data_path, DOCKER_COMPOSE_DIR)
         machine_env = ""
+        machine_exporter_env = get_machine_exporter_env(
+            meta, spec, patch, status, logger, field,
+            localspec[PODSPEC][CONTAINERS][EXPORTER_CONTAINER_INDEX])
     else:
-        replicas = localspec.get(REPLICAS) if create_end is None else create_end
+        replicas = localspec.get(
+            REPLICAS) if create_end is None else create_end
         if replicas == None:
             replicas = 1
         k8s_env = []
-        #k8s_env.append({"name": "REFRESH_ENV", "value": "0"})
+        k8s_exporter_env = get_k8s_exporter_env(
+            meta, spec, patch, status, logger, field,
+            localspec[PODSPEC][CONTAINERS][EXPORTER_CONTAINER_INDEX])
 
     for i, hba in enumerate(hbas):
         env_name = PG_HBA_PREFIX + str(i)
@@ -791,7 +897,10 @@ def create_postgresql(
         if mode == MACHINE_MODE:
             machine_env += env_name + "=" + env_value + "\n"
         else:
-            k8s_env.append({"name": env_name, "value": env_value})
+            k8s_env.append({
+                CONTAINER_ENV_NAME: env_name,
+                CONTAINER_ENV_VALUE: env_value
+            })
 
     for config in configs:
         name = config.split("=")[0].strip()
@@ -807,7 +916,10 @@ def create_postgresql(
         if mode == MACHINE_MODE:
             machine_env += PG_CONFIG_PREFIX + config + "\n"
         else:
-            k8s_env.append({"name": PG_CONFIG_PREFIX + name, "value": value})
+            k8s_env.append({
+                CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + name,
+                CONTAINER_ENV_VALUE: value
+            })
     if mode == MACHINE_MODE:
         machine_env += PG_CONFIG_PREFIX + 'log_truncate_on_rotation=true' + "\n"
         machine_env += PG_CONFIG_PREFIX + 'logging_collector=on' + "\n"
@@ -824,56 +936,57 @@ def create_postgresql(
         machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_count=4" + "\n"
     else:
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "log_truncate_on_rotation",
-            "value": "true"
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_truncate_on_rotation",
+            CONTAINER_ENV_VALUE: "true"
         })
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "logging_collector",
-            "value": "on"
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "logging_collector",
+            CONTAINER_ENV_VALUE: "on"
         })
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "log_directory",
-            "value": "'log'"
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_directory",
+            CONTAINER_ENV_VALUE: "'log'"
         })
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "log_filename",
-            "value": "'postgresql_%d'"
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_filename",
+            CONTAINER_ENV_VALUE: "'postgresql_%d'"
         })
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "log_line_prefix",
-            "value": "'[%m][%r][%a][%u][%d][%x][%p]'"
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_line_prefix",
+            CONTAINER_ENV_VALUE: "'[%m][%r][%a][%u][%d][%x][%p]'"
         })
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "log_destination",
-            "value": "'csvlog'"
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_destination",
+            CONTAINER_ENV_VALUE: "'csvlog'"
         })
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "log_autovacuum_min_duration",
-            "value": "-1"
+            CONTAINER_ENV_NAME:
+            PG_CONFIG_PREFIX + "log_autovacuum_min_duration",
+            CONTAINER_ENV_VALUE: "-1"
         })
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "log_timezone",
-            "value": "'Asia/Shanghai'"
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_timezone",
+            CONTAINER_ENV_VALUE: "'Asia/Shanghai'"
         })
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "datestyle",
-            "value": "'iso, ymd'"
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "datestyle",
+            CONTAINER_ENV_VALUE: "'iso, ymd'"
         })
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "timezone",
-            "value": "'Asia/Shanghai'"
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "timezone",
+            CONTAINER_ENV_VALUE: "'Asia/Shanghai'"
         })
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "tcp_keepalives_idle",
-            "value": "60"
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "tcp_keepalives_idle",
+            CONTAINER_ENV_VALUE: "60"
         })
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "tcp_keepalives_interval",
-            "value": "30"
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "tcp_keepalives_interval",
+            CONTAINER_ENV_VALUE: "30"
         })
         k8s_env.append({
-            "name": PG_CONFIG_PREFIX + "tcp_keepalives_count",
-            "value": "4"
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "tcp_keepalives_count",
+            CONTAINER_ENV_VALUE: "4"
         })
     for replica in range(create_begin, replicas):
         name = get_statefulset_name(meta["name"], field, replica)
@@ -893,15 +1006,18 @@ def create_postgresql(
                 machine_env += "EXTERNAL_HOSTNAME=" + conns.get_conns(
                 )[replica].get_machine().get_host() + "\n"
             else:
-                k8s_env.append({"name": "PG_MODE", "value": "monitor"})
                 k8s_env.append({
-                    "name": "AUTOCTL_NODE_PASSWORD",
-                    "value": autoctl_node_password
+                    CONTAINER_ENV_NAME: "PG_MODE",
+                    CONTAINER_ENV_VALUE: "monitor"
                 })
                 k8s_env.append({
-                    "name":
+                    CONTAINER_ENV_NAME: "AUTOCTL_NODE_PASSWORD",
+                    CONTAINER_ENV_VALUE: autoctl_node_password
+                })
+                k8s_env.append({
+                    CONTAINER_ENV_NAME:
                     "EXTERNAL_HOSTNAME",
-                    "value":
+                    CONTAINER_ENV_VALUE:
                     get_pod_address(meta["name"], field, replica, namespace)
                 })
 
@@ -921,25 +1037,28 @@ def create_postgresql(
                 machine_env += "AUTOCTL_REPLICATOR_PASSWORD=" + autoctl_replicator_password + "\n"
                 machine_env += "MONITOR_HOSTNAME=" + auto_failover_host + "\n"
             else:
-                k8s_env.append({"name": "PG_MODE", "value": "readwrite"})
                 k8s_env.append({
-                    "name": "AUTOCTL_NODE_PASSWORD",
-                    "value": autoctl_node_password
+                    CONTAINER_ENV_NAME: "PG_MODE",
+                    CONTAINER_ENV_VALUE: "readwrite"
                 })
                 k8s_env.append({
-                    "name":
+                    CONTAINER_ENV_NAME: "AUTOCTL_NODE_PASSWORD",
+                    CONTAINER_ENV_VALUE: autoctl_node_password
+                })
+                k8s_env.append({
+                    CONTAINER_ENV_NAME:
                     "EXTERNAL_HOSTNAME",
-                    "value":
+                    CONTAINER_ENV_VALUE:
                     get_pod_address(meta["name"], field, replica, namespace)
                 })
                 k8s_env.append({
-                    "name": "AUTOCTL_REPLICATOR_PASSWORD",
-                    "value": autoctl_replicator_password
+                    CONTAINER_ENV_NAME: "AUTOCTL_REPLICATOR_PASSWORD",
+                    CONTAINER_ENV_VALUE: autoctl_replicator_password
                 })
                 k8s_env.append({
-                    "name":
+                    CONTAINER_ENV_NAME:
                     "MONITOR_HOSTNAME",
-                    "value":
+                    CONTAINER_ENV_VALUE:
                     get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
                 })
         if field == get_field(POSTGRESQL, READONLYINSTANCE):
@@ -959,29 +1078,32 @@ def create_postgresql(
                 machine_env += "PG_STREAMING=" + localspec[STREAMING] + "\n"
                 machine_env += "MONITOR_HOSTNAME=" + auto_failover_host + "\n"
             else:
-                k8s_env.append({"name": "PG_MODE", "value": "readonly"})
                 k8s_env.append({
-                    "name": "AUTOCTL_NODE_PASSWORD",
-                    "value": autoctl_node_password
+                    CONTAINER_ENV_NAME: "PG_MODE",
+                    CONTAINER_ENV_VALUE: "readonly"
                 })
                 k8s_env.append({
-                    "name":
+                    CONTAINER_ENV_NAME: "AUTOCTL_NODE_PASSWORD",
+                    CONTAINER_ENV_VALUE: autoctl_node_password
+                })
+                k8s_env.append({
+                    CONTAINER_ENV_NAME:
                     "EXTERNAL_HOSTNAME",
-                    "value":
+                    CONTAINER_ENV_VALUE:
                     get_pod_address(meta["name"], field, replica, namespace)
                 })
                 k8s_env.append({
-                    "name": "AUTOCTL_REPLICATOR_PASSWORD",
-                    "value": autoctl_replicator_password
+                    CONTAINER_ENV_NAME: "AUTOCTL_REPLICATOR_PASSWORD",
+                    CONTAINER_ENV_VALUE: autoctl_replicator_password
                 })
                 k8s_env.append({
-                    "name": "PG_STREAMING",
-                    "value": localspec[STREAMING]
+                    CONTAINER_ENV_NAME: "PG_STREAMING",
+                    CONTAINER_ENV_VALUE: localspec[STREAMING]
                 })
                 k8s_env.append({
-                    "name":
+                    CONTAINER_ENV_NAME:
                     "MONITOR_HOSTNAME",
-                    "value":
+                    CONTAINER_ENV_VALUE:
                     get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
                 })
 
@@ -991,17 +1113,26 @@ def create_postgresql(
                 conns.get_conns()[replica].get_machine().get_sftp(),
                 DOCKER_COMPOSE_FILE_DATA %
                 (conns.get_conns()[replica].get_machine().get_role(),
-                 conns.get_conns()[replica].get_machine().get_role()),
+                 conns.get_conns()[replica].get_machine().get_role(),
+                 conns.get_conns()[replica].get_machine().get_role() +
+                 PODSPEC_CONTAINERS_EXPORTER_CONTAINER,
+                 conns.get_conns()[replica].get_machine().get_role() +
+                 PODSPEC_CONTAINERS_EXPORTER_CONTAINER),
                 os.path.join(remotepath, DOCKER_COMPOSE_FILE))
             machine_sftp_put(
                 conns.get_conns()[replica].get_machine().get_sftp(),
                 DOCKER_COMPOSE_ENV_DATA.format(
                     postgresql_image,
                     conns.get_conns()[replica].get_machine().get_host(),
-                    pgdata), os.path.join(remotepath, DOCKER_COMPOSE_ENV))
+                    pgdata, exporter_image),
+                os.path.join(remotepath, DOCKER_COMPOSE_ENV))
             machine_sftp_put(
                 conns.get_conns()[replica].get_machine().get_sftp(),
                 machine_env, os.path.join(remotepath, DOCKER_COMPOSE_ENVFILE))
+            machine_sftp_put(
+                conns.get_conns()[replica].get_machine().get_sftp(),
+                machine_exporter_env,
+                os.path.join(remotepath, DOCKER_COMPOSE_EXPORTER_ENVFILE))
 
             logger.info("start with docker-compose")
             machine_exec_command(
@@ -1013,9 +1144,10 @@ def create_postgresql(
                 statefulset_name_get_service_name(name),
                 statefulset_name_get_external_service_name(name), namespace,
                 labels, logger, meta)
-            create_statefulset(meta, name, namespace, labels, localspec[PODSPEC],
-                               localspec[VOLUMECLAIMTEMPLATES], antiaffinity, k8s_env,
-                               logger)
+            create_statefulset(meta, spec, name, namespace, labels,
+                               localspec[PODSPEC],
+                               localspec[VOLUMECLAIMTEMPLATES], antiaffinity,
+                               k8s_env, logger, k8s_exporter_env)
 
         # wait primary node create finish
         if wait_primary == True and field == get_field(
@@ -1321,10 +1453,11 @@ def connect_pods(
 ) -> InstanceConnections:
 
     conns: InstanceConnections = InstanceConnections()
-    
+
     replicas = get_field_replicas(spec, field)
-    role = AUTOFAILOVER if len(field.split(FIELD_DELIMITER)) == 1 else POSTGRESQL
-    
+    role = AUTOFAILOVER if len(
+        field.split(FIELD_DELIMITER)) == 1 else POSTGRESQL
+
     for replica in range(0, replicas):
         name = get_pod_name(meta["name"], field, replica)
         namespace = meta["namespace"]
@@ -1433,6 +1566,7 @@ def pod_exec_command(name: str,
             namespace,
             command=["/bin/bash", "-c", " ".join(['gosu', user] + cmd)],
             stderr=True,
+            container=PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER,
             stdin=False,
             stdout=True,
             tty=False)
@@ -1683,7 +1817,9 @@ def delete_postgresql(
                         conn.get_k8s().get_podname())),
                 conn.get_k8s().get_namespace())
         except Exception as e:
-            logger.error(f"Exception when calling CoreV1Api->delete_namespaced_service: {e}")
+            logger.error(
+                f"Exception when calling CoreV1Api->delete_namespaced_service: {e}"
+            )
         #try:
         #    logger.info("delete postgresql instance service from k8s " +
         #                statefulset_name_get_external_service_name(
@@ -1980,11 +2116,15 @@ def create_users_admin(
 
     conn = get_primary_conn(conns, 0, logger)
 
-    if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(SPEC_POSTGRESQL_USERS_ADMIN) != None:
-        admin_users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][SPEC_POSTGRESQL_USERS_ADMIN]
+    if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(
+            SPEC_POSTGRESQL_USERS_ADMIN) != None:
+        admin_users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][
+            SPEC_POSTGRESQL_USERS_ADMIN]
         for user in admin_users:
-            create_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME], user[SPEC_POSTGRESQL_USERS_USER_PASSWORD], True,
+            create_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME],
+                            user[SPEC_POSTGRESQL_USERS_USER_PASSWORD], True,
                             logger)
+
 
 def create_users_maintenance(
     meta: kopf.Meta,
@@ -1998,12 +2138,24 @@ def create_users_maintenance(
         return
 
     conn = get_primary_conn(conns, 0, logger)
+    auto_failover_conns = connections(spec, meta, patch,
+                                      get_field(AUTOFAILOVER), False, None,
+                                      logger, None, status, False)
+    auto_failover_conn = auto_failover_conns.get_conns()[0]
 
-    if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(SPEC_POSTGRESQL_USERS_MAINTENANCE) != None:
-        maintenance_users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][SPEC_POSTGRESQL_USERS_MAINTENANCE]
+    if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(
+            SPEC_POSTGRESQL_USERS_MAINTENANCE) != None:
+        maintenance_users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][
+            SPEC_POSTGRESQL_USERS_MAINTENANCE]
         for user in maintenance_users:
-            create_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME], user[SPEC_POSTGRESQL_USERS_USER_PASSWORD], True,
+            create_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME],
+                            user[SPEC_POSTGRESQL_USERS_USER_PASSWORD], True,
                             logger)
+            create_one_user(auto_failover_conn,
+                            user[SPEC_POSTGRESQL_USERS_USER_NAME],
+                            user[SPEC_POSTGRESQL_USERS_USER_PASSWORD], True,
+                            logger)
+    auto_failover_conns.free_conns()
 
 
 def create_users_normal(
@@ -2019,10 +2171,13 @@ def create_users_normal(
 
     conn = get_primary_conn(conns, 0, logger)
 
-    if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(SPEC_POSTGRESQL_USERS_NORMAL) != None:
-        normal_users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][SPEC_POSTGRESQL_USERS_NORMAL]
+    if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(
+            SPEC_POSTGRESQL_USERS_NORMAL) != None:
+        normal_users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][
+            SPEC_POSTGRESQL_USERS_NORMAL]
         for user in normal_users:
-            create_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME], user[SPEC_POSTGRESQL_USERS_USER_PASSWORD], False,
+            create_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME],
+                            user[SPEC_POSTGRESQL_USERS_USER_PASSWORD], False,
                             logger)
 
 
@@ -2121,10 +2276,16 @@ def create_services(
                 for port in service_body["spec"]["ports"]:
                     if port["name"] == PRIME_SERVICE_PORT_NAME:
                         port["targetPort"] = postgresql_config_port
+                    if port["name"] == EXPORTER_SERVICE_PORT_NAME:
+                        if port.get("targetPort") == None:
+                            port["targetPort"] = EXPORTER_PORT
             else:
                 for port in service_body["spec"]["ports"]:
                     if port["name"] == PRIME_SERVICE_PORT_NAME:
                         port["targetPort"] = AUTO_FAILOVER_PORT
+                    if port["name"] == EXPORTER_SERVICE_PORT_NAME:
+                        if port.get("targetPort") == None:
+                            port["targetPort"] = EXPORTER_PORT
 
             service_body["spec"]["selector"] = labels
 
@@ -2208,9 +2369,10 @@ def create_services(
         readonly_conns.free_conns()
 
 
-def get_field_replicas(spec: kopf.Spec, field: str=None) -> int:
+def get_field_replicas(spec: kopf.Spec, field: str = None) -> int:
 
-    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(spec)
+    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(
+        spec)
 
     if field is not None:
         replicas = 1
@@ -2259,11 +2421,12 @@ def check_param(spec: kopf.Spec,
                 logger: logging.Logger,
                 create: bool = True) -> int:
 
-    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(spec)
+    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(
+        spec)
 
     if mode == MACHINE_MODE:
         logger.info("running on machines mode")
-        
+
         if autofailover_replicas != 1:
             raise kopf.PermanentError("autofailover only support one machine.")
         if readwrite_replicas < 1:
@@ -2276,6 +2439,10 @@ def check_param(spec: kopf.Spec,
         raise kopf.PermanentError("readwrite replicas must set at lease one")
     if readonly_replicas < 0:
         raise kopf.PermanentError("readonly replicas must large than zero")
+
+    #maintenance_users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(SPEC_POSTGRESQL_USERS_MAINTENANCE)
+    #if maintenance_users == None or len(maintenance_users) == 0:
+    #    raise kopf.PermanentError("at lease one maintenance user")
 
     logger.info("parameters are correct")
 
@@ -2783,8 +2950,9 @@ def rolling_update(
                                 get_field(AUTOFAILOVER), None, [0, 1], False)
         create_autofailover(meta, spec, patch, status, logger,
                             get_autofailover_labels(meta))
-        waiting_target_postgresql_ready(meta, spec, patch, get_field(AUTOFAILOVER),
-                                        status, logger, 0, 1, exit, timeout)
+        waiting_target_postgresql_ready(meta, spec, patch,
+                                        get_field(AUTOFAILOVER), status,
+                                        logger, 0, 1, exit, timeout)
 
     # rolling update readwrite
     if get_field(POSTGRESQL, READWRITEINSTANCE) in target_roles:
@@ -2804,18 +2972,19 @@ def rolling_update(
                                                  READWRITEINSTANCE), status,
                     logger, replica, replica + 1, exit, timeout)
         else:
-            for replica in range(0, spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]):
+            for replica in range(
+                    0, spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]):
                 delete_postgresql_readwrite(
                     meta, spec, patch, status, logger,
                     get_field(POSTGRESQL, READWRITEINSTANCE), None,
                     [replica, replica + 1], delete_disk)
                 create_postgresql_readwrite(meta, spec, patch, status, logger,
-                                            get_readwrite_labels(meta), replica,
-                                            False, replica + 1)
-                waiting_target_postgresql_ready(meta, spec, patch,
-                                                get_field(POSTGRESQL,
-                                                          READWRITEINSTANCE), status,
-                                                logger, replica, replica + 1, exit, timeout)
+                                            get_readwrite_labels(meta),
+                                            replica, False, replica + 1)
+                waiting_target_postgresql_ready(
+                    meta, spec, patch, get_field(POSTGRESQL,
+                                                 READWRITEINSTANCE), status,
+                    logger, replica, replica + 1, exit, timeout)
 
     # rolling update readonly
     if get_field(POSTGRESQL, READONLYINSTANCE) in target_roles:
@@ -2834,17 +3003,18 @@ def rolling_update(
                     meta, spec, patch, get_field(POSTGRESQL, READONLYINSTANCE),
                     status, logger, replica, replica + 1, exit, timeout)
         else:
-            for replica in range(0, spec[POSTGRESQL][READONLYINSTANCE][REPLICAS]):
-                delete_postgresql_readonly(meta, spec, patch, status, logger,
-                                           get_field(POSTGRESQL, READONLYINSTANCE),
-                                           None, [replica, replica + 1], delete_disk)
+            for replica in range(0,
+                                 spec[POSTGRESQL][READONLYINSTANCE][REPLICAS]):
+                delete_postgresql_readonly(
+                    meta, spec, patch, status, logger,
+                    get_field(POSTGRESQL, READONLYINSTANCE), None,
+                    [replica, replica + 1], delete_disk)
                 create_postgresql_readonly(meta, spec, patch, status, logger,
                                            get_readonly_labels(meta), replica,
                                            replica + 1)
-                waiting_target_postgresql_ready(meta, spec, patch,
-                                                get_field(POSTGRESQL,
-                                                          READONLYINSTANCE), status,
-                                                logger, replica, replica + 1, exit, timeout)
+                waiting_target_postgresql_ready(
+                    meta, spec, patch, get_field(POSTGRESQL, READONLYINSTANCE),
+                    status, logger, replica, replica + 1, exit, timeout)
 
 
 def update_podspec_volume(
@@ -2863,17 +3033,20 @@ def update_podspec_volume(
                    )] == DIFF_FIELD_AUTOFAILOVER_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_AUTOFAILOVER_VOLUME
                              )] == DIFF_FIELD_AUTOFAILOVER_VOLUME:
-        rolling_update(meta, spec, patch, status, logger, [get_field(AUTOFAILOVER)])
+        rolling_update(meta, spec, patch, status, logger,
+                       [get_field(AUTOFAILOVER)])
     if FIELD[0:len(DIFF_FIELD_READWRITE_PODSPEC
                    )] == DIFF_FIELD_READWRITE_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_READWRITE_VOLUME
                              )] == DIFF_FIELD_READWRITE_VOLUME:
-        rolling_update(meta, spec, patch, status, logger, [get_field(POSTGRESQL, READWRITEINSTANCE)])
+        rolling_update(meta, spec, patch, status, logger,
+                       [get_field(POSTGRESQL, READWRITEINSTANCE)])
     if FIELD[0:len(DIFF_FIELD_READONLY_PODSPEC
                    )] == DIFF_FIELD_READONLY_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_READONLY_VOLUME
                              )] == DIFF_FIELD_READONLY_VOLUME:
-        rolling_update(meta, spec, patch, status, logger, [get_field(POSTGRESQL, READONLYINSTANCE)])
+        rolling_update(meta, spec, patch, status, logger,
+                       [get_field(POSTGRESQL, READONLYINSTANCE)])
 
 
 def update_antiaffinity(
@@ -3107,8 +3280,10 @@ def update_configs(
             for conn in conns:
                 if get_connhost(conn) == primary_host:
                     if len(readwrite_conns.get_conns()) > 1:
-                        autofailover_switchover(meta, spec, patch, status, logger)
-                        waiting_cluster_final_status(meta, spec, patch, status, logger)
+                        autofailover_switchover(meta, spec, patch, status,
+                                                logger)
+                        waiting_cluster_final_status(meta, spec, patch, status,
+                                                     logger)
                         time.sleep(2)
                     logger.info(f"update configs {cmd} on %s" %
                                 get_connhost(conn))
@@ -3117,7 +3292,7 @@ def update_configs(
                         logger.error(f"update configs {cmd} failed. {output}")
             waiting_cluster_final_status(meta, spec, patch, status, logger)
         else:
-            checkpoint_cmd = [ "pgtools", "-w", "0", "-q", "'checkpoint'" ]
+            checkpoint_cmd = ["pgtools", "-w", "0", "-q", "'checkpoint'"]
             primary_cmd = cmd.copy()
             slave_cmd = cmd.copy()
             if restart_postgresql == True:
@@ -3135,7 +3310,7 @@ def update_configs(
                     if output.find(SUCCESS_CHECKPOINT) == -1:
                         logger.error(
                             f"update configs {checkpoint_cmd} failed. {output}"
-                            )
+                        )
                     output = exec_command(conn,
                                           primary_cmd,
                                           logger,
@@ -3172,6 +3347,11 @@ def update_configs(
         if port_change == True:
             delete_services(meta, spec, patch, status, logger)
             create_services(meta, spec, patch, status, logger)
+            # rolling update exporter env DATA_SOURCE_NAME.port
+            rolling_update(meta, spec, patch, status, logger, [
+                get_field(POSTGRESQL, READWRITEINSTANCE),
+                get_field(POSTGRESQL, READWRITEINSTANCE)
+            ])
     if FIELD == DIFF_FIELD_AUTOFAILOVER_CONFIGS:
         autofailover_conns.free_conns()
     elif FIELD == DIFF_FIELD_POSTGRESQL_CONFIGS:
@@ -3249,6 +3429,10 @@ def update_users(
                             get_field(POSTGRESQL, READWRITEINSTANCE), False,
                             None, logger, None, status, False)
         conn = get_primary_conn(conns, 0, logger)
+        auto_failover_conns = connections(spec, meta, patch,
+                                          get_field(AUTOFAILOVER), False, None,
+                                          logger, None, status, False)
+        auto_failover_conn = auto_failover_conns.get_conns()[0]
 
     if AC == DIFF_ADD:
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS:
@@ -3261,6 +3445,7 @@ def update_users(
             create_users_normal(meta, spec, patch, status, logger, conns)
     if AC == DIFF_REMOVE:
         users = []
+        maintenance_users = []
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS:
             if OLD.get(SPEC_POSTGRESQL_USERS_ADMIN) != None:
                 users += OLD[SPEC_POSTGRESQL_USERS_ADMIN]
@@ -3272,40 +3457,74 @@ def update_users(
             users += OLD
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE:
             users += OLD
+            maintenance_users += OLD
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS_NORMAL:
             users += OLD
 
         for user in users:
             drop_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME], logger)
 
+        for user in maintenance_users:
+            drop_one_user(autofailover_conn,
+                          user[SPEC_POSTGRESQL_USERS_USER_NAME], logger)
+
     if AC == DIFF_CHANGE:
 
-        def local_change_user_password(OS: List, NS: List):
+        def local_change_user_password(OS: List,
+                                       NS: List,
+                                       maintenance_user: bool = False):
             for o in OS:
                 for n in NS:
-                    if o[SPEC_POSTGRESQL_USERS_USER_NAME] == n[SPEC_POSTGRESQL_USERS_USER_NAME]:
-                        if o[SPEC_POSTGRESQL_USERS_USER_PASSWORD] != n[SPEC_POSTGRESQL_USERS_USER_PASSWORD]:
-                            change_user_password(conn, n[SPEC_POSTGRESQL_USERS_USER_NAME],
-                                                 n[SPEC_POSTGRESQL_USERS_USER_PASSWORD], logger)
+                    if o[SPEC_POSTGRESQL_USERS_USER_NAME] == n[
+                            SPEC_POSTGRESQL_USERS_USER_NAME]:
+                        if o[SPEC_POSTGRESQL_USERS_USER_PASSWORD] != n[
+                                SPEC_POSTGRESQL_USERS_USER_PASSWORD]:
+                            change_user_password(
+                                conn, n[SPEC_POSTGRESQL_USERS_USER_NAME],
+                                n[SPEC_POSTGRESQL_USERS_USER_PASSWORD], logger)
+                            if maintenance_user:
+                                change_user_password(
+                                    autofailover_conn,
+                                    n[SPEC_POSTGRESQL_USERS_USER_NAME],
+                                    n[SPEC_POSTGRESQL_USERS_USER_PASSWORD],
+                                    logger)
 
-        def local_drop_user(OS: List, NS: List):
+        def local_drop_user(OS: List,
+                            NS: List,
+                            maintenance_user: bool = False):
             for o in OS:
                 found = False
                 for n in NS:
-                    if o[SPEC_POSTGRESQL_USERS_USER_NAME] == n[SPEC_POSTGRESQL_USERS_USER_NAME]:
+                    if o[SPEC_POSTGRESQL_USERS_USER_NAME] == n[
+                            SPEC_POSTGRESQL_USERS_USER_NAME]:
                         found = True
                 if found == False:
-                    drop_one_user(conn, o[SPEC_POSTGRESQL_USERS_USER_NAME], logger)
+                    drop_one_user(conn, o[SPEC_POSTGRESQL_USERS_USER_NAME],
+                                  logger)
+                    if maintenance_user:
+                        drop_one_user(autofailover_conn,
+                                      o[SPEC_POSTGRESQL_USERS_USER_NAME],
+                                      logger)
 
-        def local_create_user(OS: List, NS: List, superuser: bool):
+        def local_create_user(OS: List,
+                              NS: List,
+                              superuser: bool,
+                              maintenance_user: bool = False):
             for n in NS:
                 found = False
                 for o in OS:
-                    if o[SPEC_POSTGRESQL_USERS_USER_NAME] == n[SPEC_POSTGRESQL_USERS_USER_NAME]:
+                    if o[SPEC_POSTGRESQL_USERS_USER_NAME] == n[
+                            SPEC_POSTGRESQL_USERS_USER_NAME]:
                         found = True
                 if found == False:
-                    create_one_user(conn, n[SPEC_POSTGRESQL_USERS_USER_NAME], n[SPEC_POSTGRESQL_USERS_USER_PASSWORD],
+                    create_one_user(conn, n[SPEC_POSTGRESQL_USERS_USER_NAME],
+                                    n[SPEC_POSTGRESQL_USERS_USER_PASSWORD],
                                     superuser, logger)
+                    if maintenance_user:
+                        create_one_user(auto_failover_conn,
+                                        n[SPEC_POSTGRESQL_USERS_USER_NAME],
+                                        n[SPEC_POSTGRESQL_USERS_USER_PASSWORD],
+                                        superuser, logger)
 
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS:
             logger.error("UNknow diff action")
@@ -3314,9 +3533,9 @@ def update_users(
             local_drop_user(OLD, NEW)
             local_create_user(OLD, NEW, True)
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE:
-            local_change_user_password(OLD, NEW)
-            local_drop_user(OLD, NEW)
-            local_create_user(OLD, NEW, True)
+            local_change_user_password(OLD, NEW, True)
+            local_drop_user(OLD, NEW, True)
+            local_create_user(OLD, NEW, True, True)
         if FIELD == DIFF_FIELD_POSTGRESQL_USERS_NORMAL:
             local_change_user_password(OLD, NEW)
             local_drop_user(OLD, NEW)
@@ -3327,6 +3546,7 @@ def update_users(
             or FIELD == DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE \
             or FIELD == DIFF_FIELD_POSTGRESQL_USERS_NORMAL:
         conns.free_conns()
+        auto_failover_conns.free_conns()
 
 
 # kubectl patch pg lzzhang --patch '{"spec": {"action": "stop"}}' --type=merge

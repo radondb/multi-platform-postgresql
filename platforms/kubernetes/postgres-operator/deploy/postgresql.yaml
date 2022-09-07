@@ -12,6 +12,14 @@ spec:
     podAntiAffinityTerm: autofailover-readwrite   # none/autofailover-readwrite/autofailover-readwrite-readonly
     topologyKey: "kubernetes.io/hostname"         # when policy is required, only allow "kubernetes.io/hostname"
   services:
+    - selector: autofailover # autofailover/primary/standby/readonly/standby-readonly
+      metadata:
+        name: autofailover
+      spec:
+        type: ClusterIP
+        ports:
+          - name: exporter # cant' change the name
+            port: 9187 #targetPort: 9187
     - selector: primary # autofailover/primary/standby/readonly/standby-readonly
       metadata:
         name: readwrite
@@ -20,6 +28,8 @@ spec:
         ports:
           - name: prime # cant' change the name
             port: 5432
+          - name: exporter # cant' change the name
+            port: 9187
     - selector: standby-readonly
       metadata:
         name: standby-readonly
@@ -28,6 +38,8 @@ spec:
         ports:
           - name: prime # cant' change the name
             port: 5432
+          - name: exporter # cant' change the name
+            port: 9187
   autofailover:
     hbas:
       - host all all all md5
@@ -46,6 +58,13 @@ spec:
             limits:
               memory: "200Mi"
               cpu: "0.2"
+        - image: radondb-postgres-exporter:v0.9.0
+          imagePullPolicy: IfNotPresent
+          name: exporter # can't change the name
+          resources:
+            limits:
+              memory: "100Mi"
+              cpu: "0.1"
     volumeClaimTemplates:
       - metadata:
           name: data
@@ -59,9 +78,6 @@ spec:
       admin:
         - name: root
           password: root
-      maintenance:
-        - name: maintenance
-          password: maintenance
       normal:
         - name: lzzhang
           password: lzzhang
@@ -87,6 +103,13 @@ spec:
               limits:
                 memory: "200Mi"
                 cpu: "0.2"
+          - image: radondb-postgres-exporter:v0.9.0
+            imagePullPolicy: IfNotPresent
+            name: exporter # can't change the name
+            resources:
+              limits:
+                memory: "100Mi"
+                cpu: "0.1"
       volumeClaimTemplates:
         - metadata:
             name: data
@@ -111,6 +134,13 @@ spec:
               limits:
                 memory: "200Mi"
                 cpu: "0.2"
+          - image: radondb-postgres-exporter:v0.9.0
+            imagePullPolicy: IfNotPresent
+            name: exporter # can't change the name
+            resources:
+              limits:
+                memory: "100Mi"
+                cpu: "0.1"
       volumeClaimTemplates:
         - metadata:
             name: data
