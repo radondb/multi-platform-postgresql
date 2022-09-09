@@ -2816,8 +2816,8 @@ def update_streaming(
             ]
             conns = connections(spec, meta, patch,
                                 get_field(POSTGRESQL, READONLYINSTANCE), False,
-                                None, logger, None, status, False).get_conns()
-            for conn in conns:
+                                None, logger, None, status, False)
+            for conn in conns.get_conns():
                 output = exec_command(conn, cmd, logger, interrupt=False)
                 if output.find(SUCCESS) == -1:
                     logger.error(
