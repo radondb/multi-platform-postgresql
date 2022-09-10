@@ -2239,9 +2239,8 @@ def create_services(
     # k8s mode
     if autofailover_machines == None:
         core_v1_api = client.CoreV1Api()
-        autofailover = False
-
         for service in spec[SERVICES]:
+            autofailover = False
             if service[SELECTOR] == SERVICE_AUTOFAILOVER:
                 labels = get_service_autofailover_labels(meta)
                 autofailover = True
