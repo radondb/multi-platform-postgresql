@@ -139,6 +139,7 @@ from constants import (
     DAYS,
 )
 
+PRIMARY_FORMATION = " --formation primary "
 FIELD_DELIMITER = "-"
 WAITING_POSTGRESQL_READY_COMMAND = ["pgtools", "-a"]
 INIT_FINISH_MESSAGE = "init postgresql finish"
@@ -1781,7 +1782,7 @@ def delete_postgresql(
             autofailover_switchover(meta, spec, patch, status, logger)
         cmd = ["pgtools", "-D"]
         output = exec_command(conn, cmd, logger, interrupt=False)
-        if output.find("ERROR") != -1:
+        if output.find("drop auto_failover failed") != -1:
             logger.error("can't delete postgresql instance " + output)
     else:
         cmd = ["pgtools", "-R"]
@@ -2509,6 +2510,7 @@ async def create_cluster(
         # wait a few seconds to prevent the pod not running
         time.sleep(5)
         # cluster running
+        update_number_sync_standbys(meta, spec, patch, status, logger)
         set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_RUN,
                            logger)
     except Exception as e:
@@ -2788,6 +2790,37 @@ async def timer_cluster(
     await correct_postgresql_password(meta, spec, patch, status, logger)
     await correct_keepalived(meta, spec, patch, status, logger)
 
+def update_number_sync_standbys(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(
+        spec)
+
+    pg_nodes = readwrite_replicas + readonly_replicas
+    number_sync = readwrite_replicas + readonly_replicas if spec[POSTGRESQL][READONLYINSTANCE][STREAMING] == STREAMING_SYNC else readwrite_replicas
+    expect_number = number_sync - 2
+    if expect_number < 0:
+        expect_number = 0
+
+    if pg_nodes >= 2:
+        autofailover_conns = connections(spec, meta, patch,
+                                         get_field(AUTOFAILOVER), False,
+                                         None, logger, None, status, False)
+        cmd = [
+            "pgtools", "-S",
+            "' formation number-sync-standbys  " + str(expect_number) + PRIMARY_FORMATION + "'"
+        ]
+        logger.info(f"set number-sync-standbys with cmd {cmd}")
+        output = exec_command(autofailover_conns.get_conns()[0], cmd, logger, interrupt=False)
+        if output.find(SUCCESS) == -1:
+            logger.error(
+                    f"set number-sync-standbys failed {cmd}  {output}")
+        autofailover_conns.free_conns()
+
 
 def update_streaming(
     meta: kopf.Meta,
@@ -2799,7 +2832,8 @@ def update_streaming(
     FIELD: Tuple,
     OLD: Any,
     NEW: Any,
-) -> None:
+) -> bool:
+    need_update_number_sync_standbys = False
     if FIELD == DIFF_FIELD_STREAMING:
         if AC != DIFF_CHANGE:
             logger.error(DIFF_FIELD_STREAMING + " only support " + DIFF_CHANGE)
@@ -2807,12 +2841,18 @@ def update_streaming(
             #pg_autoctl set node replication-quorum 0 --pgdata /var/lib/postgresql/data/pg_data/
             if NEW == STREAMING_SYNC:
                 quorum = 1
+                need_update_number_sync_standbys = True
             elif NEW == STREAMING_ASYNC:
                 quorum = 0
+                # must set number before set async
+                logger.info("waiting for update_cluster success on readonly treaming")
+                waiting_cluster_final_status(meta, spec, patch, status, logger)
+                update_number_sync_standbys(meta, spec, patch, status, logger)
             cmd = [
                 "pgtools", "-S",
                 "'node replication-quorum " + str(quorum) + "'"
             ]
+            logger.info(f"set readonly streaming with cmd {cmd}")
             conns = connections(spec, meta, patch,
                                 get_field(POSTGRESQL, READONLYINSTANCE), False,
                                 None, logger, None, status, False)
@@ -2822,6 +2862,8 @@ def update_streaming(
                     logger.error(
                         f"set readonly streaming failed {cmd}  {output}")
             conns.free_conns()
+
+    return need_update_number_sync_standbys
 
 
 def postgresql_action(
@@ -3077,7 +3119,8 @@ def update_replicas(
     FIELD: Tuple,
     OLD: Any,
     NEW: Any,
-) -> None:
+) -> bool:
+    need_update_number_sync_standbys = False
     if FIELD == DIFF_FIELD_READWRITE_REPLICAS:
         if AC != DIFF_CHANGE:
             #raise kopf.TemporaryError("Exception when calling list_pod_for_all_namespaces: %s\n" % e)
@@ -3093,6 +3136,7 @@ def update_replicas(
                     meta, spec, patch, status, logger,
                     get_field(POSTGRESQL, READWRITEINSTANCE), None, [NEW, OLD],
                     True)
+            need_update_number_sync_standbys = True
 
     if FIELD == DIFF_FIELD_READWRITE_MACHINES:
         if AC != DIFF_CHANGE:
@@ -3109,8 +3153,10 @@ def update_replicas(
                     meta, spec, patch, status, logger,
                     get_field(POSTGRESQL, READWRITEINSTANCE),
                     [i for i in OLD if i not in NEW], None, True)
-        delete_services(meta, spec, patch, status, logger)
-        create_services(meta, spec, patch, status, logger)
+            delete_services(meta, spec, patch, status, logger)
+            create_services(meta, spec, patch, status, logger)
+
+            need_update_number_sync_standbys = True
 
     if FIELD == DIFF_FIELD_READONLY_REPLICAS:
         if NEW > OLD:
@@ -3120,6 +3166,7 @@ def update_replicas(
             delete_postgresql_readonly(meta, spec, patch, status, logger,
                                        get_field(POSTGRESQL, READONLYINSTANCE),
                                        None, [NEW, OLD], True)
+        need_update_number_sync_standbys = True
 
     if FIELD == DIFF_FIELD_READONLY_MACHINES:
         if OLD == None or (NEW != None and len(NEW) > len(OLD)):
@@ -3139,6 +3186,10 @@ def update_replicas(
                                        delete_machine, None, True)
         delete_services(meta, spec, patch, status, logger)
         create_services(meta, spec, patch, status, logger)
+
+        need_update_number_sync_standbys = True
+
+    return need_update_number_sync_standbys
 
 
 def delete_services(
@@ -3563,6 +3614,7 @@ async def update_cluster(
         logger.info("check update_cluster params")
         check_param(spec, logger, create=False)
         need_roll_update = False
+        need_update_number_sync_standbys = False
 
         for diff in diffs:
             AC = diff[0]
@@ -3583,8 +3635,10 @@ async def update_cluster(
             OLD = diff[2]
             NEW = diff[3]
 
-            update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD,
+            return_update_number_sync_standbys = update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD,
                             NEW)
+            if need_update_number_sync_standbys == False and return_update_number_sync_standbys == True:
+                need_update_number_sync_standbys = True
             update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
                                   OLD, NEW)
             if FIELD[0:len(DIFF_FIELD_SPEC_ANTIAFFINITY
@@ -3606,13 +3660,19 @@ async def update_cluster(
             update_hbas(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
             update_users(meta, spec, patch, status, logger, AC, FIELD, OLD,
                          NEW)
-            update_streaming(meta, spec, patch, status, logger, AC, FIELD, OLD,
+            return_update_number_sync_standbys = update_streaming(meta, spec, patch, status, logger, AC, FIELD, OLD,
                              NEW)
+            if need_update_number_sync_standbys == False and return_update_number_sync_standbys == True:
+                need_update_number_sync_standbys = True
             update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
 
         logger.info("waiting for update_cluster success")
         waiting_cluster_final_status(meta, spec, patch, status, logger)
+
+        # after waiting_cluster_final_status. update number_sync
+        if need_update_number_sync_standbys:
+            update_number_sync_standbys(meta, spec, patch, status, logger)
 
         # wait a few seconds to prevent the pod not running
         time.sleep(5)
