@@ -137,6 +137,9 @@ from constants import (
     MINUTES,
     HOURS,
     DAYS,
+    SPEC_POD_PRIORITY_CLASS,
+    SPEC_POD_PRIORITY_CLASS_SCOPE_NODE,
+    SPEC_POD_PRIORITY_CLASS_SCOPE_CLUSTER,
 )
 
 PRIMARY_FORMATION = " --formation primary "
@@ -619,6 +622,8 @@ def create_statefulset(
         "serviceName"] = statefulset_name_get_service_name(name)
     podspec = podspec_need_copy.copy()
     podspec["restartPolicy"] = "Always"
+    podspec.setdefault(SPEC_POD_PRIORITY_CLASS,
+                       SPEC_POD_PRIORITY_CLASS_SCOPE_CLUSTER)
     antiaffinity = antiaffinity_need_copy.copy()
     is_required = antiaffinity[
         SPEC_ANTIAFFINITY_POLICY] == SPEC_ANTIAFFINITY_REQUIRED

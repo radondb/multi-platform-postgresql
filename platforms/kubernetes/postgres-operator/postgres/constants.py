@@ -121,6 +121,11 @@ SPEC_ANTIAFFINITY_POLICY_PREFERRED = "preferredDuringSchedulingIgnoredDuringExec
 SPEC_ANTIAFFINITY_PODANTIAFFINITYTERM = "podAntiAffinityTerm"
 SPEC_ANTIAFFINITY_TOPOLOGYKEY = "topologyKey"
 
+# pod PriorityClass
+SPEC_POD_PRIORITY_CLASS = "priorityClassName"
+SPEC_POD_PRIORITY_CLASS_SCOPE_NODE = "system-node-critical"
+SPEC_POD_PRIORITY_CLASS_SCOPE_CLUSTER = "system-cluster-critical"
+
 # time
 SECONDS = 1
 MINUTES = SECONDS * 60
