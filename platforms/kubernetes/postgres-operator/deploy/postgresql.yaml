@@ -65,6 +65,8 @@ spec:
             limits:
               memory: "100Mi"
               cpu: "0.1"
+      imagePullSecrets:
+        - name: default-token-dstkt
     volumeClaimTemplates:
       - metadata:
           name: data
@@ -110,6 +112,8 @@ spec:
               limits:
                 memory: "100Mi"
                 cpu: "0.1"
+        imagePullSecrets:
+          - name: default-token-dstkt
       volumeClaimTemplates:
         - metadata:
             name: data
@@ -141,6 +145,8 @@ spec:
               limits:
                 memory: "100Mi"
                 cpu: "0.1"
+        imagePullSecrets:
+          - name: default-token-dstkt
       volumeClaimTemplates:
         - metadata:
             name: data
