@@ -6,6 +6,7 @@
     "tag": ["REL_12_12"],
     "failover": "v1.6.4",
     "dirtyread": "2.4",
+    "barman": "release/3.1.0",
     "name": "radondb-postgresql",
     "version": "v1.0.0",
     "arches": [
@@ -20,6 +21,7 @@
     "tag": ["REL_13_8"],
     "failover": "v1.6.4",
     "dirtyread": "2.4",
+    "barman": "release/3.1.0",
     "name": "radondb-postgresql",
     "version": "v1.0.0",
     "arches": [
@@ -34,6 +36,7 @@
     "tag": ["REL_14_5"],
     "failover": "v1.6.4",
     "dirtyread": "2.4",
+    "barman": "release/3.1.0",
     "name": "radondb-postgresql",
     "version": "v1.0.0",
     "arches": [
