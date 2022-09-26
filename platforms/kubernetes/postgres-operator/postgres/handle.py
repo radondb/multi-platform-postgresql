@@ -187,6 +187,7 @@ DIFF_FIELD_READWRITE_VOLUME = (SPEC, POSTGRESQL, READWRITEINSTANCE,
 DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
 DIFF_FIELD_SPEC_ANTIAFFINITY = (SPEC, SPEC_ANTIAFFINITY)
+DIFF_FIELD_SPEC_S3 = (SPEC, SPEC_S3)
 STATEFULSET_REPLICAS = 1
 PG_CONFIG_IGNORE = ("block_size", "data_checksums", "data_directory_mode",
                     "debug_assertions", "integer_datetimes", "lc_collate",
@@ -947,6 +948,8 @@ def create_postgresql(
         machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_idle=60" + "\n"
         machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_interval=30" + "\n"
         machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_count=4" + "\n"
+        machine_env += PG_CONFIG_PREFIX + "archive_mode=on" + "\n"
+        machine_env += PG_CONFIG_PREFIX + "archive_command='/bin/true'" + "\n"
     else:
         k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_truncate_on_rotation",
@@ -1001,6 +1004,14 @@ def create_postgresql(
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "tcp_keepalives_count",
             CONTAINER_ENV_VALUE: "4"
         })
+        k8s_env.append({
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "archive_mode",
+            CONTAINER_ENV_VALUE: "on"
+        })
+        k8s_env.append({
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "archive_command",
+            CONTAINER_ENV_VALUE: "'/bin/true'"
+        })
     for replica in range(create_begin, replicas):
         name = get_statefulset_name(meta["name"], field, replica)
         namespace = meta["namespace"]
@@ -1049,11 +1060,11 @@ def create_postgresql(
                 )[replica].get_machine().get_host() + "\n"
                 machine_env += "AUTOCTL_REPLICATOR_PASSWORD=" + autoctl_replicator_password + "\n"
                 machine_env += "MONITOR_HOSTNAME=" + auto_failover_host + "\n"
-                machine_env += "S3_ACCESS_KEY=" + s3[SPEC_S3_ACCESS_KEY] + "\n"
-                machine_env += "S3_SECRET_KEY=" + s3[SPEC_S3_SECRET_KEY] + "\n"
-                machine_env += "S3_ENDPOINT=" + s3[SPEC_S3_ENDPOINT] + "\n"
-                machine_env += "S3_BUCKET=" + s3[SPEC_S3_BUCKET] + "\n"
-                machine_env += "S3_PATH=" + s3[SPEC_S3_PATH] + "\n"
+                machine_env += SPEC_S3 + "_" + SPEC_S3_ACCESS_KEY + "=" + s3[SPEC_S3_ACCESS_KEY] + "\n"
+                machine_env += SPEC_S3 + "_" + SPEC_S3_SECRET_KEY + "=" + s3[SPEC_S3_SECRET_KEY] + "\n"
+                machine_env += SPEC_S3 + "_" + SPEC_S3_ENDPOINT + "=" + s3[SPEC_S3_ENDPOINT] + "\n"
+                machine_env += SPEC_S3 + "_" + SPEC_S3_BUCKET + "=" + s3[SPEC_S3_BUCKET] + "\n"
+                machine_env += SPEC_S3 + "_" + SPEC_S3_PATH + "=" + s3[SPEC_S3_PATH] + "\n"
             else:
                 k8s_env.append({
                     CONTAINER_ENV_NAME: "PG_MODE",
@@ -1080,23 +1091,23 @@ def create_postgresql(
                     get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
                 })
                 k8s_env.append({
-                    CONTAINER_ENV_NAME: "S3_ACCESS_KEY",
+                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_ACCESS_KEY,
                     CONTAINER_ENV_VALUE: s3[SPEC_S3_ACCESS_KEY]
                 })
                 k8s_env.append({
-                    CONTAINER_ENV_NAME: "S3_SECRET_KEY",
+                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_SECRET_KEY,
                     CONTAINER_ENV_VALUE: s3[SPEC_S3_SECRET_KEY]
                 })
                 k8s_env.append({
-                    CONTAINER_ENV_NAME: "S3_ENDPOINT",
+                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_ENDPOINT,
                     CONTAINER_ENV_VALUE: s3[SPEC_S3_ENDPOINT]
                 })
                 k8s_env.append({
-                    CONTAINER_ENV_NAME: "S3_BUCKET",
+                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_BUCKET,
                     CONTAINER_ENV_VALUE: s3[SPEC_S3_BUCKET]
                 })
                 k8s_env.append({
-                    CONTAINER_ENV_NAME: "S3_PATH",
+                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_PATH,
                     CONTAINER_ENV_VALUE: s3[SPEC_S3_PATH]
                 })
         if field == get_field(POSTGRESQL, READONLYINSTANCE):
@@ -1115,11 +1126,11 @@ def create_postgresql(
                 machine_env += "AUTOCTL_REPLICATOR_PASSWORD=" + autoctl_replicator_password + "\n"
                 machine_env += "PG_STREAMING=" + localspec[STREAMING] + "\n"
                 machine_env += "MONITOR_HOSTNAME=" + auto_failover_host + "\n"
-                machine_env += "S3_ACCESS_KEY=" + s3[SPEC_S3_ACCESS_KEY] + "\n"
-                machine_env += "S3_SECRET_KEY=" + s3[SPEC_S3_SECRET_KEY] + "\n"
-                machine_env += "S3_ENDPOINT=" + s3[SPEC_S3_ENDPOINT] + "\n"
-                machine_env += "S3_BUCKET=" + s3[SPEC_S3_BUCKET] + "\n"
-                machine_env += "S3_PATH=" + s3[SPEC_S3_PATH] + "\n"
+                machine_env += SPEC_S3 + "_" + SPEC_S3_ACCESS_KEY + "=" + s3[SPEC_S3_ACCESS_KEY] + "\n"
+                machine_env += SPEC_S3 + "_" + SPEC_S3_SECRET_KEY + "=" + s3[SPEC_S3_SECRET_KEY] + "\n"
+                machine_env += SPEC_S3 + "_" + SPEC_S3_ENDPOINT + "=" + s3[SPEC_S3_ENDPOINT] + "\n"
+                machine_env += SPEC_S3 + "_" + SPEC_S3_BUCKET + "=" + s3[SPEC_S3_BUCKET] + "\n"
+                machine_env += SPEC_S3 + "_" + SPEC_S3_PATH + "=" + s3[SPEC_S3_PATH] + "\n"
             else:
                 k8s_env.append({
                     CONTAINER_ENV_NAME: "PG_MODE",
@@ -1150,23 +1161,23 @@ def create_postgresql(
                     get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
                 })
                 k8s_env.append({
-                    CONTAINER_ENV_NAME: "S3_ACCESS_KEY",
+                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_ACCESS_KEY,
                     CONTAINER_ENV_VALUE: s3[SPEC_S3_ACCESS_KEY]
                 })
                 k8s_env.append({
-                    CONTAINER_ENV_NAME: "S3_SECRET_KEY",
+                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_SECRET_KEY,
                     CONTAINER_ENV_VALUE: s3[SPEC_S3_SECRET_KEY]
                 })
                 k8s_env.append({
-                    CONTAINER_ENV_NAME: "S3_ENDPOINT",
+                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_ENDPOINT,
                     CONTAINER_ENV_VALUE: s3[SPEC_S3_ENDPOINT]
                 })
                 k8s_env.append({
-                    CONTAINER_ENV_NAME: "S3_BUCKET",
+                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_BUCKET,
                     CONTAINER_ENV_VALUE: s3[SPEC_S3_BUCKET]
                 })
                 k8s_env.append({
-                    CONTAINER_ENV_NAME: "S3_PATH",
+                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_PATH,
                     CONTAINER_ENV_VALUE: s3[SPEC_S3_PATH]
                 })
 
@@ -3704,7 +3715,8 @@ async def update_cluster(
             update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
                                   OLD, NEW)
             if FIELD[0:len(DIFF_FIELD_SPEC_ANTIAFFINITY
-                           )] == DIFF_FIELD_SPEC_ANTIAFFINITY:
+                           )] == DIFF_FIELD_SPEC_ANTIAFFINITY or FIELD[0:len(
+                               DIFF_FIELD_SPEC_S3)] == DIFF_FIELD_SPEC_S3:
                 need_roll_update = True
 
         if need_roll_update:
