@@ -236,13 +236,27 @@ function check_and_set_param() {
 	S3_ENDPOINT=$1
 	S3_BUCKET=$2
 	S3_PATH=$3
+	need_reload=0
+	archive_command="barman-cloud-wal-archive --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME %p"
+
 	output=$(pgtools -q "select setting from pg_settings where name = 'archive_mode' and setting <> 'off';")
 	if [ ! $output ]; then
-	  check_error 1 "archive_mode is off, please turn on archive_mode"
+		check_error 1 "archive_mode is off, please turn on archive_mode"
 	fi
-	echo "archive_command = 'barman-cloud-wal-archive --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME %p'" >> $PGDATA/postgresql.conf
-	echo "archive_timeout = 60" >> $PGDATA/postgresql.conf
-	reload_postgresql
+	output=$(pgtools -q "select setting from pg_settings where name = 'archive_command';")
+	if [[ $output != $archive_command ]]; then
+		need_reload=1
+		echo "archive_command = '$archive_command'" >> $PGDATA/postgresql.conf
+	fi
+	output=$(pgtools -q "select setting from pg_settings where name = 'archive_timeout';")
+	if [ $output == 0 ]; then
+		need_reload=1
+		echo "archive_timeout = 60" >> $PGDATA/postgresql.conf
+	fi
+	if [ $need_reload == 1 ]; then
+		reload_postgresql
+		pgtools -q "select pg_switch_wal();"
+	fi
 }
 
 function s3_backup() {
@@ -256,7 +270,6 @@ function s3_backup() {
 	generate_s3_profile $S3_ACCESS_KEY $S3_SECRET_KEY
 	check_s3_valid $S3_ENDPOINT $S3_BUCKET $S3_PATH
 	check_and_set_param $S3_ENDPOINT $S3_BUCKET $S3_PATH
-	pgtools -q "select pg_switch_wal();"
 	barman-cloud-backup --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME
 	if [ $? != 0 ]; then
 		check_error 1 "backup failed, please check error log"
