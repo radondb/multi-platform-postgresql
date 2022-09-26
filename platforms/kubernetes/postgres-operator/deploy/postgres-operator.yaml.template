@@ -121,6 +121,20 @@ spec:
                     - 'autofailover-readwrite-readonly'
                   topologyKey:
                     type: string
+              S3:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  ACCESS_KEY:
+                    type: string
+                  SECRET_KEY:
+                    type: string
+                  ENDPOINT:
+                    type: string
+                  BUCKET:
+                    type: string
+                  PATH:
+                    type: string
               services:
                 type: array
                 items:

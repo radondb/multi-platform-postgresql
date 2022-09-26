@@ -11,6 +11,12 @@ spec:
     policy: preferred                             # preferred/required
     podAntiAffinityTerm: autofailover-readwrite   # none/autofailover-readwrite/autofailover-readwrite-readonly
     topologyKey: "kubernetes.io/hostname"         # when policy is required, only allow "kubernetes.io/hostname"
+  S3:
+    ACCESS_KEY: "PFDHBVIOPQZYYGNBVXJY"
+    SECRET_KEY: "7f3SPyiBALsJw2NXmuas903LcxwdCvSdoMs03NkV"
+    ENDPOINT: "http://s3.pek3.qingstor.com/"
+    BUCKET: "postgresql"
+    PATH: "/test/backup"
   services:
     - selector: autofailover # autofailover/primary/standby/readonly/standby-readonly
       metadata:
