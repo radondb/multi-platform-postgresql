@@ -116,6 +116,7 @@ VOLUME /var/lib/postgresql/data
 COPY --from=builder /var/lib/postgresql/ /var/lib/postgresql
 COPY docker-entrypoint.sh /usr/local/bin/
 COPY pgtools /usr/local/bin/
+COPY config/barman/barman.conf /etc/
 
 RUN set -eux; \
 	groupadd -r postgres --gid=999; \

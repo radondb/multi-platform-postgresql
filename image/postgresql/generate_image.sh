@@ -41,6 +41,9 @@ build_image()
 	echo "copy code ..."
 	cp -r ../../source_code/* "$dir/"
 
+	echo "copy config ..."
+	cp -r ../config/ "$dir/"
+
 	cd "$dir"
 	echo "build docker image $image ..."
 	docker buildx build --no-cache -t $image --platform $pf .
