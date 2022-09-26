@@ -21,10 +21,14 @@ no_error=0
 ready_accept=0
 SUCCESS="exec_success"
 switchover=0
+backup=0
 
 # set env
 DATA=${DATA:-/var/lib/postgresql/data}
 PGDATA=${DATA}/pg_data
+BARMAN_DATA=${BARMAN_DATA:-/var/lib/postgresql/data/barman/data}
+BARMAN_CONF=${BARMAN_CONF:-/var/lib/postgresql/data/barman/config}
+BARMAN_BACKUPNAME=${BARMAN_BACKUPNAME:-postgresql-backup}
 export PGDATA
 #export XDG_CONFIG_HOME=${DATA}/auto_failover
 #export XDG_DATA_HOME=${DATA}/auto_failover
@@ -41,8 +45,26 @@ if [ "$(id -u)" = '0' ]; then
 	exec gosu postgres "$BASH_SOURCE" "$@"
 fi
 
+############ barman config start
+# local
+local_pg="[$BARMAN_BACKUPNAME]
+description = 'Local PostgreSQL'
+backup_method = local-rsync
+backup_options = concurrent_backup
+archiver = on
+conninfo = host=127.0.0.1 port=5432 user=postgres dbname=postgres
+parallel_jobs = 1
+reuse_backup = link
+path_prefix = '/var/lib/postgresql/bin'
+;; retention_policy = REDUNDANCY 10
+wal_retention_policy = main"
+
+# streaming
+streaming_pg=""
+############ barman config end
+
 # parse argument
-while getopts "acdDe:hHp:q:w:Q:norRs:S:" arg
+while getopts "acdDe:hHp:q:w:Q:norRs:S:b" arg
 do
 	case $arg in
 		a)
@@ -86,6 +108,7 @@ do
 			echo "  -o        perform switchover"
 			echo "  -r        restart postgresql"
 			echo "  -R        stop auto_failover"
+			echo "  -b        backup cluster to s3"
 			echo "  -s value  set auto_failover config: pg_autoctl config set.."
 			echo "  -S value  set auto_failover: pg_autoctl set.."
 			exit 0
@@ -117,6 +140,9 @@ do
 			;;
 		S)
 			set_auto_failover="$OPTARG"
+			;;
+		b)
+			backup=1
 			;;
 		?)
 			echo "unknow argument"
@@ -165,6 +191,82 @@ function stop_auto_failover(){
 	pg_autoctl stop --pgdata=$PGDATA
 	check_error $? "stop auto_failover failed"
 }
+
+function barman_streaming_config() {
+	file=$1
+	if [ ! -e $file ]; then
+		echo "$streaming_pg" > "$file"
+	fi
+}
+
+function barman_rsync_config() {
+	file=$1
+	if [ ! -e $file ]; then
+		echo "$local_pg" > "$file"
+	fi
+}
+
+function generate_barman_config() {
+	backup_method=$1
+	file=$2
+	if [ "$backup_method" = "streaming" ]; then
+		barman_streaming_config "$file"
+	elif [ "$backup_method" = "rsync" ]; then
+		barman_rsync_config "$file"
+	else
+		check_error 1 "unsupported backup method"
+	fi
+}
+
+function generate_s3_profile() {
+	AWS_ACCESS_KEY_ID=$1
+	AWS_SECRET_ACCESS_KEY=$2
+	echo -e "$AWS_ACCESS_KEY_ID\n$AWS_SECRET_ACCESS_KEY\nNone\njson\n" | aws configure --profile default
+}
+
+function check_s3_valid() {
+	S3_ENDPOINT=$1
+	S3_BUCKET=$2
+	S3_PATH=$3
+	barman-cloud-backup --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME -t
+	check_error $? "s3 connect failed"
+}
+
+function check_and_set_param() {
+	S3_ENDPOINT=$1
+	S3_BUCKET=$2
+	S3_PATH=$3
+	output=$(pgtools -q "select setting from pg_settings where name = 'archive_mode' and setting <> 'off';")
+	if [ ! $output ]; then
+	  check_error 1 "archive_mode is off, please turn on archive_mode"
+	fi
+	echo "archive_command = 'barman-cloud-wal-archive --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME %p'" >> $PGDATA/postgresql.conf
+	echo "archive_timeout = 60" >> $PGDATA/postgresql.conf
+	reload_postgresql
+}
+
+function s3_backup() {
+	if [ ! $S3_ENDPOINT ] || [ ! $S3_BUCKET ]; then
+		check_error 1 "S3_ENDPOINT or S3_BUCKET is not set"
+	fi
+	if [ ! $S3_ACCESS_KEY ] || [ ! $S3_SECRET_KEY ]; then
+		check_error 1 "S3_ACCESS_KEY or S3_SECRET_KEY is not set"
+	fi
+	generate_barman_config rsync $BARMAN_CONF/$BARMAN_BACKUPNAME.conf
+	generate_s3_profile $S3_ACCESS_KEY $S3_SECRET_KEY
+	check_s3_valid $S3_ENDPOINT $S3_BUCKET $S3_PATH
+	check_and_set_param $S3_ENDPOINT $S3_BUCKET $S3_PATH
+	pgtools -q "select pg_switch_wal();"
+	barman-cloud-backup --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME
+	if [ $? != 0 ]; then
+		check_error 1 "backup failed, please check error log"
+	fi
+}
+
+function s3_restore() {
+	/bin/true
+}
+
 
 if [ "${do_config}" = 1 ]; then
 
@@ -319,6 +421,10 @@ if [ "${actual_drop_auto_failover}" = 1 ]; then
 	done
 	pg_autoctl drop node --pgdata=$PGDATA --force
 	check_error $? "drop auto_failover failed"
+fi
+
+if [ "${backup}" = 1 ]; then
+	s3_backup
 fi
 
 exit 0
