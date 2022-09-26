@@ -101,6 +101,7 @@ RUN cd /var/lib/postgresql; \
 FROM debian:{{ .debian }}
 
 ENV LANG en_US.utf8
+ENV TZ=Asia/Shanghai
 ENV DATA /var/lib/postgresql/data
 ENV BIN /var/lib/postgresql/bin
 ENV BARMAN /var/lib/postgresql/barman
