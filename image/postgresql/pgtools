@@ -209,9 +209,9 @@ function barman_rsync_config() {
 function generate_barman_config() {
 	backup_method=$1
 	file=$2
-	if [ "$backup_method" = "streaming" ]; then
+	if [ "$backup_method" == "streaming" ]; then
 		barman_streaming_config "$file"
-	elif [ "$backup_method" = "rsync" ]; then
+	elif [ "$backup_method" == "rsync" ]; then
 		barman_rsync_config "$file"
 	else
 		check_error 1 "unsupported backup method"
@@ -239,8 +239,12 @@ function check_and_set_param() {
 	need_reload=0
 	archive_command="barman-cloud-wal-archive --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME %p"
 
-	output=$(pgtools -q "select setting from pg_settings where name = 'archive_mode' and setting <> 'off';")
-	if [ ! $output ]; then
+	output=$(pgtools -q "select setting from pg_settings where name = 'wal_level' and setting = 'minimal';")
+	if [ $output ]; then
+		check_error 1 "wal_level is minimal, please set wal_level to replica or logical"
+	fi
+	output=$(pgtools -q "select setting from pg_settings where name = 'archive_mode' and setting = 'off';")
+	if [ $output ]; then
 		check_error 1 "archive_mode is off, please turn on archive_mode"
 	fi
 	output=$(pgtools -q "select setting from pg_settings where name = 'archive_command';")
