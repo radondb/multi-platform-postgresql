@@ -22,6 +22,8 @@ ready_accept=0
 SUCCESS="exec_success"
 switchover=0
 backup=0
+backup_info=0
+restore=0
 
 # set env
 DATA=${DATA:-/var/lib/postgresql/data}
@@ -64,7 +66,7 @@ streaming_pg=""
 ############ barman config end
 
 # parse argument
-while getopts "acdDe:hHp:q:w:Q:norRs:S:b" arg
+while getopts "acdDe:hHp:q:w:Q:norRs:S:b:E:v" arg
 do
 	case $arg in
 		a)
@@ -108,6 +110,8 @@ do
 			echo "  -o        perform switchover"
 			echo "  -r        restart postgresql"
 			echo "  -R        stop auto_failover"
+			echo "  -E        restore cluster from s3 backup"
+			echo "  -v        get s3 backup information in json format"
 			echo "  -b        backup cluster to s3"
 			echo "  -s value  set auto_failover config: pg_autoctl config set.."
 			echo "  -S value  set auto_failover: pg_autoctl set.."
@@ -135,6 +139,14 @@ do
 		R)
 			do_restart_auto_failover=1
 			;;
+		E)
+			BACKUP_ID=${OPTARG%%=*}
+			RESTORE_TIME=${OPTARG#*=}
+			restore=1
+			;;
+		v)
+			backup_info=1
+			;;
 		s)
 			set_auto_failover_config="$OPTARG"
 			;;
@@ -156,7 +168,7 @@ function check_error() {
 	ret_code="$1"
 	msg="$2"
 	if [ "$ret_code" != 0 -a "$no_error" = 0 ]; then
-		echo `date`"$msg"
+		echo `date`": $msg"
 		exit 1
 	fi
 }
@@ -192,6 +204,15 @@ function stop_auto_failover(){
 	check_error $? "stop auto_failover failed"
 }
 
+function pg_is_running() {
+	ret=1
+	output=$(pgtools -w 1 -q "select 1;")
+	if [ "$output" == 1 -a "$?" == 0 ]; then
+		ret=0
+	fi
+	echo $ret
+}
+
 function barman_streaming_config() {
 	file=$1
 	if [ ! -e $file ]; then
@@ -221,7 +242,7 @@ function generate_barman_config() {
 function generate_s3_profile() {
 	AWS_ACCESS_KEY_ID=$1
 	AWS_SECRET_ACCESS_KEY=$2
-	echo -e "$AWS_ACCESS_KEY_ID\n$AWS_SECRET_ACCESS_KEY\nNone\njson\n" | aws configure --profile default
+	echo -e "$AWS_ACCESS_KEY_ID\n$AWS_SECRET_ACCESS_KEY\nNone\njson\n" | aws configure --profile default > /dev/null
 }
 
 function check_s3_env() {
@@ -248,20 +269,20 @@ function check_and_set_backup_param() {
 	need_reload=0
 	archive_command="barman-cloud-wal-archive --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME %p"
 
-	output=$(pgtools -q "select setting from pg_settings where name = 'wal_level' and setting = 'minimal';")
+	output=$(pgtools -w 1 -q "select setting from pg_settings where name = 'wal_level' and setting = 'minimal';")
 	if [ $output ]; then
 		check_error 1 "wal_level is minimal, please set wal_level to replica or logical"
 	fi
-	output=$(pgtools -q "select setting from pg_settings where name = 'archive_mode' and setting = 'off';")
+	output=$(pgtools -w 1 -q "select setting from pg_settings where name = 'archive_mode' and setting = 'off';")
 	if [ $output ]; then
 		check_error 1 "archive_mode is off, please turn on archive_mode"
 	fi
-	output=$(pgtools -q "select setting from pg_settings where name = 'archive_command';")
+	output=$(pgtools -w 1 -q "select setting from pg_settings where name = 'archive_command';")
 	if [[ $output != $archive_command ]]; then
 		need_reload=1
 		echo "archive_command = '$archive_command'" >> $PGDATA/postgresql.conf
 	fi
-	output=$(pgtools -q "select setting from pg_settings where name = 'archive_timeout';")
+	output=$(pgtools -w 1 -q "select setting from pg_settings where name = 'archive_timeout';")
 	if [ $output == 0 ]; then
 		need_reload=1
 		echo "archive_timeout = 60" >> $PGDATA/postgresql.conf
@@ -273,7 +294,7 @@ function check_and_set_backup_param() {
 }
 
 function s3_backup() {
-	role=$(pgtools -q "show transaction_read_only")
+	role=$(pgtools -w 1 -q "show transaction_read_only")
 	if [ $role == "off" ]; then
 		role="master"
 	elif [ $role == "on" ]; then
@@ -292,10 +313,77 @@ function s3_backup() {
 	fi
 }
 
-function s3_restore() {
-	/bin/true
+function get_backup_info_format_json() {
+	check_s3_env
+	barman-cloud-backup-list --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME --format json
 }
 
+function check_backup_exists() {
+	BACKUP_ID=$1
+	ret=1
+	output=$(barman-cloud-backup-list --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME | awk -v target=$BACKUP_ID '{ if (NR>1 && $1==target) {print $1}}')
+	if [ "$output" -a "$?" == 0 ]; then
+		ret=0
+	fi
+	echo $ret
+}
+
+function check_time_valid() {
+	BACKUP_ID=$1
+	recovery_time=$2
+
+	target_timestamp=$(date --date "$recovery_time" '+%s')
+	backup_end_timestamp=$(barman-cloud-backup-list --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME | awk  -F '     ' -v target=$BACKUP_ID '{ if (NR>1 && $1==target) {cmd="date --date \""$2"\" +%s";system(cmd)}}')
+	if [ $target_timestamp -lt $backup_end_timestamp ]; then
+		check_error 1 "target time is not valid. backup_end_time is $(date -d +@"$backup_end_timestamp"), target_time is $(date -d +@"$target_timestamp")"
+	fi
+}
+
+function s3_restore_by_backupid() {
+	touch $PGDATA/recovery.signal
+	echo "restore_command = 'barman-cloud-wal-restore --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME %f %p'" >> $PGDATA/postgresql.conf
+	echo "recovery_target_timeline = 'latest'" >> $PGDATA/postgresql.conf
+}
+
+function s3_restore_by_time() {
+	RESTORE_TIME=$1
+	s3_restore_by_backupid
+	echo "recovery_target_time = '$RESTORE_TIME'" >> $PGDATA/postgresql.conf
+}
+
+# need stop postgresql service
+# call:
+#     pgtools -E "backupid"="restore_time"
+#     eg: pgtools -E "20220926T084704"="2022-09-26 16:42:50"
+function s3_restore() {
+
+	ret=$(pg_is_running)
+	if [ $ret == 0 ]; then
+		check_error 1 "restore failed, postgresql service must be shut down"
+	fi
+
+	BACKUP_ID=$1
+	param=$2          # recovery_target_time or empty
+	check_s3_env
+	generate_barman_config rsync $BARMAN_CONF/$BARMAN_BACKUPNAME.conf
+	generate_s3_profile $S3_ACCESS_KEY $S3_SECRET_KEY
+	check_s3_valid $S3_ENDPOINT $S3_BUCKET $S3_PATH
+	ret=$(check_backup_exists $BACKUP_ID)
+	if [ "$ret" != 0 -o "$?" != 0 ]; then
+		check_error 1 "BACKUP $BACKUP_ID does not exist, please select another backup id"
+	fi
+	if [ "$param" ]; then
+		check_time_valid "$BACKUP_ID" "$param"
+	fi
+
+	rm -rf $PGDATA
+	barman-cloud-restore --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME $BACKUP_ID $PGDATA
+	if [ "$param" ]; then
+		s3_restore_by_time "$param"
+	else
+		s3_restore_by_backupid
+	fi
+}
 
 if [ "${do_config}" = 1 ]; then
 
@@ -455,6 +543,15 @@ fi
 if [ "${backup}" = 1 ]; then
 	s3_backup
 	echo $SUCCESS
+fi
+
+if [ "${restore}" = 1 ]; then
+	s3_restore "$BACKUP_ID" "$RESTORE_TIME"
+	echo $SUCCESS
+fi
+
+if [ "${backup_info}" = 1 ]; then
+	get_backup_info_format_json
 fi
 
 exit 0
