@@ -1433,6 +1433,7 @@ def backup_postgresql(
     logger: logging.Logger,
 ) -> None:
     backup_postgresql_to_s3(meta, spec, patch, status, logger)
+    logger.info(f"backup_postgresql cluster success.")
 
 
 # LABEL: MULTI_PG_VERSIONS
@@ -2646,6 +2647,9 @@ async def create_cluster(
         logger.info("waiting for create_cluster success")
         waiting_cluster_final_status(meta, spec, patch, status, logger)
 
+        # if is backup mode, execute signal backup and archive wal log
+        if is_backup_mode(meta, spec, patch, status, logger):
+            backup_postgresql(meta, spec, patch, status, logger)
         # wait a few seconds to prevent the pod not running
         time.sleep(5)
         # cluster running
