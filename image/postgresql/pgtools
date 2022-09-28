@@ -66,7 +66,7 @@ streaming_pg=""
 ############ barman config end
 
 # parse argument
-while getopts "acdDe:hHp:q:w:Q:norRs:S:b:E:v" arg
+while getopts "acdDe:hHp:q:w:Q:norRs:S:bE:v" arg
 do
 	case $arg in
 		a)

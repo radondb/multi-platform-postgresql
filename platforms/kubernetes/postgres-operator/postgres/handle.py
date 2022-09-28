@@ -146,6 +146,14 @@ from constants import (
     SPEC_S3_ENDPOINT,
     SPEC_S3_BUCKET,
     SPEC_S3_PATH,
+    SPEC_BACKUP,
+    SPEC_BACKUP_KIND,
+    SPEC_BACKUP_SCHEDULE,
+    SPEC_BACKUP_KIND_SINGLE,
+    SPEC_BACKUP_KIND_SCHEDULE,
+    RESTORE_FROMS3,
+    RESTORE_FROMS3_BACKUPID,
+    RESTORE_FROMS3_RECOVERY_TIME,
 )
 
 PRIMARY_FORMATION = " --formation primary "
@@ -188,6 +196,7 @@ DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
 DIFF_FIELD_SPEC_ANTIAFFINITY = (SPEC, SPEC_ANTIAFFINITY)
 DIFF_FIELD_SPEC_S3 = (SPEC, SPEC_S3)
+DIFF_FIELD_SPEC_BACKUP = (SPEC, SPEC_BACKUP)
 STATEFULSET_REPLICAS = 1
 PG_CONFIG_IGNORE = ("block_size", "data_checksums", "data_directory_mode",
                     "debug_assertions", "integer_datetimes", "lc_collate",
@@ -1367,6 +1376,63 @@ def restore_postgresql(
 ) -> None:
     if spec[RESTORE].get(RESTORE_FROMSSH) != None:
         restore_postgresql_fromssh(meta, spec, patch, status, logger, conn)
+
+
+def is_backup_mode(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> bool:
+    if spec.get(SPEC_BACKUP) == None:
+        return False
+
+    if spec[SPEC_BACKUP].get(SPEC_BACKUP_KIND) != None:
+        if spec[SPEC_BACKUP].get(SPEC_BACKUP_KIND) == SPEC_BACKUP_KIND_SINGLE:
+            return True
+        elif spec[SPEC_BACKUP].get(SPEC_BACKUP_KIND) == SPEC_BACKUP_KIND_SCHEDULE and spec[SPEC_BACKUP].get(SPEC_BACKUP_KIND_SCHEDULE) != None:
+            return True
+
+    return False
+
+
+def backup_postgresql_to_s3(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+
+    logger.info(f"backup cluster to s3")
+    # get readwrite connections
+    conns = connections(spec, meta, patch,
+                        get_field(POSTGRESQL, READWRITEINSTANCE), False, None,
+                        logger, None, status, False)
+    # wait postgresql ready
+    waiting_postgresql_ready(conns, logger)
+
+    for conn in conns.get_conns():
+        # backup
+        cmd = ["pgtools", "-b"]
+        output = exec_command(conn, cmd, logger, interrupt=True)
+        if output.find(SUCCESS) == -1:
+            logger.error(f"execute {cmd} failed. {output}")
+            raise kopf.PermanentError("backup cluster to s3 failed.")
+
+    # free conns
+    conns.free_conns()
+
+
+def backup_postgresql(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    backup_postgresql_to_s3(meta, spec, patch, status, logger)
 
 
 # LABEL: MULTI_PG_VERSIONS
@@ -3688,6 +3754,7 @@ async def update_cluster(
         check_param(spec, logger, create=False)
         need_roll_update = False
         need_update_number_sync_standbys = False
+        need_backup_cluster = False
 
         for diff in diffs:
             AC = diff[0]
@@ -3740,6 +3807,15 @@ async def update_cluster(
                 need_update_number_sync_standbys = True
             update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
+            
+            if FIELD[0:len(DIFF_FIELD_SPEC_BACKUP
+                           )] == DIFF_FIELD_SPEC_BACKUP:
+                need_backup_cluster = True
+
+        # s3 backup
+        if need_backup_cluster:
+            if is_backup_mode(meta, spec, patch, status, logger):
+                backup_postgresql(meta, spec, patch, status, logger)
 
         logger.info("waiting for update_cluster success")
         waiting_cluster_final_status(meta, spec, patch, status, logger)

@@ -326,7 +326,16 @@ spec:
                           type: object
                           x-kubernetes-preserve-unknown-fields: true
               backup:
-                type: string
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  kind:
+                    type: string
+                    enum:
+                    - 'single'
+                    - 'schedule'
+                  schedule:
+                    type: string
               restore:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
@@ -337,6 +346,13 @@ spec:
                       path:
                         type: string
                       address:
+                        type: string
+                  froms3:
+                    type: object
+                    properties:
+                      backupid:
+                        type: string
+                      recovery_time:
                         type: string
 
 ---
