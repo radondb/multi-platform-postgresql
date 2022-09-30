@@ -12,8 +12,8 @@ spec:
     podAntiAffinityTerm: autofailover-readwrite   # none/autofailover-readwrite/autofailover-readwrite-readonly
     topologyKey: "kubernetes.io/hostname"         # when policy is required, only allow "kubernetes.io/hostname"
   S3:
-    ACCESS_KEY: "PFDHBVIOSIZYSXCZXZENJY"
-    SECRET_KEY: "7f3SBspTALsJw2NXasdasdwqeqsdxwdCvSdoMs03NkV"
+    ACCESS_KEY: "PFDHBVEISXOPTYUXTENJY"
+    SECRET_KEY: "7f3SBspa123456789LcxwdCvSdoMs03NkV"
     ENDPOINT: "http://s3.pek3.qingstor.com/"
     BUCKET: "postgresql"
     PATH: "/test/backup"
@@ -161,10 +161,9 @@ spec:
   #  fromssh:
   #    path: /home/lzzhang/xx
   #    address: root:password:192.168.0.8:22 # or local 'local' restore from the first postgresql node
-  backup:
-    kind: single        # single/schedule
+#  backup:
+#    kind: single        # single/schedule
 #    schedule: xxx
-#  restore:
-#    froms3:
-#      backupid: xxx
-#      recovery_time: xxx
+  restore:
+    froms3:
+      recovery_time: Fri Sep 30 10:10:57 2022

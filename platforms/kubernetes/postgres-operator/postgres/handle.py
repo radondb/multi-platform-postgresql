@@ -8,6 +8,7 @@ import time
 import random
 import tempfile
 import re
+import ast
 from kubernetes import client, config
 from kubernetes.stream import stream
 from config import operator_config
@@ -230,6 +231,7 @@ STATUS_KEEPALIVED = "systemctl status keepalived.service"
 RECOVERY_CONF_FILE = "postgresql-auto-failover-standby.conf"
 RECOVERY_SET_FILE = "postgresql-auto-failover.conf"
 STANDBY_SIGNAL = "standby.signal"
+RECOVERY_SIGNAL = "recovery.signal"
 GET_INET_CMD = "ip addr | grep inet"
 SUCCESS_CHECKPOINT = "CHECKPOINT"
 CONTAINER_ENV = "env"
@@ -237,6 +239,8 @@ CONTAINER_ENV_NAME = "name"
 CONTAINER_ENV_VALUE = "value"
 EXPORTER_CONTAINER_INDEX = 1
 POSTGRESQL_CONTAINER_INDEX = 0
+
+SUPPORTED_DATE_FORMAT = ["%a %b %d %H:%M:%S %Y", "%Y-%m-%d %H:%M:%S"]
 
 
 def set_cluster_status(meta: kopf.Meta, statefield: str, state: str,
@@ -1363,7 +1367,159 @@ def is_restore_mode(
     if spec[RESTORE].get(RESTORE_FROMSSH) != None:
         return True
 
+    if spec[RESTORE].get(RESTORE_FROMS3) != None:
+        return True
+
     return False
+
+
+def valid_date_format(date: str) -> str:
+    res = None
+    for format in SUPPORTED_DATE_FORMAT:
+        try:
+            time.strptime(date, format)
+            res = format
+            break
+        except:
+            continue
+    return res
+
+
+def compare_timestamp(t1: str, t2: str) -> str:
+    if int(t1) >= int(t2):
+        return t1
+    else:
+        return t2
+
+
+"""
+begin_time: "Mon Sep 26 16:17:13 2022"
+begin_wal:  "000000050000000000000010"
+end_time:   "Mon Sep 26 16:17:23 2022"
+end_wal:    "000000050000000000000010"
+backup_id:  "20220926T081713"
+"""
+def get_backupid_from_backupinfo(recovery_time: str, backup_info: str) -> str:
+    backupid = None
+    date_format = valid_date_format(recovery_time)
+    if date_format is None:
+        return backupid
+    recovery_timestamp = time.mktime(time.strptime(recovery_time, date_format))
+    max_require_timestamp = None
+    
+    backup_info = backup_info["backups_list"]
+    for backup in backup_info:
+        temp = time.mktime(time.strptime(backup["end_time"], '%a %b %d %H:%M:%S %Y'))
+        # backup end_time more than recovery_time
+        if compare_timestamp(recovery_timestamp, temp) == temp:
+            continue
+        elif compare_timestamp(recovery_timestamp, temp) == recovery_timestamp:
+            if max_require_timestamp is None or compare_timestamp(max_require_timestamp, temp) == temp:
+                max_require_timestamp = temp
+                backupid = backup["backup_id"]
+
+    return backupid
+
+
+def restore_postgresql_froms3(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conn: InstanceConnection,
+) -> None:
+
+    logger.info("restore_postgresql_froms3")
+    recovery_time = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_RECOVERY_TIME)
+
+    tmpconns: InstanceConnections = InstanceConnections()
+    tmpconns.add(conn)
+
+    # wait postgresql ready
+    waiting_postgresql_ready(tmpconns, logger)
+    
+    if recovery_time is None:
+        logger.error(f"recovery_time is None, exit backup")
+        raise kopf.PermanentError("recovery_time is None.")
+    else:
+        cmd = ["pgtools", "-v"]
+        output = exec_command(conn, cmd, logger, interrupt=True)
+        if output == "":
+            logger.error(f"get backup info failed, exit backup")
+            raise kopf.PermanentError("get backup info failed.")
+        logger.warning(f"backup verbose info = {output}")
+        backup_info = ast.literal_eval(output)
+        backupid = get_backupid_from_backupinfo(recovery_time, backup_info)
+        if backupid is None:
+            logger.error(f"recovery_time field not valid.")
+            raise kopf.PermanentError("recovery_time field not valid.")
+
+    logger.warning(f"restore_postgresql_froms3 get backupid = {backupid}, recovery_time = {recovery_time}")
+
+    # drop from autofailover and pause start postgresql
+    cmd = ["pgtools", "-d", "-p", POSTGRESQL_PAUSE]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    waiting_instance_ready(tmpconns, logger)
+
+    # restore param
+    param = "'" + backupid + "'='" + recovery_time + "'"
+
+    cmd = ["pgtools", "-E", param]
+    logging.warning(f"restore_postgresql_froms3 execute {cmd} to restore data")
+    output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
+    if output.find(SUCCESS) == -1:
+        logger.error(f"execute {cmd} failed. {output}")
+        raise kopf.PermanentError("restore cluster from s3 failed.")
+
+    # remove standby.signal file
+    cmd = ["rm", "-rf", os.path.join(PG_DATABASE_DIR, STANDBY_SIGNAL)]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    # remove old status data
+    cmd = [
+        "rm", "-rf",
+        "/var/lib/postgresql/data/auto_failover/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.init",
+        "/var/lib/postgresql/data/auto_failover/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.state"
+    ]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    ################## point-in-time recovery(pitr) recovery start
+    
+    # start postgresql by pg_ctl
+    cmd = ["pg_ctl", "start", "-D", PG_DATABASE_DIR]
+    output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
+    logging.warning(f"point-in-time recovery start postgresql by pg_ctl: {output}")
+
+    # waiting posgresql ready
+    waiting_postgresql_ready(tmpconns, logger)
+
+    # stop postgresql by pg_ctl
+    cmd = ["pg_ctl", "stop", "-D", PG_DATABASE_DIR]
+    output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
+    logging.warning(f"point-in-time recovery stop postgresql by pg_ctl: {output}")
+
+    # rm recovery.signal file
+    cmd = ["rm", "-rf", os.path.join(PG_DATABASE_DIR, RECOVERY_SIGNAL)]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    ################## point-in-time recovery(pitr) recovery end
+
+    # resume postgresql
+    cmd = ["pgtools", "-p", POSTGRESQL_RESUME]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    # sleep a lettle to wait auto_ctl run
+    time.sleep(10)
+
+    # waiting posgresql ready
+    waiting_postgresql_ready(tmpconns, logger)
+
+    # update pgautofailover_replicator password
+    correct_user_password(meta, spec, patch, status, logger, conn)
+
+    tmpconns.free_conns()
 
 
 def restore_postgresql(
@@ -1376,6 +1532,8 @@ def restore_postgresql(
 ) -> None:
     if spec[RESTORE].get(RESTORE_FROMSSH) != None:
         restore_postgresql_fromssh(meta, spec, patch, status, logger, conn)
+    if spec[RESTORE].get(RESTORE_FROMS3) != None:
+        restore_postgresql_froms3(meta, spec, patch, status, logger, conn)
 
 
 def is_backup_mode(
