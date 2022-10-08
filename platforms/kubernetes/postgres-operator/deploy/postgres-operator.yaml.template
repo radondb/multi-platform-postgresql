@@ -359,11 +359,13 @@ spec:
                         - 'gzip'
                         - 'bzip2'
                         - 'snappy'
+                        - 'none'
                       encryption:
                         type: string
                         enum:
                         - 'AES256'
                         - 'aws:kms'
+                        - 'none'
                       keep_value:
                         type: integer
                       keep_time:
