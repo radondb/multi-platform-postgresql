@@ -1556,6 +1556,10 @@ def is_backup_mode(
     if spec.get(SPEC_BACKUP) == None:
         return False
 
+    if spec.get(SPEC_S3) == None:
+        logger.warning("s3 related information is not set.")
+        return False
+
     if spec[SPEC_BACKUP].get(SPEC_BACKUP_MANUAL) != None and spec[SPEC_BACKUP].get(SPEC_BACKUP_POLICY) != None:
         return True
     
@@ -1581,10 +1585,16 @@ def backup_postgresql_to_s3(
     # wait postgresql ready
     waiting_postgresql_ready(conns, logger)
 
-    # policy
     backup_policy = spec[SPEC_BACKUP][SPEC_BACKUP_POLICY]
+    s3 = spec[SPEC_S3].copy()
+    # use SPEC_S3 prefix replace key (must use S3_ prefix)
+    for k in list(s3.keys()):
+        old = k
+        new = SPEC_S3 + "_" + k
+        s3[new] = s3.pop(old)
+    envs = {**backup_policy, **s3}
     cmd = ["pgtools", "-b"]
-    for k, v in backup_policy.items():
+    for k, v in envs.items():
         if k == SPEC_BACKUP_POLICY_KEEP_VALUE:
             # delete expired backup
             continue
@@ -3968,8 +3978,7 @@ async def update_cluster(
             update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
                                   OLD, NEW)
             if FIELD[0:len(DIFF_FIELD_SPEC_ANTIAFFINITY
-                           )] == DIFF_FIELD_SPEC_ANTIAFFINITY or FIELD[0:len(
-                               DIFF_FIELD_SPEC_S3)] == DIFF_FIELD_SPEC_S3:
+                           )] == DIFF_FIELD_SPEC_ANTIAFFINITY:
                 need_roll_update = True
 
         if need_roll_update:

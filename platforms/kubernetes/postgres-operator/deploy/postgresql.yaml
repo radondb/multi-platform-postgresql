@@ -11,12 +11,6 @@ spec:
     policy: preferred                             # preferred/required
     podAntiAffinityTerm: autofailover-readwrite   # none/autofailover-readwrite/autofailover-readwrite-readonly
     topologyKey: "kubernetes.io/hostname"         # when policy is required, only allow "kubernetes.io/hostname"
-  S3:
-    ACCESS_KEY: "PFDHBVEIQIZYYGNTENJY"
-    SECRET_KEY: "7f3SBspTALsJw2NXmuD1253LcxwdCvSdoMs03NkV"
-    ENDPOINT: "http://s3.pek3.qingstor.com/"
-    BUCKET: "postgresql"
-    PATH: "/test/backup"
   services:
     - selector: autofailover # autofailover/primary/standby/readonly/standby-readonly
       metadata:
@@ -161,6 +155,12 @@ spec:
   #  fromssh:
   #    path: /home/lzzhang/xx
   #    address: root:password:192.168.0.8:22 # or local 'local' restore from the first postgresql node
+  S3:
+    ACCESS_KEY: "PFDHBVEIQIZYYGNTENJY"
+    SECRET_KEY: "7f3SBspTALsJw2NXmuD1253LcxwdCvSdoMs03NkV"
+    ENDPOINT: "http://s3.pek3.qingstor.com/"
+    BUCKET: "postgresql"
+    PATH: "/test/backup"
   backup:
     manual:
       id: 1
