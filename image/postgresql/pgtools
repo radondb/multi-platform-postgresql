@@ -270,7 +270,15 @@ function check_and_set_backup_param() {
 	S3_BUCKET=$2
 	S3_PATH=$3
 	need_reload=0
+	# if wal archive is not enable, reset archive_command and archive_timeout param, return
+	if [ "$archive" != "on" ]; then
+		echo "archive_command = '/bin/true'" >> $PGDATA/postgresql.conf
+		echo "archive_timeout = 0" >> $PGDATA/postgresql.conf
+		reload_postgresql
+		return 0
+	fi
 	archive_command="barman-cloud-wal-archive --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME %p"
+	archive_command=$(add_s3_param "$archive_command")
 
 	output=$(pgtools -w 1 -q "select setting from pg_settings where name = 'wal_level' and setting = 'minimal';")
 	if [ $output ]; then
@@ -296,6 +304,26 @@ function check_and_set_backup_param() {
 	fi
 }
 
+function add_s3_param() {
+	cmd=$1
+
+	# compression
+	if [ "$compression" == "gzip" ]; then
+		cmd="$cmd --gzip"
+	elif [ "$compression" == "bzip2" ]; then
+		cmd="$cmd --bzip2"
+	elif [ "$compression" == "snappy" ]; then
+		cmd="$cmd --snappy"
+	fi
+
+	# encryption
+	if [ "$encryption" ]; then
+		cmd="$cmd -e $encryption"
+	fi
+
+	echo $cmd
+}
+
 function s3_backup() {
 	role=$(pgtools -w 1 -q "show transaction_read_only")
 	if [ $role == "off" ]; then
@@ -303,13 +331,15 @@ function s3_backup() {
 	elif [ $role == "on" ]; then
 		role="slave"
 	fi
+	backup_cmd="barman-cloud-backup --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME"
+	backup_cmd=$(add_s3_param "$backup_cmd")
 	check_s3_env
 	generate_barman_config rsync $BARMAN_CONF/$BARMAN_BACKUPNAME.conf
 	generate_s3_profile $S3_ACCESS_KEY $S3_SECRET_KEY
 	check_s3_valid $S3_ENDPOINT $S3_BUCKET $S3_PATH
 	check_and_set_backup_param $S3_ENDPOINT $S3_BUCKET $S3_PATH
 	if [ $role == "master" ]; then
-		barman-cloud-backup --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME
+		$backup_cmd
 		if [ $? != 0 ]; then
 			check_error 1 "backup failed, please check error log"
 		fi

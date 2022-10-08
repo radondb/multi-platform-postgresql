@@ -355,8 +355,15 @@ spec:
                         - 'off'
                       compression:
                         type: string
+                        enum:
+                        - 'gzip'
+                        - 'bzip2'
+                        - 'snappy'
                       encryption:
                         type: string
+                        enum:
+                        - 'AES256'
+                        - 'aws:kms'
                       keep_value:
                         type: integer
                       keep_time:
