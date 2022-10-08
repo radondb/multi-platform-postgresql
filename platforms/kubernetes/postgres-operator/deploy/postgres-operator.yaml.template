@@ -329,13 +329,38 @@ spec:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
                 properties:
-                  kind:
-                    type: string
-                    enum:
-                    - 'single'
-                    - 'schedule'
-                  schedule:
-                    type: string
+                  manual:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      label:
+                        type: string
+                  cron:
+                    type: object
+                    properties:
+                      enable:
+                        type: boolean
+                      label:
+                        type: string
+                      schedule:
+                        type: string
+                  policy:
+                    type: object
+                    properties:
+                      archive:
+                        type: string
+                        enum:
+                        - 'on'
+                        - 'off'
+                      compression:
+                        type: string
+                      encryption:
+                        type: string
+                      keep_value:
+                        type: integer
+                      keep_time:
+                        type: integer
               restore:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true

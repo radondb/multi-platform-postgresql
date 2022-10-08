@@ -161,25 +161,27 @@ spec:
   #  fromssh:
   #    path: /home/lzzhang/xx
   #    address: root:password:192.168.0.8:22 # or local 'local' restore from the first postgresql node
-#  backup:
-#    manual:
-#      label: xxx
-#      id: xxx
-#    cron:
-#      enable: on
-#      schedule: xxx
-#      label: xxx
-#    policy:
-#      keep: xxx
-#      time_: xxx
-#      archive: on
+  backup:
+    manual:
+      id: 1
+      label: xxx
+    cron:
+      enable: true
+      label: xxx
+      schedule: xxx
+    policy:
+      archive: 'on'              # whether to archive WAL
+      compression: gzip
+      encryption: AES256
+      keep_value: 10             # keep the number of backups
+      keep_time: 30              # keep backup time. unit: days
 #  restore:
 #    froms3:
 #      recovery_time: Fri Sep 30 10:10:57 2022
 #      recovery_label: xxx
 #      recovery_backupid: xxx
-  backup:
-    kind: single        # single/schedule
-  restore:
-    froms3:
-      recovery_time: 2022-09-30 17:40:01
+#  backup:
+#    kind: single        # single/schedule
+#  restore:
+#    froms3:
+#      recovery_time: 2022-09-30 17:40:01

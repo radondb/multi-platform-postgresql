@@ -148,10 +148,18 @@ from constants import (
     SPEC_S3_BUCKET,
     SPEC_S3_PATH,
     SPEC_BACKUP,
-    SPEC_BACKUP_KIND,
-    SPEC_BACKUP_SCHEDULE,
-    SPEC_BACKUP_KIND_SINGLE,
-    SPEC_BACKUP_KIND_SCHEDULE,
+    SPEC_BACKUP_MANUAL,
+    SPEC_BACKUP_ID,
+    SPEC_BACKUP_LABEL,
+    SPEC_BACKUP_CRON,
+    SPEC_BACKUP_CRON_ENABLE,
+    SPEC_BACKUP_CRON_SCHEDULE,
+    SPEC_BACKUP_POLICY,
+    SPEC_BACKUP_POLICY_ARCHIVE,
+    SPEC_BACKUP_POLICY_COMPRESSION,
+    SPEC_BACKUP_POLICY_ENCRYPTION,
+    SPEC_BACKUP_POLICY_KEEP_VALUE,
+    SPEC_BACKUP_POLICY_KEEP_TIME,
     RESTORE_FROMS3,
     RESTORE_FROMS3_BACKUPID,
     RESTORE_FROMS3_RECOVERY_TIME,
@@ -1548,11 +1556,11 @@ def is_backup_mode(
     if spec.get(SPEC_BACKUP) == None:
         return False
 
-    if spec[SPEC_BACKUP].get(SPEC_BACKUP_KIND) != None:
-        if spec[SPEC_BACKUP].get(SPEC_BACKUP_KIND) == SPEC_BACKUP_KIND_SINGLE:
-            return True
-        elif spec[SPEC_BACKUP].get(SPEC_BACKUP_KIND) == SPEC_BACKUP_KIND_SCHEDULE and spec[SPEC_BACKUP].get(SPEC_BACKUP_KIND_SCHEDULE) != None:
-            return True
+    if spec[SPEC_BACKUP].get(SPEC_BACKUP_MANUAL) != None and spec[SPEC_BACKUP].get(SPEC_BACKUP_POLICY) != None:
+        return True
+    
+    if spec[SPEC_BACKUP].get(SPEC_BACKUP_CRON) != None and spec[SPEC_BACKUP].get(SPEC_BACKUP_POLICY) != None:
+        return True
 
     return False
 
@@ -1573,9 +1581,23 @@ def backup_postgresql_to_s3(
     # wait postgresql ready
     waiting_postgresql_ready(conns, logger)
 
+    # policy
+    backup_policy = spec[SPEC_BACKUP][SPEC_BACKUP_POLICY]
+    cmd = ["pgtools", "-b"]
+    for k, v in backup_policy.items():
+        if k == SPEC_BACKUP_POLICY_KEEP_VALUE:
+            # delete expired backup
+            continue
+        elif k == SPEC_BACKUP_POLICY_KEEP_TIME:
+            # delete expired backup
+            continue
+        env = k + '="' + v + '"'
+        cmd.append('-e')
+        cmd.append(env)
+    logging.warning(f"backup_postgresql_to_s3 execute {cmd} to backup cluster on readwrite node")
+
     for conn in conns.get_conns():
         # backup
-        cmd = ["pgtools", "-b"]
         output = exec_command(conn, cmd, logger, interrupt=True)
         if output.find(SUCCESS) == -1:
             logger.error(f"execute {cmd} failed. {output}")
