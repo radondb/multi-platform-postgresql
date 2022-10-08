@@ -564,7 +564,7 @@ def waiting_postgresql_ready(
             if output != INIT_FINISH_MESSAGE:
                 i += 1
                 time.sleep(1)
-                logger.error(
+                logger.info(
                     f"postgresql is not ready. try {i} times. {output}")
                 if i >= maxtry:
                     logger.warning(f"postgresql is not ready. skip waitting.")
@@ -607,7 +607,7 @@ def waiting_instance_ready(conns: InstanceConnections, logger: logging.Logger):
             if output != success_message:
                 i += 1
                 time.sleep(1)
-                logger.error(f"instance not start. try {i} times. {output}")
+                logger.info(f"instance not start. try {i} times. {output}")
                 if i >= maxtry:
                     logger.warning(f"instance not start. skip waitting.")
                     break
@@ -1495,6 +1495,9 @@ def restore_postgresql_froms3(
     # waiting posgresql ready
     waiting_postgresql_ready(tmpconns, logger)
 
+    # sleep a lettle to wait point-in-time recovery(pitr) complete
+    time.sleep(MINUTES)
+
     # stop postgresql by pg_ctl
     cmd = ["pg_ctl", "stop", "-D", PG_DATABASE_DIR]
     output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
@@ -1506,12 +1509,11 @@ def restore_postgresql_froms3(
 
     ################## point-in-time recovery(pitr) recovery end
 
+    time.sleep(SECONDS * 10)
+
     # resume postgresql
     cmd = ["pgtools", "-p", POSTGRESQL_RESUME]
     exec_command(conn, cmd, logger, interrupt=True)
-
-    # sleep a lettle to wait auto_ctl run
-    time.sleep(10)
 
     # waiting posgresql ready
     waiting_postgresql_ready(tmpconns, logger)
