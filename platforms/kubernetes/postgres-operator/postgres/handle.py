@@ -885,7 +885,6 @@ def create_postgresql(
     logger.info("create postgresql on " + mode)
 
     antiaffinity = spec.get(SPEC_ANTIAFFINITY)
-    s3 = spec.get(SPEC_S3)
     if len(field.split(FIELD_DELIMITER)) == 1:
         localspec = spec.get(field)
         hbas = localspec[HBAS]
@@ -1081,11 +1080,6 @@ def create_postgresql(
                 )[replica].get_machine().get_host() + "\n"
                 machine_env += "AUTOCTL_REPLICATOR_PASSWORD=" + autoctl_replicator_password + "\n"
                 machine_env += "MONITOR_HOSTNAME=" + auto_failover_host + "\n"
-                machine_env += SPEC_S3 + "_" + SPEC_S3_ACCESS_KEY + "=" + s3[SPEC_S3_ACCESS_KEY] + "\n"
-                machine_env += SPEC_S3 + "_" + SPEC_S3_SECRET_KEY + "=" + s3[SPEC_S3_SECRET_KEY] + "\n"
-                machine_env += SPEC_S3 + "_" + SPEC_S3_ENDPOINT + "=" + s3[SPEC_S3_ENDPOINT] + "\n"
-                machine_env += SPEC_S3 + "_" + SPEC_S3_BUCKET + "=" + s3[SPEC_S3_BUCKET] + "\n"
-                machine_env += SPEC_S3 + "_" + SPEC_S3_PATH + "=" + s3[SPEC_S3_PATH] + "\n"
             else:
                 k8s_env.append({
                     CONTAINER_ENV_NAME: "PG_MODE",
@@ -1111,26 +1105,6 @@ def create_postgresql(
                     CONTAINER_ENV_VALUE:
                     get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
                 })
-                k8s_env.append({
-                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_ACCESS_KEY,
-                    CONTAINER_ENV_VALUE: s3[SPEC_S3_ACCESS_KEY]
-                })
-                k8s_env.append({
-                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_SECRET_KEY,
-                    CONTAINER_ENV_VALUE: s3[SPEC_S3_SECRET_KEY]
-                })
-                k8s_env.append({
-                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_ENDPOINT,
-                    CONTAINER_ENV_VALUE: s3[SPEC_S3_ENDPOINT]
-                })
-                k8s_env.append({
-                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_BUCKET,
-                    CONTAINER_ENV_VALUE: s3[SPEC_S3_BUCKET]
-                })
-                k8s_env.append({
-                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_PATH,
-                    CONTAINER_ENV_VALUE: s3[SPEC_S3_PATH]
-                })
         if field == get_field(POSTGRESQL, READONLYINSTANCE):
             if mode == MACHINE_MODE:
                 auto_failover_conns = connections(spec, meta, patch,
@@ -1147,11 +1121,6 @@ def create_postgresql(
                 machine_env += "AUTOCTL_REPLICATOR_PASSWORD=" + autoctl_replicator_password + "\n"
                 machine_env += "PG_STREAMING=" + localspec[STREAMING] + "\n"
                 machine_env += "MONITOR_HOSTNAME=" + auto_failover_host + "\n"
-                machine_env += SPEC_S3 + "_" + SPEC_S3_ACCESS_KEY + "=" + s3[SPEC_S3_ACCESS_KEY] + "\n"
-                machine_env += SPEC_S3 + "_" + SPEC_S3_SECRET_KEY + "=" + s3[SPEC_S3_SECRET_KEY] + "\n"
-                machine_env += SPEC_S3 + "_" + SPEC_S3_ENDPOINT + "=" + s3[SPEC_S3_ENDPOINT] + "\n"
-                machine_env += SPEC_S3 + "_" + SPEC_S3_BUCKET + "=" + s3[SPEC_S3_BUCKET] + "\n"
-                machine_env += SPEC_S3 + "_" + SPEC_S3_PATH + "=" + s3[SPEC_S3_PATH] + "\n"
             else:
                 k8s_env.append({
                     CONTAINER_ENV_NAME: "PG_MODE",
@@ -1180,26 +1149,6 @@ def create_postgresql(
                     "MONITOR_HOSTNAME",
                     CONTAINER_ENV_VALUE:
                     get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
-                })
-                k8s_env.append({
-                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_ACCESS_KEY,
-                    CONTAINER_ENV_VALUE: s3[SPEC_S3_ACCESS_KEY]
-                })
-                k8s_env.append({
-                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_SECRET_KEY,
-                    CONTAINER_ENV_VALUE: s3[SPEC_S3_SECRET_KEY]
-                })
-                k8s_env.append({
-                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_ENDPOINT,
-                    CONTAINER_ENV_VALUE: s3[SPEC_S3_ENDPOINT]
-                })
-                k8s_env.append({
-                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_BUCKET,
-                    CONTAINER_ENV_VALUE: s3[SPEC_S3_BUCKET]
-                })
-                k8s_env.append({
-                    CONTAINER_ENV_NAME: SPEC_S3 + "_" + SPEC_S3_PATH,
-                    CONTAINER_ENV_VALUE: s3[SPEC_S3_PATH]
                 })
 
         if mode == MACHINE_MODE:
