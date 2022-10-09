@@ -164,7 +164,7 @@ spec:
   backup:
     manual:
       id: 1
-      label: xxx
+      label: test
 #    cron:
 #      enable: true
 #      label: xxx

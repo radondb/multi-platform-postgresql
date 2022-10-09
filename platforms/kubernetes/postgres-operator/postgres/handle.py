@@ -1622,13 +1622,13 @@ def backup_postgresql_to_s3(
             raise kopf.PermanentError("backup cluster to s3 failed.")
 
     # delete expired backup
-    param = 'BACKUP_POLICY' + '="' + envs[SPEC_BACKUP_POLICY_RETENTION] + '"'
+    param = 'BACKUP_POLICY' + '="' + envs.get(SPEC_BACKUP_POLICY_RETENTION, "") + '"'
     cmd = ["pgtools", "-B", "-e", param]
     output = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
-    logger.warning(f"delete expired backup,and output = {output}")
+    logger.warning(f"delete expired backup, and output = {output}")
 
     # backup status
-    old_backup_status = spec[CLUSTER_STATUS].get(CLUSTER_STATUS_BACKUP, None)
+    old_backup_status = status.get(CLUSTER_STATUS_BACKUP, None)
     cmd = ["pgtools", "-v"]
     output = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
     if output == "":
@@ -1636,31 +1636,37 @@ def backup_postgresql_to_s3(
         raise kopf.PermanentError("backup_postgresql_to_s3 get backup info failed.")
     logger.warning(f"backup_postgresql_to_s3 get backup verbose info = {output}")
     backup_info = ast.literal_eval(output)
-    backup_status = get_backup_status_from_backup_info(backup_info)
+    new_backup_status = get_backup_status_from_backup_info(backup_info)
 
-    for status in backup_status:
+    logger.warning(f"old_backup_status = {old_backup_status}")
+    logger.warning(f"new_backup_status = {new_backup_status}")
+    
+    res = list()
+    for new_status in new_backup_status:
         # old backup
         is_old_backup = False
         if old_backup_status is not None:
             for old_status in old_backup_status:
-                if status["backup_id"] == old_status["backup_id"]:
-                    status = old_status
+                if new_status["backup_id"] == old_status["backup_id"]:
+                    # new_status = old_status
+                    res.append(old_status)
                     is_old_backup = True
                     break
         if is_old_backup:
             continue
         # new backup add label and size field
-        if SPEC_BACKUP_LABEL not in status:
-            status[SPEC_BACKUP_LABEL] = spec[SPEC_BACKUP_MANUAL][SPEC_BACKUP_LABEL]
+        if SPEC_BACKUP_LABEL not in new_status:
+            new_status[SPEC_BACKUP_LABEL] = spec[SPEC_BACKUP][SPEC_BACKUP_MANUAL][SPEC_BACKUP_LABEL]
         # size
-        backup_id = status["backup_id"]
+        backup_id = new_status["backup_id"]
         param = 'BACKUP_ID' + '="' + backup_id + '"'
         cmd = ["pgtools", "-m", "-e", param]
         size = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
-        status["size"] = size
+        new_status["size"] = size.strip()
+        res.append(new_status)
 
     # set backup status
-    set_cluster_status(meta, CLUSTER_STATUS_BACKUP, backup_status, logger)
+    set_cluster_status(meta, CLUSTER_STATUS_BACKUP, res, logger)
 
     # free conns
     conns.free_conns()
