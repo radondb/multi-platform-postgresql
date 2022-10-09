@@ -1573,10 +1573,11 @@ def backup_postgresql_to_s3(
             raise kopf.PermanentError("backup cluster to s3 failed.")
 
     # delete expired backup
-    param = 'BACKUP_POLICY' + '="' + envs.get(SPEC_BACKUP_POLICY_RETENTION, "") + '"'
-    cmd = ["pgtools", "-B", "-e", param] + s3_info
-    output = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
-    logger.warning(f"delete expired backup, and output = {output}")
+    if envs.get(SPEC_BACKUP_POLICY_RETENTION, "") != "none":
+        param = 'BACKUP_POLICY' + '="' + envs.get(SPEC_BACKUP_POLICY_RETENTION, "") + '"'
+        cmd = ["pgtools", "-B", "-e", param] + s3_info
+        output = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
+        logger.warning(f"delete expired backup, and output = {output}")
 
     # backup status
     old_backup_status = status.get(CLUSTER_STATUS_BACKUP, None)

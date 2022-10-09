@@ -173,7 +173,8 @@ spec:
       archive: 'on'                         # whether to archive WAL. on/off
       compression: gzip                     # backup compression. none/gzip/bzip2/snappy
       encryption: AES256                    # backup encryption. none/AES256/aws:kms
-      retention: REDUNDANCY 10              # backup retention policy
+      retention: REDUNDANCY 10              # backup retention policy. none/REDUNDANCY value/RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}
+                                            # none: backup does not expire
                                             # REDUNDANCY value: keep the number of backups. eg: REDUNDANCY 10.
                                             # RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}: keep backup time. eg: RECOVERY WINDOW OF 60 DAYS
 #  restore:
