@@ -164,7 +164,7 @@ spec:
   backup:
     manual:
       id: 1
-      label: test
+      label: postgresql-backup
 #    cron:
 #      enable: true
 #      label: xxx

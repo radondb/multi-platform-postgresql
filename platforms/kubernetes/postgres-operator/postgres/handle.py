@@ -1589,6 +1589,7 @@ def backup_postgresql_to_s3(
     logger: logging.Logger,
 ) -> None:
 
+    s3_info = list()
     logger.info(f"backup cluster to s3")
     # get readwrite connections
     conns = connections(spec, meta, patch,
@@ -1605,13 +1606,14 @@ def backup_postgresql_to_s3(
         new = SPEC_S3 + "_" + k
         s3[new] = s3.pop(old)
     envs = {**backup_policy, **s3}
-    cmd = ["pgtools", "-b"]
     for k, v in envs.items():
         if k == SPEC_BACKUP_POLICY_RETENTION:
             continue
         env = k + '="' + v + '"'
-        cmd.append('-e')
-        cmd.append(env)
+        s3_info.append('-e')
+        s3_info.append(env)
+
+    cmd = ["pgtools", "-b"] + s3_info
     logging.warning(f"backup_postgresql_to_s3 execute {cmd} to backup cluster on readwrite node")
 
     for conn in conns.get_conns():
@@ -1623,13 +1625,13 @@ def backup_postgresql_to_s3(
 
     # delete expired backup
     param = 'BACKUP_POLICY' + '="' + envs.get(SPEC_BACKUP_POLICY_RETENTION, "") + '"'
-    cmd = ["pgtools", "-B", "-e", param]
+    cmd = ["pgtools", "-B", "-e", param] + s3_info
     output = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
     logger.warning(f"delete expired backup, and output = {output}")
 
     # backup status
     old_backup_status = status.get(CLUSTER_STATUS_BACKUP, None)
-    cmd = ["pgtools", "-v"]
+    cmd = ["pgtools", "-v"] + s3_info
     output = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
     if output == "":
         logger.error(f"backup_postgresql_to_s3 get backup info failed, exit backup")
@@ -1660,7 +1662,7 @@ def backup_postgresql_to_s3(
         # size
         backup_id = new_status["backup_id"]
         param = 'BACKUP_ID' + '="' + backup_id + '"'
-        cmd = ["pgtools", "-m", "-e", param]
+        cmd = ["pgtools", "-m", "-e", param] + s3_info
         size = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
         new_status["size"] = size.strip()
         res.append(new_status)
