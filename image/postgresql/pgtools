@@ -25,6 +25,7 @@ backup=0
 backup_info=0
 restore=0
 backup_delete=0
+backup_size=0
 
 # set env
 DATA=${DATA:-/var/lib/postgresql/data}
@@ -67,7 +68,7 @@ streaming_pg=""
 ############ barman config end
 
 # parse argument
-while getopts "acdDe:hHp:q:w:Q:norRs:S:bE:vB" arg
+while getopts "acdDe:hHp:q:w:Q:norRs:S:bE:vBm" arg
 do
 	case $arg in
 		a)
@@ -115,6 +116,7 @@ do
 			echo "  -v        get s3 backup information in json format"
 			echo "  -b        backup cluster to s3"
 			echo "  -B        backup_delete by policy"
+			echo "  -m        get s3 backup size"
 			echo "  -s value  set auto_failover config: pg_autoctl config set.."
 			echo "  -S value  set auto_failover: pg_autoctl set.."
 			exit 0
@@ -163,6 +165,9 @@ do
 			;;
 		B)
 			backup_delete=1
+			;;
+		m)
+			backup_size=1
 			;;
 		?)
 			echo "unknow argument"
@@ -336,7 +341,7 @@ function s3_backup() {
 	elif [ $role == "on" ]; then
 		role="slave"
 	fi
-	backup_cmd="barman-cloud-backup --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME"
+	backup_cmd="barman-cloud-backup --immediate-checkpoint --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME"
 	backup_cmd=$(add_s3_param "$backup_cmd")
 	check_s3_env
 	generate_barman_config rsync $BARMAN_CONF/$BARMAN_BACKUPNAME.conf
@@ -356,6 +361,20 @@ function get_backup_info_format_json() {
 	generate_s3_profile $S3_ACCESS_KEY $S3_SECRET_KEY
 	check_s3_valid $S3_ENDPOINT $S3_BUCKET $S3_PATH
 	barman-cloud-backup-list --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME --format json
+}
+
+function get_backup_size_by_backup_id() {
+	check_s3_env
+	generate_s3_profile $S3_ACCESS_KEY $S3_SECRET_KEY
+	check_s3_valid $S3_ENDPOINT $S3_BUCKET $S3_PATH
+	ret=$(check_backup_exists $BACKUP_ID)
+	if [ "$ret" != 0 -o "$?" != 0 ]; then
+		check_error 1 "BACKUP $BACKUP_ID does not exist."
+	fi
+	if [ "${S3_PATH: 0: 1}" == "/"  ]; then
+		S3_PATH=${S3_PATH: 1}
+	fi
+	aws s3 --profile default --endpoint-url $S3_ENDPOINT ls s3://$S3_BUCKET/$S3_PATH/$BARMAN_BACKUPNAME/base/$BACKUP_ID/ --human-readable --summarize | grep 'Total Size:' | awk -F ':' '{print $2}'
 }
 
 function delete_backup_by_id() {
@@ -616,7 +635,11 @@ if [ "${backup_info}" = 1 ]; then
 fi
 
 if [ "${backup_delete}" = 1 ]; then
-	delete_backup_by_policy
+	delete_backup
+fi
+
+if [ "${backup_size}" = 1 ]; then
+	get_backup_size_by_backup_id
 fi
 
 exit 0

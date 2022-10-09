@@ -158,11 +158,11 @@ from constants import (
     SPEC_BACKUP_POLICY_ARCHIVE,
     SPEC_BACKUP_POLICY_COMPRESSION,
     SPEC_BACKUP_POLICY_ENCRYPTION,
-    SPEC_BACKUP_POLICY_KEEP_VALUE,
-    SPEC_BACKUP_POLICY_KEEP_TIME,
+    SPEC_BACKUP_POLICY_RETENTION,
     RESTORE_FROMS3,
     RESTORE_FROMS3_BACKUPID,
     RESTORE_FROMS3_RECOVERY_TIME,
+    CLUSTER_STATUS_BACKUP,
 )
 
 PRIMARY_FORMATION = " --formation primary "
@@ -1569,6 +1569,18 @@ def is_backup_mode(
     return False
 
 
+def get_backup_status_from_backup_info(backup_info: dict, need_field: List = ["backup_id", "begin_time", "end_time"]) -> List:
+    res = list()
+    backup_info = backup_info["backups_list"]
+    for backup in backup_info:
+        temp = dict()
+        for field in need_field:
+            if field in backup:
+                temp[field] = backup[field]
+        res.append(temp)
+    return res
+
+
 def backup_postgresql_to_s3(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -1595,11 +1607,7 @@ def backup_postgresql_to_s3(
     envs = {**backup_policy, **s3}
     cmd = ["pgtools", "-b"]
     for k, v in envs.items():
-        if k == SPEC_BACKUP_POLICY_KEEP_VALUE:
-            # delete expired backup
-            continue
-        elif k == SPEC_BACKUP_POLICY_KEEP_TIME:
-            # delete expired backup
+        if k == SPEC_BACKUP_POLICY_RETENTION:
             continue
         env = k + '="' + v + '"'
         cmd.append('-e')
@@ -1608,10 +1616,51 @@ def backup_postgresql_to_s3(
 
     for conn in conns.get_conns():
         # backup
-        output = exec_command(conn, cmd, logger, interrupt=True)
+        output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
         if output.find(SUCCESS) == -1:
             logger.error(f"execute {cmd} failed. {output}")
             raise kopf.PermanentError("backup cluster to s3 failed.")
+
+    # delete expired backup
+    param = 'BACKUP_POLICY' + '="' + envs[SPEC_BACKUP_POLICY_RETENTION] + '"'
+    cmd = ["pgtools", "-B", "-e", param]
+    output = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
+    logger.warning(f"delete expired backup,and output = {output}")
+
+    # backup status
+    old_backup_status = spec[CLUSTER_STATUS].get(CLUSTER_STATUS_BACKUP, None)
+    cmd = ["pgtools", "-v"]
+    output = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
+    if output == "":
+        logger.error(f"backup_postgresql_to_s3 get backup info failed, exit backup")
+        raise kopf.PermanentError("backup_postgresql_to_s3 get backup info failed.")
+    logger.warning(f"backup_postgresql_to_s3 get backup verbose info = {output}")
+    backup_info = ast.literal_eval(output)
+    backup_status = get_backup_status_from_backup_info(backup_info)
+
+    for status in backup_status:
+        # old backup
+        is_old_backup = False
+        if old_backup_status is not None:
+            for old_status in old_backup_status:
+                if status["backup_id"] == old_status["backup_id"]:
+                    status = old_status
+                    is_old_backup = True
+                    break
+        if is_old_backup:
+            continue
+        # new backup add label and size field
+        if SPEC_BACKUP_LABEL not in status:
+            status[SPEC_BACKUP_LABEL] = spec[SPEC_BACKUP_MANUAL][SPEC_BACKUP_LABEL]
+        # size
+        backup_id = status["backup_id"]
+        param = 'BACKUP_ID' + '="' + backup_id + '"'
+        cmd = ["pgtools", "-m", "-e", param]
+        size = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
+        status["size"] = size
+
+    # set backup status
+    set_cluster_status(meta, CLUSTER_STATUS_BACKUP, backup_status, logger)
 
     # free conns
     conns.free_conns()

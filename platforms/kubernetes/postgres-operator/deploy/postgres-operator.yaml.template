@@ -366,10 +366,8 @@ spec:
                         - 'AES256'
                         - 'aws:kms'
                         - 'none'
-                      keep_value:
-                        type: integer
-                      keep_time:
-                        type: integer
+                      retention:
+                        type: string
               restore:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
