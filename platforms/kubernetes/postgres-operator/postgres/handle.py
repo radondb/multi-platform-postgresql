@@ -207,7 +207,8 @@ DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
 DIFF_FIELD_SPEC_ANTIAFFINITY = (SPEC, SPEC_ANTIAFFINITY)
 DIFF_FIELD_SPEC_S3 = (SPEC, SPEC_S3)
-DIFF_FIELD_SPEC_BACKUP = (SPEC, SPEC_BACKUP, SPEC_BACKUP_MANUAL)
+DIFF_FIELD_SPEC_BACKUP = (SPEC, SPEC_BACKUP)
+DIFF_FIELD_SPEC_BACKUP_MANUAL = (SPEC, SPEC_BACKUP, SPEC_BACKUP_MANUAL)
 STATEFULSET_REPLICAS = 1
 PG_CONFIG_IGNORE = ("block_size", "data_checksums", "data_directory_mode",
                     "debug_assertions", "integer_datetimes", "lc_collate",
@@ -4043,9 +4044,17 @@ async def update_cluster(
             update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
 
+            if FIELD[0:len(DIFF_FIELD_SPEC_BACKUP_MANUAL
+                           )] == DIFF_FIELD_SPEC_BACKUP_MANUAL or (
+                               FIELD[0:len(DIFF_FIELD_SPEC_BACKUP)]
+                               == DIFF_FIELD_SPEC_BACKUP and AC == "add"
+                               and OLD is None and SPEC_BACKUP_MANUAL in NEW):
+                need_backup_cluster = True
+
         # s3 backup
-        if is_backup_mode(meta, spec, patch, status, logger):
-            backup_postgresql(meta, spec, patch, status, logger)
+        if need_backup_cluster:
+            if is_backup_mode(meta, spec, patch, status, logger):
+                backup_postgresql(meta, spec, patch, status, logger)
 
         logger.info("waiting for update_cluster success")
         waiting_cluster_final_status(meta, spec, patch, status, logger)
