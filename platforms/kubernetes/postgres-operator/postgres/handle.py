@@ -4009,15 +4009,10 @@ async def update_cluster(
                 need_update_number_sync_standbys = True
             update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
-            
-            if FIELD[0:len(DIFF_FIELD_SPEC_BACKUP
-                           )] == DIFF_FIELD_SPEC_BACKUP:
-                need_backup_cluster = True
 
         # s3 backup
-        if need_backup_cluster:
-            if is_backup_mode(meta, spec, patch, status, logger):
-                backup_postgresql(meta, spec, patch, status, logger)
+        if is_backup_mode(meta, spec, patch, status, logger):
+            backup_postgresql(meta, spec, patch, status, logger)
 
         logger.info("waiting for update_cluster success")
         waiting_cluster_final_status(meta, spec, patch, status, logger)

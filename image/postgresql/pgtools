@@ -68,7 +68,7 @@ streaming_pg=""
 ############ barman config end
 
 # parse argument
-while getopts "acdDe:hHp:q:w:Q:norRs:S:bE:vBm" arg
+while getopts "acdDe:hHp:q:w:Q:norRs:S:bEvBm" arg
 do
 	case $arg in
 		a)
@@ -420,6 +420,15 @@ function check_time_valid() {
 	fi
 }
 
+function s3_restore_by_id() {
+	touch $PGDATA/recovery.signal
+	echo "restore_command = 'barman-cloud-wal-restore --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME %f %p'" >> $PGDATA/postgresql.conf
+	echo "recovery_target_timeline = 'latest'" >> $PGDATA/postgresql.conf
+	echo "recovery_target = 'immediate'" >> $PGDATA/postgresql.conf
+	echo "archive_command = '/bin/true'" >> $PGDATA/postgresql.conf
+	echo "archive_timeout = 0" >> $PGDATA/postgresql.conf
+}
+
 function s3_restore_by_time() {
 	RESTORE_TIME=$1
 	touch $PGDATA/recovery.signal
@@ -430,10 +439,6 @@ function s3_restore_by_time() {
 	echo "archive_timeout = 0" >> $PGDATA/postgresql.conf
 }
 
-# need stop postgresql service
-# call:
-#     pgtools -E "backupid"="restore_time"
-#     eg: pgtools -E "20220926T084704"="2022-09-26 16:42:50"
 function s3_restore() {
 
 	ret=$(pg_is_running)
@@ -441,10 +446,12 @@ function s3_restore() {
 		check_error 1 "restore failed, postgresql service must be shut down"
 	fi
 
-	BACKUP_ID=$1
-	param=$2          # recovery_target_time
-	if [ ! "$BACKUP_ID" ] || [ ! "$param" ]; then
-		check_error 1 "BACKUP_ID or recovery_target_time is not set"
+	if [ ! "$BACKUP_ID" ]; then
+		check_error 1 "BACKUP_ID is not set."
+	fi
+
+	if [ "$recovery_time" ]; then
+		check_time_valid "$BACKUP_ID" "$recovery_time"
 	fi
 
 	check_s3_env
@@ -455,14 +462,17 @@ function s3_restore() {
 	if [ "$ret" != 0 -o "$?" != 0 ]; then
 		check_error 1 "BACKUP $BACKUP_ID does not exist, please select another backup id"
 	fi
-	check_time_valid "$BACKUP_ID" "$param"
 
 	rm -rf $PGDATA
 	barman-cloud-restore --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME $BACKUP_ID $PGDATA
 	if [ $? != 0 ]; then
 		check_error 1 "restore failed, please check error log"
 	fi
-	s3_restore_by_time "$param"
+	if [ "$recovery_time" ]; then
+		s3_restore_by_time "$recovery_time"
+	else
+		s3_restore_by_id
+	fi
 }
 
 if [ "${do_config}" = 1 ]; then
