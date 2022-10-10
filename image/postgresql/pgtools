@@ -424,6 +424,7 @@ function s3_restore_by_id() {
 	touch $PGDATA/recovery.signal
 	echo "restore_command = 'barman-cloud-wal-restore --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME %f %p'" >> $PGDATA/postgresql.conf
 	echo "recovery_target_timeline = 'latest'" >> $PGDATA/postgresql.conf
+	echo "recovery_target_action = 'shutdown'" >> $PGDATA/postgresql.conf
 	echo "recovery_target = 'immediate'" >> $PGDATA/postgresql.conf
 	echo "archive_command = '/bin/true'" >> $PGDATA/postgresql.conf
 	echo "archive_timeout = 0" >> $PGDATA/postgresql.conf
@@ -434,6 +435,7 @@ function s3_restore_by_time() {
 	touch $PGDATA/recovery.signal
 	echo "restore_command = 'barman-cloud-wal-restore --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME %f %p'" >> $PGDATA/postgresql.conf
 	echo "recovery_target_timeline = 'latest'" >> $PGDATA/postgresql.conf
+	echo "recovery_target_action = 'shutdown'" >> $PGDATA/postgresql.conf
 	echo "recovery_target_time = '$RESTORE_TIME'" >> $PGDATA/postgresql.conf
 	echo "archive_command = '/bin/true'" >> $PGDATA/postgresql.conf
 	echo "archive_timeout = 0" >> $PGDATA/postgresql.conf
