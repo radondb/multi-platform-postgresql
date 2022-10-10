@@ -391,6 +391,10 @@ spec:
                         type: string
                       recovery_time:
                         type: string
+                      recovery_label:
+                        type: string
+                      recovery_backupid:
+                        type: string
 
 ---
 apiVersion: v1

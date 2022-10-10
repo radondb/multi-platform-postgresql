@@ -161,27 +161,27 @@ spec:
     ENDPOINT: "http://s3.pek3.qingstor.com/"
     BUCKET: "postgresql"
     PATH: "test/backup"
-  backup:
-    manual:
-      id: 1
-      label: postgresql-backup
-#    cron:
-#      enable: true
-#      label: xxx
-#      schedule: xxx
-    policy:
-      archive: 'on'                         # whether to archive WAL. on/off
-      compression: gzip                     # backup compression. none/gzip/bzip2/snappy
-      encryption: AES256                    # backup encryption. none/AES256/aws:kms
-      retention: REDUNDANCY 10              # backup retention policy. none/REDUNDANCY value/RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}
+#  backup:
+#    manual:
+#      id: 1
+#      label: postgresql-backup
+##    cron:
+##      enable: true
+##      label: xxx
+##      schedule: xxx
+#    policy:
+#      archive: 'on'                         # whether to archive WAL. on/off
+#      compression: gzip                     # backup compression. none/gzip/bzip2/snappy
+#      encryption: AES256                    # backup encryption. none/AES256/aws:kms
+#      retention: REDUNDANCY 10              # backup retention policy. none/REDUNDANCY value/RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}
                                             # none: backup does not expire
                                             # REDUNDANCY value: keep the number of backups. eg: REDUNDANCY 10.
                                             # RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}: keep backup time. eg: RECOVERY WINDOW OF 60 DAYS
-#  restore:
-#    froms3:
-#      recovery_time: Fri Sep 30 10:10:57 2022
+  restore:
+    froms3:
+#      recovery_time: 2022-09-30 17:40:01
 #      recovery_label: xxx
-#      recovery_backupid: xxx
+      recovery_backupid: 20220930T172356
 #  backup:
 #    kind: single        # single/schedule
 #  restore:

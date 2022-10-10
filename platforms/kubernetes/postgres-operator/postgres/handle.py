@@ -162,6 +162,8 @@ from constants import (
     RESTORE_FROMS3,
     RESTORE_FROMS3_BACKUPID,
     RESTORE_FROMS3_RECOVERY_TIME,
+    RESTORE_FROMS3_RECOVERY_LABEL,
+    RESTORE_FROMS3_BACKUPID,
     CLUSTER_STATUS_BACKUP,
 )
 
@@ -1324,7 +1326,7 @@ def is_restore_mode(
     if spec[RESTORE].get(RESTORE_FROMSSH) != None:
         return True
 
-    if spec[RESTORE].get(RESTORE_FROMS3) != None:
+    if spec[RESTORE].get(RESTORE_FROMS3) != None and spec.get(SPEC_S3) != None:
         return True
 
     return False
@@ -1388,7 +1390,22 @@ def restore_postgresql_froms3(
 ) -> None:
 
     logger.info("restore_postgresql_froms3")
-    recovery_time = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_RECOVERY_TIME)
+    recovery_time = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_RECOVERY_TIME, None)
+    recovery_label = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_RECOVERY_LABEL, None)
+    recovery_backupid = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_BACKUPID, None)
+    s3_info = list()
+    s3 = spec[SPEC_S3].copy()
+    # use SPEC_S3 prefix replace key (must use S3_ prefix)
+    for k in list(s3.keys()):
+        old = k
+        new = SPEC_S3 + "_" + k
+        s3[new] = s3.pop(old)
+    for k, v in s3.items():
+        if k == SPEC_BACKUP_POLICY_RETENTION:
+            continue
+        env = k + '="' + v + '"'
+        s3_info.append('-e')
+        s3_info.append(env)
 
     tmpconns: InstanceConnections = InstanceConnections()
     tmpconns.add(conn)
@@ -1396,11 +1413,24 @@ def restore_postgresql_froms3(
     # wait postgresql ready
     waiting_postgresql_ready(tmpconns, logger)
     
-    if recovery_time is None:
-        logger.error(f"recovery_time is None, exit backup")
-        raise kopf.PermanentError("recovery_time is None.")
-    else:
-        cmd = ["pgtools", "-v"]
+    if recovery_backupid is not None:
+        backupid = recovery_backupid
+    elif recovery_label is not None:
+        # get backupid from backup label
+        backup_status = status.get(CLUSTER_STATUS_BACKUP, None)
+        backupid = None
+        current_timestamp = "0"
+        if backup_status is None:
+            logger.error(f"get backup_status failed.")
+            raise kopf.PermanentError("get backup_status failed.")
+        for backup in backup_status:
+            if backup[SPEC_BACKUP_LABEL] == recovery_label:
+                temp = time.mktime(time.strptime(backup["end_time"], '%a %b %d %H:%M:%S %Y'))
+                # new backup with backup_label
+                if compare_timestamp(current_timestamp, temp) == temp:
+                    backupid = backup[SPEC_BACKUP_ID]
+    elif recovery_time is not None:
+        cmd = ["pgtools", "-v"] + s3_info
         output = exec_command(conn, cmd, logger, interrupt=True)
         if output == "":
             logger.error(f"get backup info failed, exit backup")
@@ -1408,9 +1438,10 @@ def restore_postgresql_froms3(
         logger.warning(f"backup verbose info = {output}")
         backup_info = ast.literal_eval(output)
         backupid = get_backupid_from_backupinfo(recovery_time, backup_info)
-        if backupid is None:
-            logger.error(f"recovery_time field not valid.")
-            raise kopf.PermanentError("recovery_time field not valid.")
+
+    if backupid is None:
+        logger.error(f"backupid field not valid.")
+        raise kopf.PermanentError("backupid field not valid.")
 
     logger.warning(f"restore_postgresql_froms3 get backupid = {backupid}, recovery_time = {recovery_time}")
 
@@ -1421,9 +1452,11 @@ def restore_postgresql_froms3(
     waiting_instance_ready(tmpconns, logger)
 
     # restore param
-    param = "'" + backupid + "'='" + recovery_time + "'"
+    param = "-e BACKUP_ID='" + backupid + "'"
+    if recovery_time is not None:
+        param += " -e recovery_time='" + recovery_time + "'"
 
-    cmd = ["pgtools", "-E", param]
+    cmd = ["pgtools", "-E", param] + s3_info
     logging.warning(f"restore_postgresql_froms3 execute {cmd} to restore data")
     output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
     if output.find(SUCCESS) == -1:
