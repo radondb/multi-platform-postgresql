@@ -1499,8 +1499,8 @@ def restore_postgresql_froms3(
     cmd = ["rm", "-rf", os.path.join(PG_DATABASE_DIR, RECOVERY_SIGNAL)]
     exec_command(conn, cmd, logger, interrupt=True)
 
-    # reset recovery_target param
-    cmd = ["echo \"recovery_target = ''\" >> ", os.path.join(PG_DATABASE_DIR, POSTGRESQL_CONFIG)]
+    # clear recovery_target, recovery_target_time param
+    cmd = ["sed", "-i", "-e", "'/recovery_target /d;/recovery_target_time /d'", os.path.join(PG_DATABASE_DIR, POSTGRESQL_CONFIG)]
     exec_command(conn, cmd, logger, interrupt=True)
 
     ################## point-in-time recovery(pitr) recovery end
