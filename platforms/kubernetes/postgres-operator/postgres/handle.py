@@ -243,6 +243,7 @@ RECOVERY_CONF_FILE = "postgresql-auto-failover-standby.conf"
 RECOVERY_SET_FILE = "postgresql-auto-failover.conf"
 STANDBY_SIGNAL = "standby.signal"
 RECOVERY_SIGNAL = "recovery.signal"
+POSTGRESQL_CONFIG = "postgresql.conf"
 GET_INET_CMD = "ip addr | grep inet"
 SUCCESS_CHECKPOINT = "CHECKPOINT"
 CONTAINER_ENV = "env"
@@ -1496,6 +1497,10 @@ def restore_postgresql_froms3(
 
     # rm recovery.signal file
     cmd = ["rm", "-rf", os.path.join(PG_DATABASE_DIR, RECOVERY_SIGNAL)]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    # reset recovery_target param
+    cmd = ["echo \"recovery_target = ''\" >> ", os.path.join(PG_DATABASE_DIR, POSTGRESQL_CONFIG)]
     exec_command(conn, cmd, logger, interrupt=True)
 
     ################## point-in-time recovery(pitr) recovery end

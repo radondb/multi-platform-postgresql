@@ -327,7 +327,7 @@ function add_s3_param() {
 	fi
 
 	# encryption
-	if [ "$encryption" != "none" ]; then
+	if [ "$encryption" != "none" ] && [ "$encryption" ]; then
 		cmd="$cmd -e $encryption"
 	fi
 
