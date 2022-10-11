@@ -280,13 +280,13 @@ function check_and_set_backup_param() {
 	S3_BUCKET=$2
 	S3_PATH=$3
 	need_reload=0
-	# if wal archive is not enable, reset archive_command and archive_timeout param, return
-	if [ "$archive" != "on" ]; then
-		echo "archive_command = '/bin/true'" >> $PGDATA/postgresql.conf
-		echo "archive_timeout = 0" >> $PGDATA/postgresql.conf
-		reload_postgresql
-		return 0
-	fi
+#	# if wal archive is not enable, reset archive_command and archive_timeout param, return
+#	if [ "$archive" != "on" ]; then
+#		echo "archive_command = '/bin/true'" >> $PGDATA/postgresql.conf
+#		echo "archive_timeout = 0" >> $PGDATA/postgresql.conf
+#		reload_postgresql
+#		return 0
+#	fi
 	archive_command="barman-cloud-wal-archive --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME %p"
 	archive_command=$(add_s3_param "$archive_command")
 
@@ -353,6 +353,13 @@ function s3_backup() {
 		if [ $? != 0 ]; then
 			check_error 1 "backup failed, please check error log"
 		fi
+	fi
+	# if wal archive is not enable, reset archive_command and archive_timeout param after backup success
+	if [ "$archive" != "on" ]; then
+		sleep 10
+		echo "archive_command = '/bin/true'" >> $PGDATA/postgresql.conf
+		echo "archive_timeout = 0" >> $PGDATA/postgresql.conf
+		reload_postgresql
 	fi
 }
 

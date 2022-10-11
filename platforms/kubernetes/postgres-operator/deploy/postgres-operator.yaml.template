@@ -387,8 +387,6 @@ spec:
                   froms3:
                     type: object
                     properties:
-                      backupid:
-                        type: string
                       recovery_time:
                         type: string
                       recovery_label:

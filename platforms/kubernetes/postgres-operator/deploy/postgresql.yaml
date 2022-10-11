@@ -160,7 +160,7 @@ spec:
     SECRET_KEY: "7f3SBspTALsJw2NXmuD1253LcxwdCvSdoMs03NkV"
     ENDPOINT: "http://s3.pek3.qingstor.com/"
     BUCKET: "postgresql"
-    PATH: "test/backup"
+    PATH: "no-archive/backup"
 #  backup:
 #    manual:
 #      id: 1
@@ -170,7 +170,7 @@ spec:
 ##      label: xxx
 ##      schedule: xxx
 #    policy:
-#      archive: 'on'                         # whether to archive WAL. on/off
+#      archive: 'off'                         # whether to archive WAL. on/off
 #      compression: gzip                     # backup compression. none/gzip/bzip2/snappy
 #      encryption: AES256                    # backup encryption. none/AES256/aws:kms
 #      retention: REDUNDANCY 10              # backup retention policy. none/REDUNDANCY value/RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}
@@ -181,7 +181,7 @@ spec:
     froms3:
 #      recovery_time: 2022-10-10 15:22:17
 #      recovery_label: xxx
-      recovery_backupid: 20221010T151526
+      recovery_backupid: 20221010T175839
 #  backup:
 #    kind: single        # single/schedule
 #  restore:
