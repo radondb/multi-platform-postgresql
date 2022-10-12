@@ -1541,7 +1541,7 @@ def is_backup_mode(
     return False
 
 
-def get_backup_status_from_backup_info(backup_info: dict, need_field: List = ["backup_id", "begin_time", "end_time"]) -> List:
+def get_backup_status_from_backup_info(backup_info: dict, need_field: List = ["backup_id", "begin_time", "end_time", "begin_xlog", "end_xlog"]) -> List:
     res = list()
     backup_info = backup_info["backups_list"]
     for backup in backup_info:

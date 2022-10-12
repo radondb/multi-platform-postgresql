@@ -150,11 +150,6 @@ spec:
             resources:
               requests:
                 storage: 1Gi
-#  backup: TODO later. cronbackup, manual backup by kubectl patch
-  #restore:
-  #  fromssh:
-  #    path: /home/lzzhang/xx
-  #    address: root:password:192.168.0.8:22 # or local 'local' restore from the first postgresql node
   S3:
     ACCESS_KEY: "PFDHBVEIQIZYYGNTENJY"
     SECRET_KEY: "7f3SBspTALsJw2NXmuD1253LcxwdCvSdoMs03NkV"
@@ -179,3 +174,6 @@ spec:
 #    froms3:
 #      recovery_time: 2022-10-11 14:45:32
 #      recovery_backupid: 20221011T143943
+#    fromssh:
+#      path: /home/lzzhang/xx
+#      address: root:password:192.168.0.8:22 # or local 'local' restore from the first postgresql node
