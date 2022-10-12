@@ -97,6 +97,7 @@ CLUSTER_STATUS_TERMINATE = "Terminating"
 CLUSTER_STATUS_STOP = "stop"
 
 CLUSTER_STATUS_BACKUP = "backups_list"
+CLUSTER_STATUS_ARCHIVE = "backups_wal_archive"
 
 
 # base label

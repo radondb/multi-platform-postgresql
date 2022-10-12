@@ -165,6 +165,7 @@ from constants import (
     RESTORE_FROMS3_RECOVERY_LABEL,
     RESTORE_FROMS3_BACKUPID,
     CLUSTER_STATUS_BACKUP,
+    CLUSTER_STATUS_ARCHIVE,
 )
 
 PRIMARY_FORMATION = " --formation primary "
@@ -3159,6 +3160,32 @@ async def correct_postgresql_role(
                     % e)
 
 
+async def correct_backup_status(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    if is_backup_mode(meta, spec, patch, status, logger):
+        if spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_POLICY, {}).get(SPEC_BACKUP_POLICY_ARCHIVE, "") == "on":
+            readwrite_conns = connections(spec, meta, patch,
+                                          get_field(POSTGRESQL, READWRITEINSTANCE),
+                                          False, None, logger, None, status, False)
+            conn = get_primary_conn(readwrite_conns, 0, logger)
+            cmd = ["pgtools", "-w", "0", "-q", ''' "select last_archived_wal, last_archived_time from pg_stat_archiver limit 1;" ''']
+            logger.info(f"correct_backup_status with cmd {cmd}")
+            output = exec_command(conn, cmd, logger, interrupt=False).split("|")
+            keys = ["last_archived_wal", "last_archived_time"]
+            state = dict(zip(keys, output))
+        else:
+            state = ""
+        if spec.get(CLUSTER_STATUS, {}).get(CLUSTER_STATUS_ARCHIVE, None) != state:
+            set_cluster_status(meta, CLUSTER_STATUS_ARCHIVE, state, logger)
+
+        readwrite_conns.free_conns()
+
+
 async def timer_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -3170,6 +3197,8 @@ async def timer_cluster(
     await correct_postgresql_role(meta, spec, patch, status, logger)
     await correct_postgresql_password(meta, spec, patch, status, logger)
     await correct_keepalived(meta, spec, patch, status, logger)
+    await correct_backup_status(meta, spec, patch, status, logger)
+
 
 def update_number_sync_standbys(
     meta: kopf.Meta,

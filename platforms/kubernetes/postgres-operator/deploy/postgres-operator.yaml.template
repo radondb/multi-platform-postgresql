@@ -79,6 +79,11 @@ spec:
       name: ROmemory
       type: string
       priority: 1           # show in wide view
+    - jsonPath: .status.backups_wal_archive
+      description: The postgresql cluster backup status
+      name: BackupsWALArchive
+      type: string
+      priority: 1           # show in wide view
     - jsonPath: .status.backups_list
       description: The postgresql cluster backup status
       name: Backupstatus
