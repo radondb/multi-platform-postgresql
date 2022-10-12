@@ -150,7 +150,6 @@ from constants import (
     SPEC_BACKUP,
     SPEC_BACKUP_MANUAL,
     SPEC_BACKUP_ID,
-    SPEC_BACKUP_LABEL,
     SPEC_BACKUP_CRON,
     SPEC_BACKUP_CRON_ENABLE,
     SPEC_BACKUP_CRON_SCHEDULE,
@@ -162,7 +161,6 @@ from constants import (
     RESTORE_FROMS3,
     RESTORE_FROMS3_BACKUPID,
     RESTORE_FROMS3_RECOVERY_TIME,
-    RESTORE_FROMS3_RECOVERY_LABEL,
     RESTORE_FROMS3_BACKUPID,
     CLUSTER_STATUS_BACKUP,
     CLUSTER_STATUS_ARCHIVE,
@@ -1394,7 +1392,6 @@ def restore_postgresql_froms3(
 
     logger.info("restore_postgresql_froms3")
     recovery_time = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_RECOVERY_TIME, None)
-    recovery_label = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_RECOVERY_LABEL, None)
     recovery_backupid = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_BACKUPID, None)
     s3_info = list()
     s3 = spec[SPEC_S3].copy()
@@ -1418,20 +1415,6 @@ def restore_postgresql_froms3(
     
     if recovery_backupid is not None:
         backupid = recovery_backupid
-    elif recovery_label is not None:
-        # get backupid from backup label
-        backup_status = status.get(CLUSTER_STATUS_BACKUP, None)
-        backupid = None
-        current_timestamp = "0"
-        if backup_status is None:
-            logger.error(f"get backup_status failed.")
-            raise kopf.PermanentError("get backup_status failed.")
-        for backup in backup_status:
-            if backup[SPEC_BACKUP_LABEL] == recovery_label:
-                temp = time.mktime(time.strptime(backup["end_time"], '%a %b %d %H:%M:%S %Y'))
-                # new backup with backup_label
-                if compare_timestamp(current_timestamp, temp) == temp:
-                    backupid = backup[SPEC_BACKUP_ID]
     elif recovery_time is not None:
         cmd = ["pgtools", "-v"] + s3_info
         output = exec_command(conn, cmd, logger, interrupt=True)
@@ -1640,16 +1623,12 @@ def backup_postgresql_to_s3(
         if old_backup_status is not None:
             for old_status in old_backup_status:
                 if new_status["backup_id"] == old_status["backup_id"]:
-                    # new_status = old_status
                     res.append(old_status)
                     is_old_backup = True
                     break
         if is_old_backup:
             continue
-        # new backup add label and size field
-        if SPEC_BACKUP_LABEL not in new_status:
-            new_status[SPEC_BACKUP_LABEL] = spec[SPEC_BACKUP][SPEC_BACKUP_MANUAL][SPEC_BACKUP_LABEL]
-        # size
+        # new backup add size field
         backup_id = new_status["backup_id"]
         param = 'BACKUP_ID' + '="' + backup_id + '"'
         cmd = ["pgtools", "-m", "-e", param] + s3_info

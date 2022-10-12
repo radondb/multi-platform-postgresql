@@ -344,15 +344,11 @@ spec:
                     properties:
                       id:
                         type: integer
-                      label:
-                        type: string
                   cron:
                     type: object
                     properties:
                       enable:
                         type: boolean
-                      label:
-                        type: string
                       schedule:
                         type: string
                   policy:
