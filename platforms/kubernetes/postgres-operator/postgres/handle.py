@@ -14,6 +14,8 @@ from kubernetes import client, config
 from kubernetes.stream import stream
 from config import operator_config
 from typed import LabelType, InstanceConnection, InstanceConnections, TypedDict, InstanceConnectionMachine, InstanceConnectionK8S, Tuple, Any, List
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from constants import (
     VIP,
@@ -4094,15 +4096,62 @@ async def update_cluster(
                            CLUSTER_STATUS_UPDATE_FAILED, logger)
 
 
+def cron_backup(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    cron_expression: str,
+) -> None:
+    if is_backup_mode(meta, spec, patch, status, logger):
+        backup_postgresql(meta, spec, patch, status, logger)
+
+
 async def daemon_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
     status: kopf.Status,
     logger: logging.Logger,
+    scheduler: BackgroundScheduler,
 ) -> None:
 
     try:
-        logger.error(f"Daemon 'daemon_cluster' execute.")
+        logger.info(f"Daemon 'daemon_cluster' execute.")
+
+        new_cron_expression = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_SCHEDULE, None)
+        cron_enable = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_ENABLE, None)
+        s3_info = spec.get(SPEC_S3, None)
+        jobs = scheduler.get_jobs()
+
+        if cron_enable:
+            if s3_info is None:
+                logger.error(f"cronjob enable but s3 info is empty.")
+                return
+            if not jobs:
+                logger.info(f"current cronjob is empty, add cronjob with {new_cron_expression}")
+                job = scheduler.add_job(func=cron_backup, trigger=CronTrigger.from_crontab(new_cron_expression),
+                                        args=(meta, spec, patch, status, logger, new_cron_expression))
+                logger.info(f"add job success.")
+            else:
+                job = jobs[0]
+                old_cron_expression = job.args[-1]
+                if old_cron_expression != new_cron_expression:
+                    # alter job
+                    job = scheduler.reschedule_job(job_id=job.id, jobstore=None, trigger=CronTrigger.from_crontab(new_cron_expression),
+                                                    args=(meta, spec, patch, status, logger, new_cron_expression))
+                    logger.info(f"reschedule job success.")
+                else:
+                    logger.info(f"job exists.")
+        else:
+            # if enable is false but have job, remove job from scheduler
+            if jobs:
+                logger.warning(f"cron not enable, remove job with {jobs[0].args[-1]}")
+                jobs[0].remove()
+
+        logger.info(f"next run time is {job.next_run_time}")
+        logger.info(f"Daemon 'daemon_cluster' success.")
+
     except asyncio.CancelledError:
         logger.warning(f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done.")

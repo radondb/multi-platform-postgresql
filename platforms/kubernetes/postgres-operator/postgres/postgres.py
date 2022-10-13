@@ -11,7 +11,7 @@ from constants import (
 )
 from config import operator_config
 from handle import create_cluster, delete_cluster, timer_cluster, update_cluster, daemon_cluster
-
+from apscheduler.schedulers.background import BackgroundScheduler
 from kubernetes import client, config
 
 
@@ -118,6 +118,7 @@ async def cluster_timer(
     API_GROUP,
     API_VERSION_V1,
     RESOURCE_POSTGRESQL,
+    backoff=operator_config.BOOTSTRAP_RETRY_DELAY,
     initial_delay=30,
     field='spec.%s.%s.%s' % (SPEC_BACKUP, SPEC_BACKUP_CRON, SPEC_BACKUP_CRON_SCHEDULE),
     value=kopf.PRESENT,
@@ -132,6 +133,9 @@ async def cluster_daemon(
     **_kwargs,
 ):
 
+    # init and start BackgroundScheduler
+    scheduler = BackgroundScheduler()
+    scheduler.start()
     while True:
-        await daemon_cluster(meta, spec, patch, status, logger)
+        await daemon_cluster(meta, spec, patch, status, logger, scheduler)
         await asyncio.sleep(60)

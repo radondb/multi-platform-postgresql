@@ -161,7 +161,7 @@ spec:
 #      id: 1
     cron:
       enable: true
-      schedule: xxx
+      schedule: 30 * * * *
     policy:
       archive: 'on'                         # whether to archive WAL. on/off
       compression: gzip                     # backup compression. none/gzip/bzip2/snappy
