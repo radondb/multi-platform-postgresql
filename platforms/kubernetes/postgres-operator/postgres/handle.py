@@ -167,6 +167,7 @@ from constants import (
     RESTORE_FROMS3_BACKUPID,
     CLUSTER_STATUS_BACKUP,
     CLUSTER_STATUS_ARCHIVE,
+    CLUSTER_STATUS_CRON_NEXT_RUN,
 )
 
 PRIMARY_FORMATION = " --formation primary "
@@ -4151,9 +4152,9 @@ async def daemon_cluster(
                 job = jobs[0]
                 old_cron_expression = job.args[-1]
                 if old_cron_expression != new_cron_expression:
-                    # alter job
-                    job = scheduler.reschedule_job(job_id=job.id, jobstore=None, trigger=CronTrigger.from_crontab(new_cron_expression),
-                                                    args=(meta, spec, patch, status, logger, new_cron_expression))
+                    # modify job args and reschedule job
+                    job.modify(args=(meta, spec, patch, status, logger, new_cron_expression))
+                    job = scheduler.reschedule_job(job_id=job.id, jobstore=None, trigger=CronTrigger.from_crontab(new_cron_expression))
                     logger.info(f"reschedule job success.")
                 else:
                     logger.info(f"job exists.")
@@ -4162,9 +4163,13 @@ async def daemon_cluster(
             if jobs:
                 logger.warning(f"cron not enable, remove job with {jobs[0].args[-1]}")
                 jobs[0].remove()
-            return
 
-        logger.info(f"next run time is {job.next_run_time}")
+        next_run_time = ""
+        if cron_enable:
+            next_run_time = job.next_run_time
+            logger.info(f"next run time is {next_run_time}")
+        if next_run_time != status.get(CLUSTER_STATUS_CRON_NEXT_RUN, None):
+            set_cluster_status(meta, CLUSTER_STATUS_CRON_NEXT_RUN, next_run_time, logger)
         logger.info(f"Daemon 'daemon_cluster' success.")
 
     except asyncio.CancelledError:

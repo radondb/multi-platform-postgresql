@@ -96,6 +96,7 @@ CLUSTER_STATUS_STOP = "stop"
 
 CLUSTER_STATUS_BACKUP = "backups_list"
 CLUSTER_STATUS_ARCHIVE = "backups_wal_archive"
+CLUSTER_STATUS_CRON_NEXT_RUN = "cron_next_run_time"
 
 
 # base label

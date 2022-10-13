@@ -79,6 +79,11 @@ spec:
       name: ROmemory
       type: string
       priority: 1           # show in wide view
+    - jsonPath: .status.cron_next_run_time
+      description: The postgresql cluster cron backup net run time
+      name: CronNextRunTime
+      type: string
+      priority: 1           # show in wide view
     - jsonPath: .status.backups_wal_archive
       description: The postgresql cluster backup status
       name: BackupsWALArchive
