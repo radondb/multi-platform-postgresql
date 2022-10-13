@@ -1537,7 +1537,24 @@ def is_backup_mode(
 
     if spec[SPEC_BACKUP].get(SPEC_BACKUP_MANUAL) != None and spec[SPEC_BACKUP].get(SPEC_BACKUP_POLICY) != None:
         return True
-    
+
+    return False
+
+
+def is_cron_backup_mode(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> bool:
+    if spec.get(SPEC_BACKUP) == None:
+        return False
+
+    if spec.get(SPEC_S3) == None:
+        logger.warning("s3 related information is not set.")
+        return False
+
     if spec[SPEC_BACKUP].get(SPEC_BACKUP_CRON) != None and spec[SPEC_BACKUP].get(SPEC_BACKUP_POLICY) != None:
         return True
 
@@ -3149,7 +3166,7 @@ async def correct_backup_status(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
-    if is_backup_mode(meta, spec, patch, status, logger):
+    if is_backup_mode(meta, spec, patch, status, logger) or is_cron_backup_mode(meta, spec, patch, status, logger):
         if spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_POLICY, {}).get(SPEC_BACKUP_POLICY_ARCHIVE, "") == "on":
             readwrite_conns = connections(spec, meta, patch,
                                           get_field(POSTGRESQL, READWRITEINSTANCE),
@@ -4104,7 +4121,7 @@ def cron_backup(
     logger: logging.Logger,
     cron_expression: str,
 ) -> None:
-    if is_backup_mode(meta, spec, patch, status, logger):
+    if is_cron_backup_mode(meta, spec, patch, status, logger):
         backup_postgresql(meta, spec, patch, status, logger)
 
 
@@ -4122,13 +4139,9 @@ async def daemon_cluster(
 
         new_cron_expression = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_SCHEDULE, None)
         cron_enable = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_ENABLE, None)
-        s3_info = spec.get(SPEC_S3, None)
         jobs = scheduler.get_jobs()
 
         if cron_enable:
-            if s3_info is None:
-                logger.error(f"cronjob enable but s3 info is empty.")
-                return
             if not jobs:
                 logger.info(f"current cronjob is empty, add cronjob with {new_cron_expression}")
                 job = scheduler.add_job(func=cron_backup, trigger=CronTrigger.from_crontab(new_cron_expression),
@@ -4149,6 +4162,7 @@ async def daemon_cluster(
             if jobs:
                 logger.warning(f"cron not enable, remove job with {jobs[0].args[-1]}")
                 jobs[0].remove()
+            return
 
         logger.info(f"next run time is {job.next_run_time}")
         logger.info(f"Daemon 'daemon_cluster' success.")
