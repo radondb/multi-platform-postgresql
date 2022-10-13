@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import kopf
 import paramiko
@@ -4091,3 +4092,17 @@ async def update_cluster(
         traceback.format_exc()
         set_cluster_status(meta, CLUSTER_CREATE_CLUSTER,
                            CLUSTER_STATUS_UPDATE_FAILED, logger)
+
+
+async def daemon_cluster(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+
+    try:
+        logger.error(f"Daemon 'daemon_cluster' execute.")
+    except asyncio.CancelledError:
+        logger.warning(f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done.")

@@ -157,8 +157,8 @@ spec:
     BUCKET: "postgresql"
     PATH: "test/backup"
   backup:
-    manual:
-      id: 1
+#    manual:
+#      id: 1
     cron:
       enable: true
       schedule: xxx

@@ -1,12 +1,16 @@
+import asyncio
 import logging
 import kopf
 from constants import (
     API_GROUP,
     API_VERSION_V1,
     RESOURCE_POSTGRESQL,
+    SPEC_BACKUP,
+    SPEC_BACKUP_CRON,
+    SPEC_BACKUP_CRON_SCHEDULE,
 )
 from config import operator_config
-from handle import create_cluster, delete_cluster, timer_cluster, update_cluster
+from handle import create_cluster, delete_cluster, timer_cluster, update_cluster, daemon_cluster
 
 from kubernetes import client, config
 
@@ -108,3 +112,26 @@ async def cluster_timer(
     **_kwargs,
 ):
     await timer_cluster(meta, spec, patch, status, logger)
+
+
+@kopf.daemon(
+    API_GROUP,
+    API_VERSION_V1,
+    RESOURCE_POSTGRESQL,
+    initial_delay=30,
+    field='spec.%s.%s.%s' % (SPEC_BACKUP, SPEC_BACKUP_CRON, SPEC_BACKUP_CRON_SCHEDULE),
+    value=kopf.PRESENT,
+    cancellation_timeout=3.0,
+)
+async def cluster_daemon(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    **_kwargs,
+):
+
+    while True:
+        await daemon_cluster(meta, spec, patch, status, logger)
+        await asyncio.sleep(60)
