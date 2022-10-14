@@ -139,6 +139,11 @@ async def cluster_daemon(
     }
     scheduler.configure(job_defaults)
     scheduler.start()
-    while True:
-        await daemon_cluster(meta, spec, patch, status, logger, scheduler)
-        await asyncio.sleep(60)
+    try:
+        while True:
+            await daemon_cluster(meta, spec, patch, status, logger, scheduler)
+            await asyncio.sleep(60)
+    except asyncio.CancelledError:
+        scheduler.remove_all_jobs()
+        scheduler.shutdown()
+        logger.warning(f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done. remove all jobs and shutdown scheduler.")

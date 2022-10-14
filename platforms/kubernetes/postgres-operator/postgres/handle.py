@@ -4191,8 +4191,6 @@ async def daemon_cluster(
         logger.info(f"Daemon 'daemon_cluster' execute.")
         await cron_cluster(meta, spec, patch, status, logger, scheduler)
         logger.info(f"Daemon 'daemon_cluster' succeeded.")
-    except asyncio.CancelledError:
-        logger.warning(f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done.")
     except ValueError:
         logger.error(f"cluster_daemon failed.")
         traceback.print_exc()

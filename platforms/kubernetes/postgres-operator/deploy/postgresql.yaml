@@ -160,8 +160,13 @@ spec:
 #    manual:
 #      id: 1
     cron:
-      enable: true
-      schedule: 30 * * * *
+      enable: true                          # whether to enable scheduled backup
+      schedule: 0 1 * * wed,sat             # cron expression: minute(0-59) hour(0-23) day(1-31) month(1-12) day_of_week(0-6, mon,tue,wed,thu,fri,sat,sun)
+                                                  # execute once a day at 23:00: 0 23 * * *
+                                                  # 1:00 every weekend: 0 1 * * sun
+                                                  # executed at 1:00 AM on the first day of each month : 0 1 1 * *
+                                                  # execute once every day at 0:00, 13:00: 0 0,13 * * *
+                                                  # executed at 1:00 AM every Wednesday and Saturday: 0 1 * * wed,sat
     policy:
       archive: 'on'                         # whether to archive WAL. on/off
       compression: gzip                     # backup compression. none/gzip/bzip2/snappy
