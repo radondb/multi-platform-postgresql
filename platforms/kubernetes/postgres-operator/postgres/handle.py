@@ -3180,7 +3180,7 @@ async def correct_backup_status(
             state = dict(zip(keys, output))
         else:
             state = ""
-        if spec.get(CLUSTER_STATUS, {}).get(CLUSTER_STATUS_ARCHIVE, None) != state:
+        if status.get(CLUSTER_STATUS_ARCHIVE, None) != state:
             set_cluster_status(meta, CLUSTER_STATUS_ARCHIVE, state, logger)
 
         readwrite_conns.free_conns()
@@ -4122,8 +4122,60 @@ def cron_backup(
     logger: logging.Logger,
     cron_expression: str,
 ) -> None:
-    if is_cron_backup_mode(meta, spec, patch, status, logger):
-        backup_postgresql(meta, spec, patch, status, logger)
+    try:
+        if is_cron_backup_mode(meta, spec, patch, status, logger):
+            backup_postgresql(meta, spec, patch, status, logger)
+    except kopf.PermanentError:
+        logger.error(f"cron_backup failed.")
+        traceback.print_exc()
+        traceback.format_exc()
+
+
+async def cron_cluster(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    scheduler: BackgroundScheduler,
+) -> None:
+
+    new_cron_expression = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_SCHEDULE, None)
+    cron_enable = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_ENABLE, None)
+    jobs = scheduler.get_jobs()
+
+    if cron_enable:
+        if not jobs:
+            logger.info(f"current cronjob is empty, add cronjob with {new_cron_expression}")
+            job = scheduler.add_job(func=cron_backup, trigger=CronTrigger.from_crontab(new_cron_expression),
+                                    args=(meta, spec, patch, status, logger, new_cron_expression))
+            logger.info(f"add job success.")
+        else:
+            job = jobs[0]
+            old_cron_expression = job.args[-1]
+            if old_cron_expression != new_cron_expression:
+                # modify job args and reschedule job
+                # job.modify(args=(meta, spec, patch, status, logger, new_cron_expression))
+                # job = scheduler.reschedule_job(job_id=job.id, jobstore=None,
+                #                                trigger=CronTrigger.from_crontab(new_cron_expression))
+                job.remove()
+                job = scheduler.add_job(func=cron_backup, trigger=CronTrigger.from_crontab(new_cron_expression),
+                                        args=(meta, spec, patch, status, logger, new_cron_expression))
+                logger.info(f"reschedule job success.")
+            else:
+                logger.info(f"job exists.")
+    else:
+        # if enable is false but have job, remove job from scheduler
+        if jobs:
+            logger.warning(f"cron not enable, remove job with {jobs[0].args[-1]}")
+            jobs[0].remove()
+
+    next_run_time = ""
+    if cron_enable:
+        next_run_time = str(job.next_run_time).replace(" ", "T")
+        logger.info(f"cronjob next run time is {next_run_time}")
+    if next_run_time != status.get(CLUSTER_STATUS_CRON_NEXT_RUN, None):
+        set_cluster_status(meta, CLUSTER_STATUS_CRON_NEXT_RUN, next_run_time, logger)
 
 
 async def daemon_cluster(
@@ -4137,40 +4189,11 @@ async def daemon_cluster(
 
     try:
         logger.info(f"Daemon 'daemon_cluster' execute.")
-
-        new_cron_expression = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_SCHEDULE, None)
-        cron_enable = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_ENABLE, None)
-        jobs = scheduler.get_jobs()
-
-        if cron_enable:
-            if not jobs:
-                logger.info(f"current cronjob is empty, add cronjob with {new_cron_expression}")
-                job = scheduler.add_job(func=cron_backup, trigger=CronTrigger.from_crontab(new_cron_expression),
-                                        args=(meta, spec, patch, status, logger, new_cron_expression))
-                logger.info(f"add job success.")
-            else:
-                job = jobs[0]
-                old_cron_expression = job.args[-1]
-                if old_cron_expression != new_cron_expression:
-                    # modify job args and reschedule job
-                    job.modify(args=(meta, spec, patch, status, logger, new_cron_expression))
-                    job = scheduler.reschedule_job(job_id=job.id, jobstore=None, trigger=CronTrigger.from_crontab(new_cron_expression))
-                    logger.info(f"reschedule job success.")
-                else:
-                    logger.info(f"job exists.")
-        else:
-            # if enable is false but have job, remove job from scheduler
-            if jobs:
-                logger.warning(f"cron not enable, remove job with {jobs[0].args[-1]}")
-                jobs[0].remove()
-
-        next_run_time = ""
-        if cron_enable:
-            next_run_time = job.next_run_time
-            logger.info(f"next run time is {next_run_time}")
-        if next_run_time != status.get(CLUSTER_STATUS_CRON_NEXT_RUN, None):
-            set_cluster_status(meta, CLUSTER_STATUS_CRON_NEXT_RUN, next_run_time, logger)
-        logger.info(f"Daemon 'daemon_cluster' success.")
-
+        await cron_cluster(meta, spec, patch, status, logger, scheduler)
+        logger.info(f"Daemon 'daemon_cluster' succeeded.")
     except asyncio.CancelledError:
         logger.warning(f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done.")
+    except ValueError:
+        logger.error(f"cluster_daemon failed.")
+        traceback.print_exc()
+        traceback.format_exc()

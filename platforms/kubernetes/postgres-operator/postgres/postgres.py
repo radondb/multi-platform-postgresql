@@ -120,8 +120,6 @@ async def cluster_timer(
     RESOURCE_POSTGRESQL,
     backoff=operator_config.BOOTSTRAP_RETRY_DELAY,
     initial_delay=30,
-    field='spec.%s.%s.%s' % (SPEC_BACKUP, SPEC_BACKUP_CRON, SPEC_BACKUP_CRON_SCHEDULE),
-    value=kopf.PRESENT,
     cancellation_timeout=3.0,
 )
 async def cluster_daemon(
@@ -135,6 +133,11 @@ async def cluster_daemon(
 
     # init and start BackgroundScheduler
     scheduler = BackgroundScheduler()
+    job_defaults = {
+        'coalesce': False,
+        'max_instances': 1
+    }
+    scheduler.configure(job_defaults)
     scheduler.start()
     while True:
         await daemon_cluster(meta, spec, patch, status, logger, scheduler)
