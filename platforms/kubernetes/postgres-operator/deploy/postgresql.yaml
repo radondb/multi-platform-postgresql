@@ -155,7 +155,7 @@ spec:
     SECRET_KEY: "7f3SBspTALsJw2NXmuD1253LcxwdCvSdoMs03NkV"
     ENDPOINT: "http://s3.pek3.qingstor.com/"
     BUCKET: "postgresql"
-    PATH: "test/backup"
+    PATH: "archive/backup"
 #  backup:
 #    manual:
 #      id: 1
@@ -178,7 +178,11 @@ spec:
                                                   # RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}: keep backup time. eg: RECOVERY WINDOW OF 60 DAYS
   restore:
     froms3:
-      recovery: 2022-10-11 14:45:32             # backupid or recovery_time
+      recovery: 2022-10-14 14:45:32             # backupid or recovery_time or macro variable
+                                                # supported macro variable:
+                                                      # latest:
+                                                      # lastest-full:
+                                                      # oldest-full:
 #      recovery_backupid: 20221011T143943
 #      recovery_time: 2022-10-11 14:45:32
 #    fromssh:
