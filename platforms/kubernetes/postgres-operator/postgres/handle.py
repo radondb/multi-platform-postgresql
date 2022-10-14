@@ -162,9 +162,7 @@ from constants import (
     SPEC_BACKUP_POLICY_ENCRYPTION,
     SPEC_BACKUP_POLICY_RETENTION,
     RESTORE_FROMS3,
-    RESTORE_FROMS3_BACKUPID,
-    RESTORE_FROMS3_RECOVERY_TIME,
-    RESTORE_FROMS3_BACKUPID,
+    RESTORE_FROMS3_RECOVERY,
     CLUSTER_STATUS_BACKUP,
     CLUSTER_STATUS_ARCHIVE,
     CLUSTER_STATUS_CRON_NEXT_RUN,
@@ -1337,6 +1335,14 @@ def is_restore_mode(
     return False
 
 
+def is_backup_id(backupid: str) -> bool:
+    try:
+        time.strptime(backupid, "%Y%m%dT%H%M%S")
+        return True
+    except:
+        return False
+
+
 def valid_date_format(date: str) -> str:
     res = None
     for format in SUPPORTED_DATE_FORMAT:
@@ -1395,8 +1401,17 @@ def restore_postgresql_froms3(
 ) -> None:
 
     logger.info("restore_postgresql_froms3")
-    recovery_time = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_RECOVERY_TIME, None)
-    recovery_backupid = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_BACKUPID, None)
+    recovery_backupid = None
+    recovery_time = None
+
+    # recovery param processing
+    recovery = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_RECOVERY, None)
+    if is_backup_id(recovery):
+        recovery_backupid = recovery
+    else:
+        recovery_time = recovery
+
+    # add s3 env by pgtools -e
     s3_info = list()
     s3 = spec[SPEC_S3].copy()
     # use SPEC_S3 prefix replace key (must use S3_ prefix)
@@ -1416,7 +1431,8 @@ def restore_postgresql_froms3(
 
     # wait postgresql ready
     waiting_postgresql_ready(tmpconns, logger)
-    
+
+    # get backupid
     if recovery_backupid is not None:
         backupid = recovery_backupid
     elif recovery_time is not None:

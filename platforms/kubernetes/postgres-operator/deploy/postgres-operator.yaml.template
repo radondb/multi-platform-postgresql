@@ -393,11 +393,7 @@ spec:
                   froms3:
                     type: object
                     properties:
-                      recovery_time:
-                        type: string
-                      recovery_label:
-                        type: string
-                      recovery_backupid:
+                      recovery:
                         type: string
 
 ---
