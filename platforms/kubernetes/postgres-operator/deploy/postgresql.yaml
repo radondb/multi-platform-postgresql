@@ -178,11 +178,11 @@ spec:
                                                   # RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}: keep backup time. eg: RECOVERY WINDOW OF 60 DAYS
   restore:
     froms3:
-      recovery: 2022-10-14 14:45:32             # backupid or recovery_time or macro variable
+      recovery: latest-full             # backupid or recovery_time or macro variable
                                                 # supported macro variable:
-                                                      # latest:
-                                                      # lastest-full:
-                                                      # oldest-full:
+                                                      # latest: Restoring to latest state
+                                                      # latest-full: Restoring to the latest full backup state
+                                                      # oldest-full: Restoring to the oldest full backup state
 #      recovery_backupid: 20221011T143943
 #      recovery_time: 2022-10-11 14:45:32
 #    fromssh:

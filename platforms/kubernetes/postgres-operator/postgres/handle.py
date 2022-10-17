@@ -166,6 +166,9 @@ from constants import (
     CLUSTER_STATUS_BACKUP,
     CLUSTER_STATUS_ARCHIVE,
     CLUSTER_STATUS_CRON_NEXT_RUN,
+    RESTORE_FROMS3_RECOVERY_LATEST,
+    RESTORE_FROMS3_RECOVERY_LATEST_FULL,
+    RESTORE_FROMS3_RECOVERY_OLDEST_FULL,
 )
 
 PRIMARY_FORMATION = " --formation primary "
@@ -1391,6 +1394,34 @@ def get_backupid_from_backupinfo(recovery_time: str, backup_info: str) -> str:
     return backupid
 
 
+def get_latest_backupid(backup_info: str) -> str:
+    backupid = None
+    max_timestamp = 0
+
+    backup_info = backup_info["backups_list"]
+    for backup in backup_info:
+        temp = time.mktime(time.strptime(backup["end_time"], '%a %b %d %H:%M:%S %Y'))
+        if compare_timestamp(max_timestamp, temp) == temp:
+            max_timestamp = temp
+            backupid = backup["backup_id"]
+
+    return backupid
+
+
+def get_oldest_backupid(backup_info: str) -> str:
+    backupid = None
+    min_timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+    backup_info = backup_info["backups_list"]
+    for backup in backup_info:
+        temp = time.mktime(time.strptime(backup["end_time"], '%a %b %d %H:%M:%S %Y'))
+        if compare_timestamp(min_timestamp, temp) == min_timestamp:
+            min_timestamp = temp
+            backupid = backup["backup_id"]
+
+    return backupid
+
+
 def restore_postgresql_froms3(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -1404,12 +1435,7 @@ def restore_postgresql_froms3(
     recovery_backupid = None
     recovery_time = None
 
-    # recovery param processing
     recovery = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_RECOVERY, None)
-    if is_backup_id(recovery):
-        recovery_backupid = recovery
-    else:
-        recovery_time = recovery
 
     # add s3 env by pgtools -e
     s3_info = list()
@@ -1432,18 +1458,36 @@ def restore_postgresql_froms3(
     # wait postgresql ready
     waiting_postgresql_ready(tmpconns, logger)
 
+    # get backup info
+    cmd = ["pgtools", "-v"] + s3_info
+    output = exec_command(conn, cmd, logger, interrupt=True)
+    if output == "":
+        logger.error(f"get backup info failed, exit backup")
+        raise kopf.PermanentError("get backup info failed.")
+    logger.warning(f"backup verbose info = {output}")
+    backup_info = ast.literal_eval(output)
+
+    # recovery param processing
+    if recovery is None:
+        pass
+    elif recovery == RESTORE_FROMS3_RECOVERY_LATEST:
+        recovery_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    elif recovery == RESTORE_FROMS3_RECOVERY_LATEST_FULL:
+        recovery_backupid = get_latest_backupid(backup_info)
+    elif recovery == RESTORE_FROMS3_RECOVERY_OLDEST_FULL:
+        recovery_backupid = get_oldest_backupid(backup_info)
+    elif is_backup_id(recovery):
+        recovery_backupid = recovery
+    else:
+        recovery_time = recovery
+
     # get backupid
     if recovery_backupid is not None:
         backupid = recovery_backupid
     elif recovery_time is not None:
-        cmd = ["pgtools", "-v"] + s3_info
-        output = exec_command(conn, cmd, logger, interrupt=True)
-        if output == "":
-            logger.error(f"get backup info failed, exit backup")
-            raise kopf.PermanentError("get backup info failed.")
-        logger.warning(f"backup verbose info = {output}")
-        backup_info = ast.literal_eval(output)
         backupid = get_backupid_from_backupinfo(recovery_time, backup_info)
+    else:
+        backupid = None
 
     if backupid is None:
         logger.error(f"backupid field not valid.")
