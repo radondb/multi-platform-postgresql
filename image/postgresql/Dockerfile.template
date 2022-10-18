@@ -103,6 +103,9 @@ FROM debian:{{ .debian }}
 ENV LANG en_US.utf8
 ENV TZ=Asia/Shanghai
 ENV DATA /var/lib/postgresql/data
+ENV AWS_DATA_PATH $DATA/.aws
+ENV AWS_CONFIG_FILE $AWS_DATA_PATH/config
+ENV AWS_SHARED_CREDENTIALS_FILE $AWS_DATA_PATH/credentials
 ENV BIN /var/lib/postgresql/bin
 ENV BARMAN /var/lib/postgresql/barman
 ENV BARMAN_LIB $BARMAN/lib
