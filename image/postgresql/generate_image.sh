@@ -45,7 +45,7 @@ build_image()
 
 	cd "$dir"
 	echo "build docker image $image ..."
-	docker buildx build --no-cache -t $image --platform $pf .
+	docker builder build --no-cache -t $image --platform $pf .
 	cd -
 }
 

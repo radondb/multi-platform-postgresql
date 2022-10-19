@@ -1374,7 +1374,7 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      backend_type text
                 ) server pg_file_server options(filename '%s',format 'csv',header 'true') """ % (
                 table_name, log_filepath)
-        elif postgresql_major_version == 14:
+        elif postgresql_major_version == 14 or postgresql_major_version == 15:
             query = """ CREATE foreign TABLE %s
                 (
                      log_time timestamp(3),

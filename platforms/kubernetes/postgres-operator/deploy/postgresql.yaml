@@ -48,7 +48,7 @@ spec:
     podspec:
       terminationGracePeriodSeconds: 60
       containers:
-        - image: radondb-postgresql:12.12-v1.0.0
+        - image: radondb-postgresql:15.0-v1.0.0
           imagePullPolicy: IfNotPresent
           name: postgresql #can't change the name
           volumeMounts:
@@ -93,7 +93,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: radondb-postgresql:12.12-v1.0.0
+          - image: radondb-postgresql:15.0-v1.0.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
@@ -124,7 +124,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: radondb-postgresql:12.12-v1.0.0
+          - image: radondb-postgresql:15.0-v1.0.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:

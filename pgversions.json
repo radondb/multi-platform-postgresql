@@ -40,5 +40,19 @@
       "aarch64",
       "x86_64"
     ]
+  },
+  "15": {
+    "major": 15,
+    "minor": [0],
+    "debian": "bullseye-slim",
+    "tag": ["REL_15_0"],
+    "failover": "v2.0",
+    "dirtyread": "2.4",
+    "name": "radondb-postgresql",
+    "version": "v1.0.0",
+    "arches": [
+      "aarch64",
+      "x86_64"
+    ]
   }
 }
