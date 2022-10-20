@@ -190,17 +190,22 @@ PG_CONFIG_RESTART = (
     "autovacuum_max_workers", "autovacuum_multixact_freeze_max_age", "bonjour",
     "bonjour_name", "cluster_name", "config_file", "data_directory",
     "data_sync_retry", "dynamic_shared_memory_type", "event_source",
-    "external_pid_file", "hba_file", "hot_standby", "huge_pages", "ident_file",
-    "jit_provider", "listen_addresses", "logging_collector", "max_connections",
+    "external_pid_file", "hba_file", "hot_standby", "huge_pages", "huge_page_size",
+    "ident_file", "ignore_invalid_pages", "jit_provider",
+    "listen_addresses", "logging_collector", "max_connections",
     "max_files_per_process", "max_locks_per_transaction",
     "max_logical_replication_workers", "max_pred_locks_per_transaction",
     "max_prepared_transactions", "max_replication_slots", "max_wal_senders",
-    "max_worker_processes", "old_snapshot_threshold", "pg_stat_statements.max",
-    "port", "primary_conninfo", "primary_slot_name", "recovery_target",
+    "max_worker_processes", "min_dynamic_shared_memory", "old_snapshot_threshold",
+    "pg_stat_statements.max", "port", "primary_conninfo", "primary_slot_name", "recovery_target",
     "recovery_target_action", "recovery_target_inclusive",
     "recovery_target_lsn", "recovery_target_name", "recovery_target_time",
     "recovery_target_timeline", "recovery_target_xid", "restore_command",
-    "shared_buffers", "shared_memory_type")
+    "shared_buffers", "shared_memory_type", "shared_preload_libraries",
+    "superuser_reserved_connections", "track_activity_query_size",
+    "track_commit_timestamp", "unix_socket_directories", "unix_socket_group",
+    "unix_socket_permissions", "wal_buffers", "wal_level", "wal_log_hints")
+
 
 POSTGRESQL_PAUSE = "pause"
 POSTGRESQL_RESUME = "resume"
