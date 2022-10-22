@@ -32,11 +32,13 @@ RUN apt install -y --no-install-recommends \
 		libxslt-dev \
 		uuid-dev \
 		tcl-dev \
-{{ if .major >= 14 then ( -}}
         liblz4-dev \
-{{ ) else "" end -}}
 		libperl-dev \
-		libkrb5-dev
+		libkrb5-dev \
+		libcurl4-openssl-dev \
+		libzstd-dev \
+		automake \
+		autoconf
 #{{ if env.arch == "aarch64"  then ( -}}
 #        ""
 #{{ ) else "" end -}}
@@ -84,6 +86,13 @@ RUN	cd /usr/src/pg_dirtyread; \
 	make PG_CONFIG=/var/lib/postgresql/bin/pg_config -j `expr $(nproc) - 2` >/dev/null; \
 	make install PG_CONFIG=/var/lib/postgresql/bin/pg_config;
 
+ADD citus /usr/src/citus
+RUN	cd /usr/src/citus; \
+	git checkout {{ .citus }}; \
+	PG_CONFIG=/var/lib/postgresql/bin/pg_config ./configure ; \
+	make PG_CONFIG=/var/lib/postgresql/bin/pg_config -j `expr $(nproc) - 2` >/dev/null; \
+	make install PG_CONFIG=/var/lib/postgresql/bin/pg_config;
+
 RUN cd /var/lib/postgresql; \
 		tar czhvf lib.tar.gz `find . -type f | xargs ldd 2>/dev/null | grep "=>" | cut -d ">" -f 2 | cut -d "(" -f 1 | sort -u`
 	
@@ -95,6 +104,8 @@ ENV DATA /var/lib/postgresql/data
 ENV XDG_CONFIG_HOME /var/lib/postgresql/data/auto_failover
 ENV XDG_DATA_HOME /var/lib/postgresql/data/auto_failover
 ENV ASSIST /var/lib/postgresql/data/assist
+ENV PGPASSFILE /var/lib/postgresql/data/assist/pgpassfile
+ENV LD_LIBRARY_PATH /var/lib/postgresql/lib/
 ENV PATH /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/postgresql/bin
 ENV PGHOME /var/lib/postgresql
 VOLUME /var/lib/postgresql/data

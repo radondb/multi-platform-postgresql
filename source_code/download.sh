@@ -56,4 +56,18 @@ else
 	echo "download pg_dirtyread success"
 fi
 
+# citus
+if [ -d citus ]
+then
+	echo "citus exists, skip download."
+else
+	git clone https://github.com/citusdata/citus.git
+	if [ $? -ne 0 ]
+	then
+		echo "download citus failed"
+		exit 1
+	fi
+	echo "download citus success"
+fi
+
 exit 0

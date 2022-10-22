@@ -150,6 +150,7 @@ EXPORTER_PORT = 9187
 DIFF_ADD = "add"
 DIFF_CHANGE = "change"
 DIFF_REMOVE = "remove"
+PGPASSFILE_PATH = ASSIST_DIR + "/pgpassfile"
 DIFF_FIELD_ACTION = (SPEC, ACTION)
 DIFF_FIELD_SERVICE = (SPEC, SERVICES)
 DIFF_FIELD_AUTOFAILOVER_HBAS = (SPEC, AUTOFAILOVER, HBAS)
@@ -927,6 +928,7 @@ def create_postgresql(
                 CONTAINER_ENV_VALUE: value
             })
     if mode == MACHINE_MODE:
+        machine_env += PG_CONFIG_PREFIX + "shared_preload_libraries='citus,pgautofailover,pg_stat_statements'" + "\n"
         machine_env += PG_CONFIG_PREFIX + 'log_truncate_on_rotation=true' + "\n"
         machine_env += PG_CONFIG_PREFIX + 'logging_collector=on' + "\n"
         machine_env += PG_CONFIG_PREFIX + "log_directory='log'" + "\n"
@@ -941,6 +943,10 @@ def create_postgresql(
         machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_interval=30" + "\n"
         machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_count=4" + "\n"
     else:
+        k8s_env.append({
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "shared_preload_libraries",
+            CONTAINER_ENV_VALUE: "'citus,pgautofailover,pg_stat_statements'"
+        })
         k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_truncate_on_rotation",
             CONTAINER_ENV_VALUE: "true"
@@ -2512,6 +2518,8 @@ async def create_cluster(
         logger.info("waiting for create_cluster success")
         waiting_cluster_final_status(meta, spec, patch, status, logger)
 
+        update_pgpassfile(meta, spec, patch, status, logger)
+
         # wait a few seconds to prevent the pod not running
         time.sleep(5)
         # cluster running
@@ -3464,6 +3472,52 @@ def update_hbas(
         readwrite_conns.free_conns()
         readonly_conns.free_conns()
 
+def get_pgpassfile(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    users_kind: str,
+) -> str:
+    pgpassfile = ""
+    if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(users_kind) != None:
+        users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][users_kind]
+        for user in users:
+            pgpassfile += "*:*:*:%s:%s\n" % (user[SPEC_POSTGRESQL_USERS_USER_NAME], user[SPEC_POSTGRESQL_USERS_USER_PASSWORD])
+
+    return pgpassfile
+
+def update_pgpassfile(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    pgpassfile = ""
+    pgpassfile += get_pgpassfile(meta, spec, patch, status, logger, SPEC_POSTGRESQL_USERS_ADMIN)
+    pgpassfile += get_pgpassfile(meta, spec, patch, status, logger, SPEC_POSTGRESQL_USERS_MAINTENANCE)
+    pgpassfile += get_pgpassfile(meta, spec, patch, status, logger, SPEC_POSTGRESQL_USERS_NORMAL)
+
+    if len(pgpassfile) == 0:
+        return
+
+    logger.info(f"update pgpassfile, {pgpassfile}")
+    conns = connections(spec, meta, patch,
+                        get_field(POSTGRESQL, READWRITEINSTANCE), False,
+                        None, logger, None, status, False)
+    readonly_conns = connections(spec, meta, patch,
+                                 get_field(POSTGRESQL, READONLYINSTANCE),
+                                 False, None, logger, None, status, False)
+    for conn in (conns.get_conns() + readonly_conns.get_conns()):
+        cmd = ["echo", "-e", '"' + pgpassfile + '"', ">", PGPASSFILE_PATH]
+        output = exec_command(conn, cmd, logger, interrupt=False)
+        cmd = ["chmod", "0600", PGPASSFILE_PATH]
+        output = exec_command(conn, cmd, logger, interrupt=False)
+    conns.free_conns()
+    readonly_conns.free_conns()
+
 
 def update_users(
     meta: kopf.Meta,
@@ -3480,6 +3534,8 @@ def update_users(
             or FIELD == DIFF_FIELD_POSTGRESQL_USERS_ADMIN \
             or FIELD == DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE \
             or FIELD == DIFF_FIELD_POSTGRESQL_USERS_NORMAL:
+        update_pgpassfile(meta, spec, patch, status, logger)
+
         conns = connections(spec, meta, patch,
                             get_field(POSTGRESQL, READWRITEINSTANCE), False,
                             None, logger, None, status, False)
