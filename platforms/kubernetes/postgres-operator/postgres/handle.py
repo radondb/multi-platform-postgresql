@@ -89,6 +89,7 @@ from constants import (
     LABEL_STATEFULSET_NAME,
     MACHINE_MODE,
     K8S_MODE,
+    PGHOME,
     DOCKER_COMPOSE_FILE,
     DOCKER_COMPOSE_FILE_DATA,
     DOCKER_COMPOSE_ENV,
@@ -139,6 +140,7 @@ from constants import (
     DAYS,
 )
 
+PGLOG_DIR = "log"
 PRIMARY_FORMATION = " --formation primary "
 FIELD_DELIMITER = "-"
 WAITING_POSTGRESQL_READY_COMMAND = ["pgtools", "-a"]
@@ -931,7 +933,7 @@ def create_postgresql(
         machine_env += PG_CONFIG_PREFIX + "shared_preload_libraries='citus,pgautofailover,pg_stat_statements'" + "\n"
         machine_env += PG_CONFIG_PREFIX + 'log_truncate_on_rotation=true' + "\n"
         machine_env += PG_CONFIG_PREFIX + 'logging_collector=on' + "\n"
-        machine_env += PG_CONFIG_PREFIX + "log_directory='log'" + "\n"
+        machine_env += PG_CONFIG_PREFIX + "log_directory='" + PGLOG_DIR + "'" + "\n"
         machine_env += PG_CONFIG_PREFIX + "log_filename='postgresql_%d'" + "\n"
         machine_env += PG_CONFIG_PREFIX + "log_line_prefix='[%m][%r][%a][%u][%d][%x][%p]'" + "\n"
         machine_env += PG_CONFIG_PREFIX + "log_destination='csvlog'" + "\n"
@@ -957,7 +959,7 @@ def create_postgresql(
         })
         k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_directory",
-            CONTAINER_ENV_VALUE: "'log'"
+            CONTAINER_ENV_VALUE: "'" + PGLOG_DIR + "'"
         })
         k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_filename",
@@ -1311,6 +1313,9 @@ def restore_postgresql(
 def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      postgresql_major_version: int) -> None:
     logger.info("create postgresql log table")
+    cmd = ["truncate", "--size", "0", "%s/%s/*" % (PG_DATABASE_DIR, PGLOG_DIR)]
+    output = exec_command(conn, cmd, logger, interrupt=False)
+
     cmd = ["pgtools", "-q", '"create extension file_fdw"']
     output = exec_command(conn, cmd, logger, interrupt=False)
     if output.find("CREATE EXTENSION") == -1:
@@ -1327,7 +1332,7 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
 
     for day in range(1, 32):
         table_name = 'log_postgresql_' + "%02d" % day
-        log_filepath = "log/postgresql_" + "%02d" % day + '.csv'
+        log_filepath = PGLOG_DIR + "/postgresql_" + "%02d" % day + '.csv'
         if postgresql_major_version == 12:
             query = """ CREATE foreign TABLE %s
                 (
@@ -3514,6 +3519,8 @@ def update_pgpassfile(
         cmd = ["echo", "-e", '"' + pgpassfile + '"', ">", PGPASSFILE_PATH]
         output = exec_command(conn, cmd, logger, interrupt=False)
         cmd = ["chmod", "0600", PGPASSFILE_PATH]
+        output = exec_command(conn, cmd, logger, interrupt=False)
+        cmd = ["chown", "postgres:postgres", PGPASSFILE_PATH]
         output = exec_command(conn, cmd, logger, interrupt=False)
     conns.free_conns()
     readonly_conns.free_conns()

@@ -110,6 +110,7 @@ LABEL_STATEFULSET_NAME = "statefulset"
 # other
 MACHINE_MODE = "machine"
 K8S_MODE = "k8s"
+PGHOME = "/var/lib/postgresql"
 
 # antiaffinity
 SPEC_ANTIAFFINITY = "antiaffinity"

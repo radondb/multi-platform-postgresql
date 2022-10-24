@@ -121,7 +121,6 @@ ENV XDG_CONFIG_HOME /var/lib/postgresql/data/auto_failover
 ENV XDG_DATA_HOME /var/lib/postgresql/data/auto_failover
 ENV ASSIST /var/lib/postgresql/data/assist
 ENV PGPASSFILE /var/lib/postgresql/data/assist/pgpassfile
-ENV LD_LIBRARY_PATH /var/lib/postgresql/lib/
 ENV PATH /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/postgresql/bin
 ENV PGHOME /var/lib/postgresql
 VOLUME /var/lib/postgresql/data

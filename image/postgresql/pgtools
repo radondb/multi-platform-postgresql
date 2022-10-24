@@ -65,6 +65,7 @@ do
 			;;
 		e)
 			env_name=${OPTARG%%=*}
+			env_name=`echo $env_name | sed 's/\./______/'`
 			env_value=${OPTARG#*=}
 			export "$env_name"="$env_value"
 			;;
@@ -174,7 +175,7 @@ if [ "${do_config}" = 1 ]; then
 		#conf_name=${conf%%=*}
 		#conf_value=${conf#*=}
 		#name_context=$(eval echo '$'$conf_name)
-		echo "$conf" >> $PGDATA/postgresql.conf
+		echo "$conf" | sed 's/______/\./' >> $PGDATA/postgresql.conf
 	done
 
 	reload_postgresql
