@@ -38,7 +38,15 @@ RUN apt install -y --no-install-recommends \
 		libcurl4-openssl-dev \
 		libzstd-dev \
 		automake \
-		autoconf
+		autoconf \
+		libtool \
+		libgeos-dev \
+		proj-bin \
+		libproj-dev \
+		libprotobuf-c-dev \
+		protobuf-c-compiler \
+		gdal-bin \
+		libgdal-dev
 #{{ if env.arch == "aarch64"  then ( -}}
 #        ""
 #{{ ) else "" end -}}
@@ -89,6 +97,14 @@ RUN	cd /usr/src/pg_dirtyread; \
 ADD citus /usr/src/citus
 RUN	cd /usr/src/citus; \
 	git checkout {{ .citus }}; \
+	PG_CONFIG=/var/lib/postgresql/bin/pg_config ./configure ; \
+	make PG_CONFIG=/var/lib/postgresql/bin/pg_config -j `expr $(nproc) - 2` >/dev/null; \
+	make install PG_CONFIG=/var/lib/postgresql/bin/pg_config;
+
+ADD postgis /usr/src/postgis
+RUN	cd /usr/src/postgis; \
+	git checkout {{ .postgis }}; \
+	PG_CONFIG=/var/lib/postgresql/bin/pg_config ./autogen.sh ; \
 	PG_CONFIG=/var/lib/postgresql/bin/pg_config ./configure ; \
 	make PG_CONFIG=/var/lib/postgresql/bin/pg_config -j `expr $(nproc) - 2` >/dev/null; \
 	make install PG_CONFIG=/var/lib/postgresql/bin/pg_config;

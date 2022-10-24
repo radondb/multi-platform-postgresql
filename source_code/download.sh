@@ -70,4 +70,18 @@ else
 	echo "download citus success"
 fi
 
+# postgis
+if [ -d postgis ]
+then
+	echo "postgis exists, skip download."
+else
+	git clone https://github.com/postgis/postgis.git
+	if [ $? -ne 0 ]
+	then
+		echo "download postgis failed"
+		exit 1
+	fi
+	echo "download postgis success"
+fi
+
 exit 0
