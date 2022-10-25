@@ -1,0 +1,23 @@
+apiVersion: v2
+appVersion: {{ .appVersion }}
+version: {{ .version }}
+name: postgres-operator
+description: A Helm chart for Kubernetes
+type: application
+home: https://github.com/radondb/multi-platform-postgresql
+
+keywords:
+  - operator
+  - postgresql
+  - database
+
+sources:
+  - https://github.com/radondb/multi-platform-postgresql
+
+maintainers:
+  - name: lzzhang
+    email: lianzhuangzhang@yunify.com
+    url: https://lzzhang.github.io/
+  - name: yanboer
+    email: yanbo2695388808@gmail.com
+    url: https://yanboer.github.io/
