@@ -44,7 +44,7 @@ helm-package:
 		awk -f jq-template.awk postgres-operator/values.yaml.template > postgres-operator/values.yaml; \
 		/bin/rm postgres-operator/Chart.yaml.template postgres-operator/values.yaml.template;
 	helm package -d ./docs platforms/kubernetes/postgres-operator/deploy/postgres-operator/
-	helm repo index --url https://github.com/radondb/multi-platform-postgresql ./docs
+	helm repo index --url https://radondb.github.io/multi-platform-postgresql/ ./docs
 	/bin/rm -rf platforms/kubernetes/postgres-operator/deploy/postgres-operator/
 exporter-image:
 	cp exporterversions.json image/exporter/versions.json
