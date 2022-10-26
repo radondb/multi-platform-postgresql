@@ -33,6 +33,19 @@ operator-yaml: operator-image
 	cp operatorversions.json platforms/kubernetes/postgres-operator/deploy/versions.json
 	cp jq-template.awk platforms/kubernetes/postgres-operator/deploy/jq-template.awk
 	cd platforms/kubernetes/postgres-operator/deploy/; awk -f jq-template.awk postgres-operator.yaml.template > postgres-operator.yaml
+helm-package:
+	cp helmversions.json platforms/kubernetes/postgres-operator/deploy/versions.json
+	cp jq-template.awk platforms/kubernetes/postgres-operator/deploy/jq-template.awk
+	cd platforms/kubernetes/postgres-operator/deploy/; \
+		/bin/rm -rf platforms/kubernetes/postgres-operator/deploy/postgres-operator/; \
+		cp -r helm_template/postgres-operator/ ./postgres-operator; \
+		awk -f jq-template.awk postgres-operator.yaml.template > postgres-operator/templates/postgres-operator.yaml; \
+		awk -f jq-template.awk postgres-operator/Chart.yaml.template > postgres-operator/Chart.yaml; \
+		awk -f jq-template.awk postgres-operator/values.yaml.template > postgres-operator/values.yaml; \
+		/bin/rm postgres-operator/Chart.yaml.template postgres-operator/values.yaml.template;
+	helm package -d ./docs platforms/kubernetes/postgres-operator/deploy/postgres-operator/
+	helm repo index --url https://github.com/radondb/multi-platform-postgresql ./docs
+	/bin/rm -rf platforms/kubernetes/postgres-operator/deploy/postgres-operator/
 exporter-image:
 	cp exporterversions.json image/exporter/versions.json
 	cd image/exporter; ./generate_image.sh

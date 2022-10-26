@@ -1,0 +1,3 @@
+operator:
+  name: {{ .template_name }}
+  image: {{ .template_image }}
