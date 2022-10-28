@@ -64,7 +64,7 @@ from constants import (
     API_VERSION_V1,
     RESOURCE_POSTGRESQL,
     RESOURCE_KIND_POSTGRESQL,
-    CLUSTER_CREATE_CLUSTER,
+    CLUSTER_STATE,
     CLUSTER_CREATE_BEGIN,
     CLUSTER_CREATE_ADD_FAILOVER,
     CLUSTER_CREATE_ADD_READWRITE,
@@ -2513,7 +2513,7 @@ async def create_cluster(
     logger: logging.Logger,
 ) -> None:
     try:
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_CREATE,
+        set_cluster_status(meta, CLUSTER_STATE, CLUSTER_STATUS_CREATE,
                            logger)
 
         logging.info("check create_cluster params")
@@ -2529,13 +2529,13 @@ async def create_cluster(
         time.sleep(5)
         # cluster running
         update_number_sync_standbys(meta, spec, patch, status, logger)
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_RUN,
+        set_cluster_status(meta, CLUSTER_STATE, CLUSTER_STATUS_RUN,
                            logger)
     except Exception as e:
         logger.error(f"error occurs, {e}")
         traceback.print_exc()
         traceback.format_exc()
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER,
+        set_cluster_status(meta, CLUSTER_STATE,
                            CLUSTER_STATUS_CREATE_FAILED, logger)
 
 
@@ -2546,7 +2546,7 @@ async def delete_cluster(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
-    set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_TERMINATE,
+    set_cluster_status(meta, CLUSTER_STATE, CLUSTER_STATUS_TERMINATE,
                        logger)
     await delete_postgresql_cluster(meta, spec, patch, status, logger)
 
@@ -3677,7 +3677,7 @@ async def update_cluster(
     diffs: kopf.Diff,
 ) -> None:
     try:
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_UPDATE,
+        set_cluster_status(meta, CLUSTER_STATE, CLUSTER_STATUS_UPDATE,
                            logger)
         logger.info("check update_cluster params")
         check_param(spec, logger, create=False)
@@ -3749,11 +3749,11 @@ async def update_cluster(
         else:
             cluster_status = CLUSTER_STATUS_RUN
         # set Running
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, cluster_status,
+        set_cluster_status(meta, CLUSTER_STATE, cluster_status,
                            logger)
     except Exception as e:
         logger.error(f"error occurs, {e}")
         traceback.print_exc()
         traceback.format_exc()
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER,
+        set_cluster_status(meta, CLUSTER_STATE,
                            CLUSTER_STATUS_UPDATE_FAILED, logger)

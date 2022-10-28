@@ -28,9 +28,9 @@ spec:
       name: DeletePvc
       type: boolean
       priority: 0           # show in standard view
-    - jsonPath: .status.cluster_create
+    - jsonPath: .status.state
       description: The postgresql cluster status
-      name: Clusterstatus
+      name: State
       type: string
       priority: 0           # show in standard view
     - jsonPath: .spec.autofailover.podspec.containers[0].image
