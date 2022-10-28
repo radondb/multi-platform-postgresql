@@ -133,7 +133,12 @@ main() {
 		# auto_failover data directory
 		#export XDG_CONFIG_HOME=${DATA}/auto_failover
 		#export XDG_DATA_HOME=${DATA}/auto_failover
-		export PGPASSWORD=$AUTOCTL_REPLICATOR_PASSWORD
+		#export PGPASSWORD=$AUTOCTL_REPLICATOR_PASSWORD
+		if [ ! -s "$PGPASSFILE" ]; then
+			echo "*:*:*:pgautofailover_replicator:$AUTOCTL_REPLICATOR_PASSWORD" > $PGPASSFILE
+			echo "*:*:*:autoctl_node:$AUTOCTL_NODE_PASSWORD" > $PGPASSFILE
+			chmod 0600 $PGPASSFILE
+		fi
 
 		monitor_port=55555
 		formation=primary

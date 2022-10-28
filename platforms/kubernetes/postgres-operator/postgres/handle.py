@@ -3477,6 +3477,14 @@ def update_hbas(
         readwrite_conns.free_conns()
         readonly_conns.free_conns()
 
+
+def pgpassfile_item(
+    user: str,
+    password: str
+) -> str:
+    return "*:*:*:%s:%s\n" % (user, password)
+
+
 def get_pgpassfile(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -3489,7 +3497,7 @@ def get_pgpassfile(
     if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(users_kind) != None:
         users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][users_kind]
         for user in users:
-            pgpassfile += "*:*:*:%s:%s\n" % (user[SPEC_POSTGRESQL_USERS_USER_NAME], user[SPEC_POSTGRESQL_USERS_USER_PASSWORD])
+            pgpassfile += pgpassfile_item(user[SPEC_POSTGRESQL_USERS_USER_NAME], user[SPEC_POSTGRESQL_USERS_USER_PASSWORD])
 
     return pgpassfile
 
@@ -3500,13 +3508,22 @@ def update_pgpassfile(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
-    pgpassfile = ""
+    #autoctl node
+    autoctl_node_password = patch.status.get(AUTOCTL_NODE)
+    if autoctl_node_password == None:
+        autoctl_node_password = status.get(AUTOCTL_NODE)
+    pgpassfile = pgpassfile_item(AUTOCTL_NODE, autoctl_node_password)
+
+    # PGAUTOFAILOVER_REPLICATOR
+    autoctl_replicator_password = patch.status.get(PGAUTOFAILOVER_REPLICATOR)
+    if autoctl_replicator_password == None:
+        autoctl_replicator_password = status.get(PGAUTOFAILOVER_REPLICATOR)
+    pgpassfile += pgpassfile_item(PGAUTOFAILOVER_REPLICATOR, autoctl_replicator_password)
+
+    # users
     pgpassfile += get_pgpassfile(meta, spec, patch, status, logger, SPEC_POSTGRESQL_USERS_ADMIN)
     pgpassfile += get_pgpassfile(meta, spec, patch, status, logger, SPEC_POSTGRESQL_USERS_MAINTENANCE)
     pgpassfile += get_pgpassfile(meta, spec, patch, status, logger, SPEC_POSTGRESQL_USERS_NORMAL)
-
-    if len(pgpassfile) == 0:
-        return
 
     logger.info(f"update pgpassfile, {pgpassfile}")
     conns = connections(spec, meta, patch,
