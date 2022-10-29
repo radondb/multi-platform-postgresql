@@ -461,7 +461,7 @@ spec:
       serviceAccountName: radondb-postgres-operator-account
       containers:
       - name: radondb-postgres-operator
-        image: radondb-postgres-operator:v0.9.0
+        image: radondb/radondb-postgres-operator:v0.9.0
         imagePullPolicy: IfNotPresent
         env:
         - name: RADONDB_POSTGRES_OPERATOR_BOOTSTRAP_TIMEOUT
