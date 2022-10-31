@@ -3508,11 +3508,13 @@ def update_pgpassfile(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
+    pgpassfile = ""
+
     #autoctl node
     autoctl_node_password = patch.status.get(AUTOCTL_NODE)
     if autoctl_node_password == None:
         autoctl_node_password = status.get(AUTOCTL_NODE)
-    pgpassfile = pgpassfile_item(AUTOCTL_NODE, autoctl_node_password)
+    pgpassfile += pgpassfile_item(AUTOCTL_NODE, autoctl_node_password)
 
     # PGAUTOFAILOVER_REPLICATOR
     autoctl_replicator_password = patch.status.get(PGAUTOFAILOVER_REPLICATOR)

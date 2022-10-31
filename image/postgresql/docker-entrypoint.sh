@@ -136,7 +136,7 @@ main() {
 		#export PGPASSWORD=$AUTOCTL_REPLICATOR_PASSWORD
 		if [ ! -s "$PGPASSFILE" ]; then
 			echo "*:*:*:pgautofailover_replicator:$AUTOCTL_REPLICATOR_PASSWORD" > $PGPASSFILE
-			echo "*:*:*:autoctl_node:$AUTOCTL_NODE_PASSWORD" > $PGPASSFILE
+			echo "*:*:*:autoctl_node:$AUTOCTL_NODE_PASSWORD" >> $PGPASSFILE
 			chmod 0600 $PGPASSFILE
 		fi
 
