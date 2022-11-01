@@ -3535,10 +3535,21 @@ def update_pgpassfile(
                                  get_field(POSTGRESQL, READONLYINSTANCE),
                                  False, None, logger, None, status, False)
     for conn in (conns.get_conns() + readonly_conns.get_conns()):
-        cmd = ["echo", "-e", '"' + pgpassfile + '"', ">", PGPASSFILE_PATH]
+        # clean old data
+        cmd = ["truncate", "--size", "0", PGPASSFILE_PATH]
         output = exec_command(conn, cmd, logger, interrupt=False)
+
+        # sed can't work when file size is 0.
+        cmd = ["truncate", "--size", "1", PGPASSFILE_PATH]
+        output = exec_command(conn, cmd, logger, interrupt=False)
+
+        # ">" can't run in docker exec
+        cmd = ["sed", "-i", '"' + pgpassfile + '"', PGPASSFILE_PATH]
+        output = exec_command(conn, cmd, logger, interrupt=False)
+
         cmd = ["chmod", "0600", PGPASSFILE_PATH]
         output = exec_command(conn, cmd, logger, interrupt=False)
+
         cmd = ["chown", "postgres:postgres", PGPASSFILE_PATH]
         output = exec_command(conn, cmd, logger, interrupt=False)
     conns.free_conns()
