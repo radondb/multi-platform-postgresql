@@ -3544,8 +3544,11 @@ def update_pgpassfile(
         output = exec_command(conn, cmd, logger, interrupt=False)
 
         # ">" can't run in docker exec
-        cmd = ["sed", "-i", '"' + pgpassfile + '"', PGPASSFILE_PATH]
-        output = exec_command(conn, cmd, logger, interrupt=False)
+        for onepass in pgpassfile.split("\n"):
+            if len(onepass) < 5:
+                continue
+            cmd = ["sed", "-i", "-e", "'1i" + onepass + "'", PGPASSFILE_PATH]
+            output = exec_command(conn, cmd, logger, interrupt=False)
 
         cmd = ["chmod", "0600", PGPASSFILE_PATH]
         output = exec_command(conn, cmd, logger, interrupt=False)
