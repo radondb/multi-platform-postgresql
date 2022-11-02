@@ -1,4 +1,4 @@
-{{- if eq .Values.enablePrometheusMonitor true }}
+{{ if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" -}}{{ if eq .Values.enablePrometheusMonitor true -}}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -15,4 +15,5 @@ spec:
     - port: exporter
       path: /metrics
       interval: 10s
-{{- end }}
+{{ end -}}{{ end -}}
+
