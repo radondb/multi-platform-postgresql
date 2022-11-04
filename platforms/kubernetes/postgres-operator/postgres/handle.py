@@ -1359,7 +1359,7 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      query_pos integer,
                      location text,
                      application_name text
-                ) server pg_file_server options(filename '%s',format 'csv',header 'true') """ % (
+                ) server pg_file_server options(program 'grep -v pg_auto_failover %s',format 'csv',header 'true') """ % (
                 table_name, log_filepath)
         elif postgresql_major_version == 13:
             query = """ CREATE foreign TABLE %s
@@ -1388,7 +1388,7 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      location text,
                      application_name text,
                      backend_type text
-                ) server pg_file_server options(filename '%s',format 'csv',header 'true') """ % (
+                ) server pg_file_server options(program 'grep -v pg_auto_failover %s',format 'csv',header 'true') """ % (
                 table_name, log_filepath)
         elif postgresql_major_version == 14 or postgresql_major_version == 15:
             query = """ CREATE foreign TABLE %s
@@ -1419,7 +1419,7 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      backend_type text,
                      leader_pid integer,
                      query_id bigint
-                ) server pg_file_server options(filename '%s',format 'csv',header 'true') """ % (
+                ) server pg_file_server options(program 'grep -v pg_auto_failover %s',format 'csv',header 'true') """ % (
                 table_name, log_filepath)
         else:
             logger.warning(
@@ -1453,7 +1453,7 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      backend_type text,
                      leader_pid integer,
                      query_id bigint
-                ) server pg_file_server options(filename '%s',format 'csv',header 'true') """ % (
+                ) server pg_file_server options(program 'grep -v pg_auto_failover %s',format 'csv',header 'true') """ % (
                 table_name, log_filepath)
 
         logger.info(f"create postgresql log table {table_name} query {query}")
