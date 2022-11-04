@@ -5,6 +5,8 @@
   "template_name": "radondb-postgres-operator",
   "template_image": "radondb/radondb-postgres-operator:v0.9.0",
   "template_enablePrometheusMonitor": "false",
+  "template_imageRegistry": "",
+  "template_namespaceOverride": "",
 
   "namespace": "{{ .Release.Namespace }}",
   "account": "radondb-postgres-operator-account",
@@ -14,6 +16,8 @@
   "rolebinding": "radondb-postgres-operator-rolebinding-role",
   "name": "{{ .Values.operator.name }}",
   "image": "{{ .Values.operator.image }}",
-  "datapath": "/data"
+  "datapath": "/data",
+  "imageRegistry": "{{ .Values.localRegistry | default \"\" }}",
+  "namespaceOverride": "{{ .Values.namespaceOverride | default \"\" }}"
 }
 
