@@ -222,6 +222,7 @@ STANDBY_SIGNAL = "standby.signal"
 GET_INET_CMD = "ip addr | grep inet"
 SUCCESS_CHECKPOINT = "CHECKPOINT"
 CONTAINER_ENV = "env"
+CONTAINER_IMAGE = "image"
 CONTAINER_ENV_NAME = "name"
 CONTAINER_ENV_VALUE = "value"
 EXPORTER_CONTAINER_INDEX = 1
@@ -649,7 +650,7 @@ def create_statefulset(
             }
         if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_EXPORTER_CONTAINER:
             container["env"] = exporter_env
-        container["image"] = get_realimage_from_env(container["image"])
+        container[CONTAINER_IMAGE] = get_realimage_from_env(container[CONTAINER_IMAGE])
     statefulset_body["spec"]["template"] = {
         "metadata": {
             "labels": labels
@@ -3815,3 +3816,4 @@ async def update_cluster(
         traceback.format_exc()
         set_cluster_status(meta, CLUSTER_STATE,
                            CLUSTER_STATUS_UPDATE_FAILED, logger)
+
