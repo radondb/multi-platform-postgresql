@@ -649,6 +649,7 @@ def create_statefulset(
             }
         if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_EXPORTER_CONTAINER:
             container["env"] = exporter_env
+        container["image"] = get_realimage_from_env(container["image"])
     statefulset_body["spec"]["template"] = {
         "metadata": {
             "labels": labels
@@ -661,6 +662,30 @@ def create_statefulset(
     kopf.adopt(statefulset_body)
     apps_v1_api.create_namespaced_stateful_set(namespace=namespace,
                                                body=statefulset_body)
+
+
+def get_realimage_from_env(yaml_image: str) -> str:
+    image_list = yaml_image.split("/")
+    res = list()
+    # Assume res length is 3. (yaml image cannot support registry field)
+    #  res[0] is registry
+    #  res[1] is namespace
+    #  res[2] is image and tag
+    # if IMAGE_REGISTRY, NAMESPACE_OVERRIDE exists, replace registry, namespace
+    for i in range(3 - len(image_list)):
+        res.append("")
+    res.extend(image_list)
+
+    if operator_config.IMAGE_REGISTRY.strip():
+        res[0] = operator_config.IMAGE_REGISTRY
+    if operator_config.NAMESPACE_OVERRIDE.strip():
+        res[1] = operator_config.NAMESPACE_OVERRIDE
+    elif len(image_list) == 1:
+        res[1] = "library"
+
+    res = [i for i in res if i != ""]
+
+    return '/'.join(res)
 
 
 def get_antiaffinity(meta: kopf.Meta, labels: LabelType,

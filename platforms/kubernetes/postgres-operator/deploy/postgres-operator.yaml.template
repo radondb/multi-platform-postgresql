@@ -476,3 +476,7 @@ spec:
           value: "0"
         - name: RADONDB_POSTGRES_OPERATOR_DATA_PATH
           value: {{ .datapath }}
+        - name: RADONDB_POSTGRES_OPERATOR_IMAGE_REGISTRY
+          value: {{ .imageRegistry }}
+        - name: RADONDB_POSTGRES_OPERATOR_NAMESPACE_OVERRIDE
+          value: {{ .namespaceOverride }}

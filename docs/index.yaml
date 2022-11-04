@@ -3,9 +3,15 @@ entries:
   postgres-operator:
   - apiVersion: v2
     appVersion: v0.9.0
+<<<<<<< HEAD
+    created: "2022-11-04T09:44:15.13931383+08:00"
+    description: A Helm chart for Kubernetes
+    digest: e80c15a7676ea538b66d0a58df2052f9d318f3e932002abc8cbb6b23d21cf6bd
+=======
     created: "2022-11-02T15:08:15.452172473+08:00"
     description: A Helm chart for Kubernetes
     digest: 0a4f97226246fcd83c8173c828f18c3d0b4fd3aaa14a31dd72769b178147de79
+>>>>>>> V3.0.0
     home: https://github.com/radondb/multi-platform-postgresql
     keywords:
     - operator
@@ -25,4 +31,8 @@ entries:
     urls:
     - https://radondb.github.io/multi-platform-postgresql/postgres-operator-v1.0.0.tgz
     version: v1.0.0
+<<<<<<< HEAD
+generated: "2022-11-04T09:44:15.138872931+08:00"
+=======
 generated: "2022-11-02T15:08:15.451762007+08:00"
+>>>>>>> V3.0.0
