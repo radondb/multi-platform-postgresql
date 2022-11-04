@@ -222,7 +222,6 @@ STANDBY_SIGNAL = "standby.signal"
 GET_INET_CMD = "ip addr | grep inet"
 SUCCESS_CHECKPOINT = "CHECKPOINT"
 CONTAINER_ENV = "env"
-CONTAINER_IMAGE = "image"
 CONTAINER_ENV_NAME = "name"
 CONTAINER_ENV_VALUE = "value"
 EXPORTER_CONTAINER_INDEX = 1
@@ -650,7 +649,7 @@ def create_statefulset(
             }
         if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_EXPORTER_CONTAINER:
             container["env"] = exporter_env
-        container[CONTAINER_IMAGE] = get_realimage_from_env(container[CONTAINER_IMAGE])
+        container[IMAGE] = get_realimage_from_env(container[IMAGE])
     statefulset_body["spec"]["template"] = {
         "metadata": {
             "labels": labels
