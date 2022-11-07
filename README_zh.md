@@ -1,4 +1,4 @@
-![LOGO](document/images/logo_radondb.png)
+![LOGO](.document/images/logo_radondb.png)
  
 > [English](README.md) | 中文
 
