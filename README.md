@@ -1,4 +1,4 @@
-![LOGO](https://github.com/radondb/radondb-clickhouse-kubernetes/tree/main/document/_images/logo_radondb.png)
+![LOGO](document/images/logo_radondb.png)
  
 > English | [中文](README_zh.md)
 
