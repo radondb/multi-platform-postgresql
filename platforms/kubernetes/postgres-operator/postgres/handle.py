@@ -1422,6 +1422,23 @@ def get_oldest_backupid(backup_info: str) -> str:
     return backupid
 
 
+def get_s3_env_cmd(s3: List) -> List:
+    res = list()
+    # use SPEC_S3 prefix replace key (must use S3_ prefix)
+    for k in list(s3.keys()):
+        old = k
+        new = SPEC_S3 + "_" + k
+        s3[new] = s3.pop(old)
+    for k, v in s3.items():
+        if k == SPEC_BACKUP_POLICY_RETENTION:
+            continue
+        env = k + '="' + v + '"'
+        res.append('-e')
+        res.append(env)
+
+    return res
+
+
 def restore_postgresql_froms3(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -1438,19 +1455,8 @@ def restore_postgresql_froms3(
     recovery = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_RECOVERY, None)
 
     # add s3 env by pgtools -e
-    s3_info = list()
     s3 = spec[SPEC_S3].copy()
-    # use SPEC_S3 prefix replace key (must use S3_ prefix)
-    for k in list(s3.keys()):
-        old = k
-        new = SPEC_S3 + "_" + k
-        s3[new] = s3.pop(old)
-    for k, v in s3.items():
-        if k == SPEC_BACKUP_POLICY_RETENTION:
-            continue
-        env = k + '="' + v + '"'
-        s3_info.append('-e')
-        s3_info.append(env)
+    s3_info = get_s3_env_cmd(s3)
 
     tmpconns: InstanceConnections = InstanceConnections()
     tmpconns.add(conn)
@@ -3246,6 +3252,29 @@ async def correct_backup_status(
         readwrite_conns.free_conns()
 
 
+async def correct_s3_profile(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    if is_backup_mode(meta, spec, patch, status, logger) or is_cron_backup_mode(meta, spec, patch, status, logger):
+        s3 = spec[SPEC_S3].copy()
+        s3_info = get_s3_env_cmd(s3)
+        readwrite_conns = connections(spec, meta, patch,
+                                      get_field(POSTGRESQL, READWRITEINSTANCE),
+                                      False, None, logger, None, status, False)
+        for conn in readwrite_conns.get_conns():
+            cmd = ["aws configure list | grep 'None' | wc -l"]
+            output = exec_command(conn, cmd, logger, interrupt=False, user="postgres")
+            if int(output) == 4:
+                cmd = ["pgtools", "-v"] + s3_info
+                exec_command(conn, cmd, logger, interrupt=True)
+
+        readwrite_conns.free_conns()
+
+
 async def timer_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -3258,6 +3287,7 @@ async def timer_cluster(
     await correct_postgresql_password(meta, spec, patch, status, logger)
     await correct_keepalived(meta, spec, patch, status, logger)
     await correct_backup_status(meta, spec, patch, status, logger)
+    await correct_s3_profile(meta, spec, patch, status, logger)
 
 
 def update_number_sync_standbys(
