@@ -382,6 +382,7 @@ def waiting_cluster_final_status(
     patch: kopf.Patch,
     status: kopf.Status,
     logger: logging.Logger,
+    timeout: int = MINUTES * 1,
 ) -> None:
     if spec[ACTION] == ACTION_STOP:
         return
@@ -405,7 +406,7 @@ def waiting_cluster_final_status(
         ]
 
         i = 0
-        maxtry = 60
+        maxtry = timeout
         while True:
             logger.info(
                 f"waiting auto_failover cluster final status, {i} times. ")
@@ -2507,7 +2508,7 @@ async def create_postgresql_cluster(
     create_autofailover(meta, spec, patch, status, logger,
                         get_autofailover_labels(meta))
     waiting_target_postgresql_ready(meta, spec, patch, get_field(AUTOFAILOVER),
-                                    status, logger)
+                                    status, logger, timeout = MINUTES * 10)
 
     # create postgresql & readwrite node
     # set_create_cluster(patch, CLUSTER_CREATE_ADD_READWRITE)
@@ -2546,7 +2547,7 @@ async def create_cluster(
         await create_postgresql_cluster(meta, spec, patch, status, logger)
 
         logger.info("waiting for create_cluster success")
-        waiting_cluster_final_status(meta, spec, patch, status, logger)
+        waiting_cluster_final_status(meta, spec, patch, status, logger, timeout = MINUTES * 10)
 
         update_pgpassfile(meta, spec, patch, status, logger)
 
