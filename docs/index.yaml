@@ -3,33 +3,9 @@ entries:
   postgres-operator:
   - apiVersion: v2
     appVersion: v1.1.1
-    created: "2022-11-14T12:55:01.902469776+08:00"
+    created: "2022-11-14T13:27:14.428332408+08:00"
     description: A Helm chart for Kubernetes
-    digest: 17ec3fc1ff9b4d1a6afd71cbc4af5f8a271fe3fd0db1b482f62b18227080fd13
-    home: https://github.com/radondb/multi-platform-postgresql
-    keywords:
-    - operator
-    - postgresql
-    - database
-    maintainers:
-    - email: lianzhuangzhang@yunify.com
-      name: lzzhang
-      url: https://lzzhang.github.io/
-    - email: yanbo2695388808@gmail.com
-      name: yanboer
-      url: https://yanboer.github.io/
-    name: postgres-operator
-    sources:
-    - https://github.com/radondb/multi-platform-postgresql
-    type: application
-    urls:
-    - https://radondb.github.io/multi-platform-postgresql/postgres-operator-v1.0.2.tgz
-    version: v1.0.2
-  - apiVersion: v2
-    appVersion: v1.1.1
-    created: "2022-11-14T12:55:01.902095182+08:00"
-    description: A Helm chart for Kubernetes
-    digest: f62404a7723614e7058593202d75f94917e212ed12f7b6627bce07558e46578c
+    digest: 0e589d8472e5ab40c4286cc36ca96f773088b38916bcd753792711429991ba65
     home: https://github.com/radondb/multi-platform-postgresql
     keywords:
     - operator
@@ -51,7 +27,7 @@ entries:
     version: v1.0.1
   - apiVersion: v2
     appVersion: v1.1.0
-    created: "2022-11-14T12:55:01.901677774+08:00"
+    created: "2022-11-14T13:27:14.427794075+08:00"
     description: A Helm chart for Kubernetes
     digest: 1f6593413ae373c5caa7b8c41a3cd3697fbb164ba417260a3fefa6d32a1852e8
     home: https://github.com/radondb/multi-platform-postgresql
@@ -73,4 +49,4 @@ entries:
     urls:
     - https://radondb.github.io/multi-platform-postgresql/postgres-operator-v1.0.0.tgz
     version: v1.0.0
-generated: "2022-11-14T12:55:01.89904799+08:00"
+generated: "2022-11-14T13:27:14.427097554+08:00"
