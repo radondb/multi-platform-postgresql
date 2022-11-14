@@ -461,8 +461,12 @@ spec:
       serviceAccountName: radondb-postgres-operator-account
       containers:
       - name: radondb-postgres-operator
-        image: radondb/radondb-postgres-operator:v1.1.0
+        image: radondb/radondb-postgres-operator:v1.1.1
         imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
         env:
         - name: RADONDB_POSTGRES_OPERATOR_BOOTSTRAP_TIMEOUT
           value: "3600"

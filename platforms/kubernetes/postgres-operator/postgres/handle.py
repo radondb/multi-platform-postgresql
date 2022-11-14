@@ -1196,7 +1196,7 @@ def create_postgresql(
             if is_restore_mode(meta, spec, patch, status, logger) == False:
                 tmpconns: InstanceConnections = InstanceConnections()
                 tmpconns.add(tmpconn)
-                waiting_postgresql_ready(tmpconns, logger)
+                waiting_postgresql_ready(tmpconns, logger, timeout = MINUTES * 10)
 
                 create_log_table(
                     logger, tmpconn,
