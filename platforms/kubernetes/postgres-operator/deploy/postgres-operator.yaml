@@ -464,6 +464,11 @@ spec:
         image: radondb/radondb-postgres-operator:v1.1.1
         imagePullPolicy: IfNotPresent
         livenessProbe:
+          timeoutSeconds: 10
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          failureThreshold: 10
+          successThreshold: 1
           httpGet:
             path: /healthz
             port: 8080
