@@ -2683,7 +2683,7 @@ def resize_pvc(
 
     try:
         core_v1_api.patch_namespaced_persistent_volume_claim(pvc_name,
-                                         metadata["namespace"],
+                                         meta["namespace"],
                                          patch_pvc_body(size))
     except Exception as e:
         logger.error(
