@@ -26,7 +26,7 @@ def startup(settings: kopf.OperatorSettings, **_kwargs):
     # Wait for that many seconds between watching events
     settings.watching.reconnect_backoff = 1
     # setting the number of synchronous workers used by the operator for synchronous handlers
-    settings.execution.max_workers = 20
+    settings.execution.max_workers = 30
 
     settings.peering.clusterwide = True
 

@@ -1226,7 +1226,7 @@ def restore_postgresql_fromssh(
     tmpconns.add(conn)
 
     # wait postgresql ready
-    waiting_postgresql_ready(tmpconns, logger)
+    waiting_postgresql_ready(tmpconns, logger, timeout = MINUTES * 10)
 
     # drop from autofailover and pause start postgresql
     cmd = ["pgtools", "-d", "-p", POSTGRESQL_PAUSE]
@@ -3119,19 +3119,19 @@ def update_podspec_volume(
                        0:len(DIFF_FIELD_AUTOFAILOVER_VOLUME
                              )] == DIFF_FIELD_AUTOFAILOVER_VOLUME:
         rolling_update(meta, spec, patch, status, logger,
-                       [get_field(AUTOFAILOVER)])
+                       [get_field(AUTOFAILOVER)], timeout = MINUTES * 10)
     if FIELD[0:len(DIFF_FIELD_READWRITE_PODSPEC
                    )] == DIFF_FIELD_READWRITE_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_READWRITE_VOLUME
                              )] == DIFF_FIELD_READWRITE_VOLUME:
         rolling_update(meta, spec, patch, status, logger,
-                       [get_field(POSTGRESQL, READWRITEINSTANCE)])
+                       [get_field(POSTGRESQL, READWRITEINSTANCE)], timeout = MINUTES * 10)
     if FIELD[0:len(DIFF_FIELD_READONLY_PODSPEC
                    )] == DIFF_FIELD_READONLY_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_READONLY_VOLUME
                              )] == DIFF_FIELD_READONLY_VOLUME:
         rolling_update(meta, spec, patch, status, logger,
-                       [get_field(POSTGRESQL, READONLYINSTANCE)])
+                       [get_field(POSTGRESQL, READONLYINSTANCE)], timeout = MINUTES * 10)
 
 
 def update_antiaffinity(
@@ -3776,7 +3776,7 @@ def update_cluster(
             update_antiaffinity(meta, spec, patch, status, logger, [
                 get_field(POSTGRESQL, READWRITEINSTANCE),
                 get_field(POSTGRESQL, READONLYINSTANCE)
-            ], True)
+            ], True, timeout = MINUTES * 10)
 
         for diff in diffs:
             AC = diff[0]
@@ -3799,6 +3799,7 @@ def update_cluster(
 
         # after waiting_cluster_final_status. update number_sync
         if need_update_number_sync_standbys:
+            waiting_cluster_final_status(meta, spec, patch, status, logger, timeout = MINUTES * 10)
             update_number_sync_standbys(meta, spec, patch, status, logger)
 
         # wait a few seconds to prevent the pod not running
