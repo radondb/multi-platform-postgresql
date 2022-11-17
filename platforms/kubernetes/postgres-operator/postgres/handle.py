@@ -2661,6 +2661,35 @@ def patch_role_body(role: str) -> TypedDict:
     role_body = {"metadata": {"labels": {"role": role}}}
     return role_body
 
+def patch_pvc_body(size: str) -> TypedDict:
+    pvc_body = {"spec": {"resources": {"requests": {"storage": size}}}}
+    return pvc_body
+
+#  name: data-zzz-postgresql-readwriteinstance-0-0
+#spec:
+#  resources:
+#    requests:
+#      storage: 10Gi
+def resize_pvc(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    pvc_name: str,
+    size: str,
+) -> None:
+    core_v1_api = client.CoreV1Api()
+
+    try:
+        core_v1_api.patch_namespaced_persistent_volume_claim(pvc_name,
+                                         metadata["namespace"],
+                                         patch_pvc_body(size))
+    except Exception as e:
+        logger.error(
+            "Exception when calling AppsV1Api->patch_namespaced_persistent_volume_claim: %s\n"
+            % e)
+
 
 def get_conn_role(conn: InstanceConnection) -> str:
     if conn.get_k8s() != None:
@@ -3008,6 +3037,8 @@ def update_action(
             readwrite_conns.free_conns()
             readonly_conns.free_conns()
 
+def get_vct_size(vct: TypedDict) -> str:
+    return vct["spec"]["resources"]["requests"]["storage"]
 
 def rolling_update(
     meta: kopf.Meta,
@@ -3024,81 +3055,96 @@ def rolling_update(
         return
 
     # rolling update autofailover, not allow autofailover delete disk when update cluster
-    if get_field(AUTOFAILOVER) in target_roles:
+    field = get_field(AUTOFAILOVER)
+    if field in target_roles:
         autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
         if autofailover_machines != None:
             delete_autofailover(meta, spec, patch, status, logger,
-                                get_field(AUTOFAILOVER), autofailover_machines,
+                                field, autofailover_machines,
                                 None, False)
         else:
             delete_autofailover(meta, spec, patch, status, logger,
-                                get_field(AUTOFAILOVER), None, [0, 1], False)
+                                field, None, [0, 1], False)
+            for vct in spec.get(AUTOFAILOVER).get(VOLUMECLAIMTEMPLATES):
+                if vct["metadata"]["name"] == POSTGRESQL_PVC_NAME:
+                    size = get_vct_size(vct)
+            resize_pvc(meta, spec, patch, status, logger, get_pvc_name(get_pod_name(meta["name"], field, 0)), size)
         create_autofailover(meta, spec, patch, status, logger,
                             get_autofailover_labels(meta))
         waiting_target_postgresql_ready(meta, spec, patch,
-                                        get_field(AUTOFAILOVER), status,
+                                        field, status,
                                         logger, 0, 1, exit, timeout)
 
     # rolling update readwrite
-    if get_field(POSTGRESQL, READWRITEINSTANCE) in target_roles:
+    field = get_field(POSTGRESQL, READWRITEINSTANCE)
+    if field in target_roles:
         readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
             MACHINES)
         if readwrite_machines != None:
             for replica in range(0, len(readwrite_machines)):
                 delete_postgresql_readwrite(
                     meta, spec, patch, status, logger,
-                    get_field(POSTGRESQL, READWRITEINSTANCE),
+                    field,
                     readwrite_machines[replica:replica + 1], None, delete_disk)
                 create_postgresql_readwrite(meta, spec, patch, status, logger,
                                             get_readwrite_labels(meta),
                                             replica, False, replica + 1)
                 waiting_target_postgresql_ready(
-                    meta, spec, patch, get_field(POSTGRESQL,
-                                                 READWRITEINSTANCE), status,
+                    meta, spec, patch, field, status,
                     logger, replica, replica + 1, exit, timeout)
         else:
             for replica in range(
                     0, spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]):
                 delete_postgresql_readwrite(
                     meta, spec, patch, status, logger,
-                    get_field(POSTGRESQL, READWRITEINSTANCE), None,
+                    field, None,
                     [replica, replica + 1], delete_disk)
+                if delete_disk == False:
+                    for vct in spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(VOLUMECLAIMTEMPLATES):
+                        if vct["metadata"]["name"] == POSTGRESQL_PVC_NAME:
+                            size = get_vct_size(vct)
+                    resize_pvc(meta, spec, patch, status, logger, get_pvc_name(get_pod_name(meta["name"], field, replica)), size)
                 create_postgresql_readwrite(meta, spec, patch, status, logger,
                                             get_readwrite_labels(meta),
                                             replica, False, replica + 1)
                 waiting_target_postgresql_ready(
-                    meta, spec, patch, get_field(POSTGRESQL,
-                                                 READWRITEINSTANCE), status,
+                    meta, spec, patch, field, status,
                     logger, replica, replica + 1, exit, timeout)
 
     # rolling update readonly
-    if get_field(POSTGRESQL, READONLYINSTANCE) in target_roles:
+    field = get_field(POSTGRESQL, READONLYINSTANCE)
+    if field in target_roles:
         readonly_machines = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
             MACHINES)
         if readonly_machines != None:
             for replica in range(0, len(readonly_machines)):
                 delete_postgresql_readonly(
                     meta, spec, patch, status, logger,
-                    get_field(POSTGRESQL, READONLYINSTANCE),
+                    field,
                     readonly_machines[replica:replica + 1], None, delete_disk)
                 create_postgresql_readonly(meta, spec, patch, status, logger,
                                            get_readonly_labels(meta), replica,
                                            replica + 1)
                 waiting_target_postgresql_ready(
-                    meta, spec, patch, get_field(POSTGRESQL, READONLYINSTANCE),
+                    meta, spec, patch, field,
                     status, logger, replica, replica + 1, exit, timeout)
         else:
             for replica in range(0,
                                  spec[POSTGRESQL][READONLYINSTANCE][REPLICAS]):
                 delete_postgresql_readonly(
                     meta, spec, patch, status, logger,
-                    get_field(POSTGRESQL, READONLYINSTANCE), None,
+                    field, None,
                     [replica, replica + 1], delete_disk)
+                if delete_disk == False:
+                    for vct in spec.get(POSTGRESQL).get(READONLYINSTANCE).get(VOLUMECLAIMTEMPLATES):
+                        if vct["metadata"]["name"] == POSTGRESQL_PVC_NAME:
+                            size = get_vct_size(vct)
+                    resize_pvc(meta, spec, patch, status, logger, get_pvc_name(get_pod_name(meta["name"], field, replica)), size)
                 create_postgresql_readonly(meta, spec, patch, status, logger,
                                            get_readonly_labels(meta), replica,
                                            replica + 1)
                 waiting_target_postgresql_ready(
-                    meta, spec, patch, get_field(POSTGRESQL, READONLYINSTANCE),
+                    meta, spec, patch, field,
                     status, logger, replica, replica + 1, exit, timeout)
 
 
