@@ -12,7 +12,7 @@ from kubernetes import client, config
 
 
 @kopf.on.startup()
-async def startup(settings: kopf.OperatorSettings, **_kwargs):
+def startup(settings: kopf.OperatorSettings, **_kwargs):
     operator_config.load()
 
     # Timeout passed along to the Kubernetes API as timeoutSeconds=x
@@ -25,6 +25,8 @@ async def startup(settings: kopf.OperatorSettings, **_kwargs):
     settings.watching.connect_timeout = 30
     # Wait for that many seconds between watching events
     settings.watching.reconnect_backoff = 1
+    # setting the number of synchronous workers used by the operator for synchronous handlers
+    settings.execution.max_workers = 20
 
     settings.peering.clusterwide = True
 
@@ -42,7 +44,7 @@ async def startup(settings: kopf.OperatorSettings, **_kwargs):
                 timeout=operator_config.BOOTSTRAP_TIMEOUT,
                 retries=operator_config.BOOTSTRAP_RETRIES,
                 backoff=operator_config.BOOTSTRAP_RETRY_DELAY)
-async def cluster_create(
+def cluster_create(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -51,7 +53,7 @@ async def cluster_create(
     **_kwargs,
 ):
 
-    await create_cluster(meta, spec, patch, status, logger)
+    create_cluster(meta, spec, patch, status, logger)
 
 
 @kopf.on.update(API_GROUP,
@@ -60,7 +62,7 @@ async def cluster_create(
                 timeout=operator_config.BOOTSTRAP_TIMEOUT,
                 retries=operator_config.BOOTSTRAP_RETRIES,
                 backoff=operator_config.BOOTSTRAP_RETRY_DELAY)
-async def cluster_update(
+def cluster_update(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -69,7 +71,7 @@ async def cluster_update(
     diff: kopf.Diff,
     **_kwargs,
 ):
-    await update_cluster(meta, spec, patch, status, logger, diff)
+    update_cluster(meta, spec, patch, status, logger, diff)
 
 
 @kopf.on.delete(API_GROUP,
@@ -78,7 +80,7 @@ async def cluster_update(
                 timeout=operator_config.BOOTSTRAP_TIMEOUT,
                 retries=operator_config.BOOTSTRAP_RETRIES,
                 backoff=operator_config.BOOTSTRAP_RETRY_DELAY)
-async def cluster_delete(
+def cluster_delete(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -86,7 +88,7 @@ async def cluster_delete(
     logger: logging.Logger,
     **_kwargs,
 ):
-    await delete_cluster(meta, spec, patch, status, logger)
+    delete_cluster(meta, spec, patch, status, logger)
 
 
 # interval=operator_config.TIMER_INTERVAL can't set success
@@ -99,7 +101,7 @@ async def cluster_delete(
     sharp=True,
     initial_delay=10,
 )
-async def cluster_timer(
+def cluster_timer(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -107,4 +109,4 @@ async def cluster_timer(
     logger: logging.Logger,
     **_kwargs,
 ):
-    await timer_cluster(meta, spec, patch, status, logger)
+    timer_cluster(meta, spec, patch, status, logger)

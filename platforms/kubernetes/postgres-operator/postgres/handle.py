@@ -2489,7 +2489,7 @@ def check_param(spec: kopf.Spec,
     logger.info("parameters are correct")
 
 
-async def create_postgresql_cluster(
+def create_postgresql_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2531,7 +2531,7 @@ async def create_postgresql_cluster(
     # set_create_cluster(patch, CLUSTER_CREATE_FINISH)
 
 
-async def create_cluster(
+def create_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2544,7 +2544,7 @@ async def create_cluster(
 
         logging.info("check create_cluster params")
         check_param(spec, logger, create=True)
-        await create_postgresql_cluster(meta, spec, patch, status, logger)
+        create_postgresql_cluster(meta, spec, patch, status, logger)
 
         logger.info("waiting for create_cluster success")
         waiting_cluster_final_status(meta, spec, patch, status, logger, timeout = MINUTES * 10)
@@ -2565,7 +2565,7 @@ async def create_cluster(
                            CLUSTER_STATUS_CREATE_FAILED, logger)
 
 
-async def delete_cluster(
+def delete_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2574,7 +2574,7 @@ async def delete_cluster(
 ) -> None:
     set_cluster_status(meta, CLUSTER_STATE, CLUSTER_STATUS_TERMINATE,
                        logger)
-    await delete_postgresql_cluster(meta, spec, patch, status, logger)
+    delete_postgresql_cluster(meta, spec, patch, status, logger)
 
 
 def delete_pvc(logger: logging.Logger, name: str, namespace: str) -> None:
@@ -2637,7 +2637,7 @@ def delete_storages(
     conns.free_conns()
 
 
-async def delete_postgresql_cluster(
+def delete_postgresql_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2707,7 +2707,7 @@ def correct_user_password(
         change_user_password(conn, user, password, logger)
 
 
-async def correct_postgresql_password(
+def correct_postgresql_password(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2729,7 +2729,7 @@ async def correct_postgresql_password(
     readwrite_conns.free_conns()
 
 
-async def correct_keepalived(
+def correct_keepalived(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2778,7 +2778,7 @@ async def correct_keepalived(
     readonly_conns.free_conns()
 
 
-async def correct_postgresql_role(
+def correct_postgresql_role(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2822,7 +2822,7 @@ async def correct_postgresql_role(
                     % e)
 
 
-async def timer_cluster(
+def timer_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2830,9 +2830,9 @@ async def timer_cluster(
     logger: logging.Logger,
 ) -> None:
 
-    await correct_postgresql_role(meta, spec, patch, status, logger)
-    await correct_postgresql_password(meta, spec, patch, status, logger)
-    await correct_keepalived(meta, spec, patch, status, logger)
+    correct_postgresql_role(meta, spec, patch, status, logger)
+    correct_postgresql_password(meta, spec, patch, status, logger)
+    correct_keepalived(meta, spec, patch, status, logger)
 
 def update_number_sync_standbys(
     meta: kopf.Meta,
@@ -3727,7 +3727,7 @@ def update_users(
 
 
 # kubectl patch pg lzzhang --patch '{"spec": {"action": "stop"}}' --type=merge
-async def update_cluster(
+def update_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
