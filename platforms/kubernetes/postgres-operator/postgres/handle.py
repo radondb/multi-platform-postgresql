@@ -3071,9 +3071,11 @@ def rolling_update(
             resize_pvc(meta, spec, patch, status, logger, get_pvc_name(get_pod_name(meta["name"], field, 0)), size)
         create_autofailover(meta, spec, patch, status, logger,
                             get_autofailover_labels(meta))
+        # wait postgresql ready, then wait the right status.
         waiting_target_postgresql_ready(meta, spec, patch,
                                         field, status,
                                         logger, 0, 1, exit, timeout)
+        waiting_cluster_final_status(meta, spec, patch, status, logger)
 
     # rolling update readwrite
     field = get_field(POSTGRESQL, READWRITEINSTANCE)
@@ -3089,9 +3091,11 @@ def rolling_update(
                 create_postgresql_readwrite(meta, spec, patch, status, logger,
                                             get_readwrite_labels(meta),
                                             replica, False, replica + 1)
+                # wait postgresql ready, then wait the right status.
                 waiting_target_postgresql_ready(
                     meta, spec, patch, field, status,
                     logger, replica, replica + 1, exit, timeout)
+                waiting_cluster_final_status(meta, spec, patch, status, logger)
         else:
             for replica in range(
                     0, spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]):
@@ -3107,9 +3111,11 @@ def rolling_update(
                 create_postgresql_readwrite(meta, spec, patch, status, logger,
                                             get_readwrite_labels(meta),
                                             replica, False, replica + 1)
+                # wait postgresql ready, then wait the right status.
                 waiting_target_postgresql_ready(
                     meta, spec, patch, field, status,
                     logger, replica, replica + 1, exit, timeout)
+                waiting_cluster_final_status(meta, spec, patch, status, logger)
 
     # rolling update readonly
     field = get_field(POSTGRESQL, READONLYINSTANCE)
@@ -3125,9 +3131,11 @@ def rolling_update(
                 create_postgresql_readonly(meta, spec, patch, status, logger,
                                            get_readonly_labels(meta), replica,
                                            replica + 1)
+                # wait postgresql ready, then wait the right status.
                 waiting_target_postgresql_ready(
                     meta, spec, patch, field,
                     status, logger, replica, replica + 1, exit, timeout)
+                waiting_cluster_final_status(meta, spec, patch, status, logger)
         else:
             for replica in range(0,
                                  spec[POSTGRESQL][READONLYINSTANCE][REPLICAS]):
@@ -3143,9 +3151,11 @@ def rolling_update(
                 create_postgresql_readonly(meta, spec, patch, status, logger,
                                            get_readonly_labels(meta), replica,
                                            replica + 1)
+                # wait postgresql ready, then wait the right status.
                 waiting_target_postgresql_ready(
                     meta, spec, patch, field,
                     status, logger, replica, replica + 1, exit, timeout)
+                waiting_cluster_final_status(meta, spec, patch, status, logger)
 
 
 def update_podspec_volume(
