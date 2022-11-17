@@ -735,7 +735,7 @@ def get_antiaffinity_from_template(meta: kopf.Meta,
 
 
 def get_statefulset_name(name: str, field: str, replica: int) -> str:
-    return name + "-" + field + "-" + str(replica)
+    return name + "-" + field.split(FIELD_DELIMITER)[-1:] + "-" + str(replica)
 
 
 def get_statefulset_service_name(name: str, field: str, replica: int) -> str:
