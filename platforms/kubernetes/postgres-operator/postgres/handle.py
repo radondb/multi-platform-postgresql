@@ -182,6 +182,7 @@ DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
 DIFF_FIELD_SPEC_ANTIAFFINITY = (SPEC, SPEC_ANTIAFFINITY)
 STATEFULSET_REPLICAS = 1
+PG_CONFIG_MASTER_LARGE_THAN_SLAVE = ("max_connections", "max_worker_processes", "max_wal_senders", "max_prepared_transactions", "max_locks_per_transaction")
 PG_CONFIG_IGNORE = ("block_size", "data_checksums", "data_directory_mode",
                     "debug_assertions", "integer_datetimes", "lc_collate",
                     "lc_ctype", "max_function_args", "max_identifier_length",
@@ -226,6 +227,8 @@ CONTAINER_ENV_NAME = "name"
 CONTAINER_ENV_VALUE = "value"
 EXPORTER_CONTAINER_INDEX = 1
 POSTGRESQL_CONTAINER_INDEX = 0
+NODE_PRIORITY_DEFAULT = 50
+NODE_PRIORITY_NEVER = 0
 
 
 def set_cluster_status(meta: kopf.Meta, statefield: str, state: str,
@@ -3351,6 +3354,142 @@ def update_service(
         delete_services(meta, spec, patch, status, logger)
         create_services(meta, spec, patch, status, logger)
 
+def update_node_priority(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conns: [InstanceConnection],
+    priority: int,
+    primary_host: str = None,
+) -> bool:
+    cmd = [
+        "pgtools", "-S",
+        "'node candidate-priority " + str(priority) + "'"
+    ]
+    if primary_host == None:
+        primary_host = get_primary_host(meta, spec, patch, status, logger)
+
+    for conn in conns:
+        if get_connhost(conn) == primary_host:
+            continue
+        logger.info(f"set node priority {cmd} on %s" % get_connhost(conn))
+        output = exec_command(conn, cmd, logger, interrupt=False)
+        if output.find(SUCCESS) == -1:
+            logger.error(f"set node priority failed {cmd}  {output}")
+
+def update_configs_utile(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conns: [InstanceConnection],
+    readwrite_conns: InstanceConnections,
+    readonly_conns: InstanceConnections,
+    cmd: TypedDict,
+    autofailover: bool,
+    restart: bool,
+) -> None:
+    primary_host = get_primary_host(meta, spec, patch, status, logger)
+    if restart == True:
+        cmd.append('-R')
+    # pg_autoctl set node candidate-priority 0 --pgdata=s
+
+    if autofailover == False and restart == True:
+        update_node_priority(meta, spec, patch, status, logger, conns, NODE_PRIORITY_NEVER, primary_host)
+
+    # first update primary node
+    for conn in conns:
+        if get_connhost(conn) == primary_host:
+            checkpoint_cmd = ["pgtools", "-w", "0", "-q", "'checkpoint'"]
+            output = exec_command(conn,
+                                  checkpoint_cmd,
+                                  logger,
+                                  interrupt=False)
+            if output.find(SUCCESS_CHECKPOINT) == -1:
+                logger.error(
+                    f"update configs {checkpoint_cmd} failed. {output}"
+                )
+            logger.info(f"update configs {cmd} on %s" %
+                        get_connhost(conn))
+            output = exec_command(conn,
+                                  cmd,
+                                  logger,
+                                  interrupt=False)
+            if output.find(SUCCESS) == -1:
+                logger.error(f"update configs {cmd} failed. {output}")
+
+    if autofailover == False and restart == True:
+        waiting_postgresql_ready(readwrite_conns, logger)
+        waiting_cluster_final_status(meta, spec, patch, status, logger)
+        # must waittin for special_change parameter send to slave
+        time.sleep(10)
+
+    # update slave node
+    for conn in conns:
+        if get_connhost(conn) == primary_host:
+            continue
+
+        logger.info(f"update configs {cmd} on %s" % get_connhost(conn))
+        output = exec_command(conn, cmd, logger, interrupt=False)
+        if output.find(SUCCESS) == -1:
+            logger.error(f"update configs {cmd} failed. {output}")
+
+    waiting_postgresql_ready(readwrite_conns, logger)
+    waiting_postgresql_ready(readonly_conns, logger)
+    waiting_cluster_final_status(meta, spec, patch, status, logger)
+    if autofailover == False and restart == True:
+        update_node_priority(meta, spec, patch, status, logger, conns, NODE_PRIORITY_DEFAULT, primary_host)
+    waiting_cluster_final_status(meta, spec, patch, status, logger)
+
+def update_configs_port(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conns: [InstanceConnection],
+    readwrite_conns: InstanceConnections,
+    readonly_conns: InstanceConnections,
+    cmd: TypedDict,
+    autofailover: bool,
+) -> None:
+    primary_host = get_primary_host(meta, spec, patch, status, logger)
+    cmd.append('-d')
+
+    # first update slave node
+    for conn in conns:
+        if get_connhost(conn) == primary_host:
+            continue
+
+        logger.info(f"update configs {cmd} on %s" % get_connhost(conn))
+        output = exec_command(conn, cmd, logger, interrupt=False)
+        if output.find(SUCCESS) == -1:
+            logger.error(f"update configs {cmd} failed. {output}")
+
+    if autofailover == False:
+        waiting_postgresql_ready(readwrite_conns, logger)
+        waiting_postgresql_ready(readonly_conns, logger)
+        waiting_cluster_final_status(meta, spec, patch, status, logger)
+
+    # update primary node
+    for conn in conns:
+        if get_connhost(conn) == primary_host:
+            if autofailover == False and len(readwrite_conns.get_conns()) > 1:
+                autofailover_switchover(meta, spec, patch, status,
+                                        logger)
+                waiting_cluster_final_status(meta, spec, patch, status,
+                                             logger)
+            logger.info(f"update configs {cmd} on %s" %
+                        get_connhost(conn))
+            output = exec_command(conn, cmd, logger, interrupt=False)
+            if output.find(SUCCESS) == -1:
+                logger.error(f"update configs {cmd} failed. {output}")
+    if autofailover == False:
+        waiting_postgresql_ready(readwrite_conns, logger)
+        waiting_cluster_final_status(meta, spec, patch, status, logger)
 
 def update_configs(
     meta: kopf.Meta,
@@ -3367,7 +3506,11 @@ def update_configs(
     cmd = ["pgtools", "-c"]
     restart_postgresql = False
     port_change = False
+    old_port = None
+    new_port = None
     autofailover = False
+    special_change = False
+
 
     if FIELD == DIFF_FIELD_AUTOFAILOVER_CONFIGS:
         autofailover_conns = connections(spec, meta, patch,
@@ -3403,96 +3546,59 @@ def update_configs(
                         restart_postgresql = True
                         if name == 'port':
                             port_change = True
+                            new_port = value
+                            old_port = oldvalue
+                            logger.info(f"change port from {old_port} to {new_port}")
+            if name in PG_CONFIG_MASTER_LARGE_THAN_SLAVE:
+                for oldi, oldconfig in enumerate(OLD):
+                    oldname = oldconfig.split("=")[0].strip()
+                    oldvalue = oldconfig[oldconfig.find("=") + 1:].strip()
+                    if name == oldname and int(value) < int(oldvalue):
+                        logger.info(f" {name} must large then slave")
+                        special_change = True
 
             config = name + '="' + value + '"'
             cmd.append('-e')
             cmd.append(PG_CONFIG_PREFIX + config)
 
-        waiting_postgresql_ready(readwrite_conns, logger)
-        waiting_postgresql_ready(readonly_conns, logger)
-        primary_host = get_primary_host(meta, spec, patch, status, logger)
-        if port_change == True:
-            cmd.append('-d')
-            # first update slave node
-            for conn in conns:
-                if get_connhost(conn) == primary_host:
-                    continue
-
-                logger.info(f"update configs {cmd} on %s" % get_connhost(conn))
-                output = exec_command(conn, cmd, logger, interrupt=False)
-                if output.find(SUCCESS) == -1:
-                    logger.error(f"update configs {cmd} failed. {output}")
-
+        if autofailover == False:
+            waiting_postgresql_ready(readwrite_conns, logger)
+            waiting_postgresql_ready(readonly_conns, logger)
             waiting_cluster_final_status(meta, spec, patch, status, logger)
-            time.sleep(2)
+        #fisrst: port_change
+        #second: restart_postgresql
+        #third: special_change
+        #bitmap: 000 001 010 011 100 101 110 111
+        # if port_change is 1, restart_postgresql must be 1 can't be 0.
+        # if special_change is 1, restart_postgresql must be 1 can't be 0.
+        if port_change == False and restart_postgresql == False and special_change == False:
+            update_configs_utile(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, cmd.copy(), autofailover, False)
+        if port_change == False and restart_postgresql == False and special_change == True:
+            pass
+        if port_change == False and restart_postgresql == True and special_change == False:
+            update_configs_utile(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, cmd.copy(), autofailover, True)
+        if port_change == False and restart_postgresql == True and special_change == True:
+            update_configs_utile(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, cmd.copy(), autofailover, True)
+        if port_change == True and restart_postgresql == False and special_change == False:
+            pass
+        if port_change == True and restart_postgresql == False and special_change == True:
+            pass
+        if port_change == True and restart_postgresql == True and special_change == False:
+            update_configs_port(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, cmd.copy(), autofailover)
+        if port_change == True and restart_postgresql == True and special_change == True:
+            # don't update port
+            config = "port" + '="' + old_port + '"'
+            tmpcmd = cmd.copy()
+            tmpcmd.append('-e')
+            tmpcmd.append(PG_CONFIG_PREFIX + config)
+            update_configs_utile(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, cmd.copy(), autofailover, True)
+            # update port
+            tmpcmd = ["pgtools", "-c"]
+            config = "port" + '="' + new_port + '"'
+            tmpcmd.append('-e')
+            tmpcmd.append(PG_CONFIG_PREFIX + config)
+            update_configs_port(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, tmpcmd.copy(), autofailover)
 
-            # update primary node
-            for conn in conns:
-                if get_connhost(conn) == primary_host:
-                    if len(readwrite_conns.get_conns()) > 1:
-                        autofailover_switchover(meta, spec, patch, status,
-                                                logger)
-                        waiting_cluster_final_status(meta, spec, patch, status,
-                                                     logger)
-                        time.sleep(2)
-                    logger.info(f"update configs {cmd} on %s" %
-                                get_connhost(conn))
-                    output = exec_command(conn, cmd, logger, interrupt=False)
-                    if output.find(SUCCESS) == -1:
-                        logger.error(f"update configs {cmd} failed. {output}")
-            waiting_cluster_final_status(meta, spec, patch, status, logger)
-        else:
-            checkpoint_cmd = ["pgtools", "-w", "0", "-q", "'checkpoint'"]
-            primary_cmd = cmd.copy()
-            slave_cmd = cmd.copy()
-            if restart_postgresql == True:
-                primary_cmd.append('-r')
-                slave_cmd.append('-R')
-            # first update primary node
-            for conn in conns:
-                if get_connhost(conn) == primary_host:
-                    logger.info(f"update configs {cmd} on %s" %
-                                get_connhost(conn))
-                    output = exec_command(conn,
-                                          checkpoint_cmd,
-                                          logger,
-                                          interrupt=False)
-                    if output.find(SUCCESS_CHECKPOINT) == -1:
-                        logger.error(
-                            f"update configs {checkpoint_cmd} failed. {output}"
-                        )
-                    output = exec_command(conn,
-                                          primary_cmd,
-                                          logger,
-                                          interrupt=False)
-                    if output.find(SUCCESS) == -1:
-                        logger.error(f"update configs {cmd} failed. {output}")
-
-            if restart_postgresql == True:
-                waiting_cluster_final_status(meta, spec, patch, status, logger)
-                for conn in conns:
-                    if get_connhost(conn) == primary_host:
-                        output = exec_command(conn,
-                                              checkpoint_cmd,
-                                              logger,
-                                              interrupt=False)
-                        if output.find(SUCCESS_CHECKPOINT) == -1:
-                            logger.error(
-                                f"update configs {checkpoint_cmd} failed. {output}"
-                            )
-                time.sleep(20)
-
-            # update slave node
-            for conn in conns:
-                if get_connhost(conn) == primary_host:
-                    continue
-
-                logger.info(f"update configs {cmd} on %s" % get_connhost(conn))
-                output = exec_command(conn, slave_cmd, logger, interrupt=False)
-                if output.find(SUCCESS) == -1:
-                    logger.error(f"update configs {cmd} failed. {output}")
-
-            waiting_cluster_final_status(meta, spec, patch, status, logger)
 
         if port_change == True:
             delete_services(meta, spec, patch, status, logger)
