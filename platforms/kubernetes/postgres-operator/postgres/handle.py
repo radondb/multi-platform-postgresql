@@ -1716,7 +1716,7 @@ def connections(
         role = POSTGRESQL
 
     if machines == None:
-        logger.info("connect node in k8s mode")
+        #logger.info("connect node in k8s mode")
         conns = connect_pods(meta, spec, field)
         if create:
             create_postgresql(K8S_MODE, spec, meta, field, labels, logger,
@@ -1725,8 +1725,7 @@ def connections(
     else:
         for replica, machine in enumerate(machines):
             conn = connect_machine(machine, role)
-            logger.info("connect node in machine mode, host is " +
-                        conn.get_machine().get_host())
+            #logger.info("connect node in machine mode, host is " + conn.get_machine().get_host())
             conns.add(conn)
         if create:
             create_postgresql(MACHINE_MODE, spec, meta, field, labels, logger,
@@ -2732,10 +2731,10 @@ def correct_user_password(
         '''"PGPASSWORD=%s psql -h %s -d postgres -U %s -p %d -t -c 'select 1'"'''
         % (password, get_connhost(conn), user, port)
     ]
-    logger.info(f"check password with cmd {cmd} ")
+    #logger.info(f"check password with cmd {cmd} ")
     output = exec_command(conn, cmd, logger, interrupt=False).strip()
     if output.find(PASSWORD_FAILED_MESSAGEd) != -1:
-        logger.info(f"password error: {output}")
+        logger.error(f"password error: {output}")
         change_user_password(conn, user, password, logger)
 
 
@@ -2890,11 +2889,18 @@ def update_number_sync_standbys(
             "pgtools", "-S",
             "' formation number-sync-standbys  " + str(expect_number) + PRIMARY_FORMATION + "'"
         ]
-        logger.info(f"set number-sync-standbys with cmd {cmd}")
-        output = exec_command(autofailover_conns.get_conns()[0], cmd, logger, interrupt=False)
-        if output.find(SUCCESS) == -1:
-            logger.error(
-                    f"set number-sync-standbys failed {cmd}  {output}")
+        i = 0
+        while True:
+            logger.info(f"set number-sync-standbys with cmd {cmd}")
+            output = exec_command(autofailover_conns.get_conns()[0], cmd, logger, interrupt=False)
+            if output.find(SUCCESS) == -1:
+                logger.error(f"set number-sync-standbys failed {cmd}  {output}")
+                i += 1
+                if i >= 60:
+                    logger.error(f"set number-sync-standbys failed, skip ")
+                    break
+            else:
+                break
         autofailover_conns.free_conns()
 
 
@@ -2933,10 +2939,17 @@ def update_streaming(
                                 get_field(POSTGRESQL, READONLYINSTANCE), False,
                                 None, logger, None, status, False)
             for conn in conns.get_conns():
-                output = exec_command(conn, cmd, logger, interrupt=False)
-                if output.find(SUCCESS) == -1:
-                    logger.error(
-                        f"set readonly streaming failed {cmd}  {output}")
+                i = 0
+                while True:
+                    output = exec_command(conn, cmd, logger, interrupt=False)
+                    if output.find(SUCCESS) == -1:
+                        logger.error(f"set readonly streaming failed {cmd}  {output}")
+                        i += 1
+                        if i >= 60:
+                            logger.error(f"set readonly streaming failed, skip")
+                            break
+                    else:
+                        break
             conns.free_conns()
 
     return need_update_number_sync_standbys
@@ -3374,10 +3387,18 @@ def update_node_priority(
     for conn in conns:
         if get_connhost(conn) == primary_host:
             continue
-        logger.info(f"set node priority {cmd} on %s" % get_connhost(conn))
-        output = exec_command(conn, cmd, logger, interrupt=False)
-        if output.find(SUCCESS) == -1:
-            logger.error(f"set node priority failed {cmd}  {output}")
+        i = 0
+        while True:
+            logger.info(f"set node priority {cmd} on %s" % get_connhost(conn))
+            output = exec_command(conn, cmd, logger, interrupt=False)
+            if output.find(SUCCESS) == -1:
+                logger.error(f"set node priority failed {cmd}  {output}")
+                i += 1
+                if i >= 60:
+                    logger.error(f"set node priority failed")
+                    break
+            else:
+                break
 
 def update_configs_utile(
     meta: kopf.Meta,
@@ -3394,16 +3415,16 @@ def update_configs_utile(
 ) -> None:
     primary_host = get_primary_host(meta, spec, patch, status, logger)
     if restart == True:
-        cmd.append('-R')
+        cmd.append('-r')
     # pg_autoctl set node candidate-priority 0 --pgdata=s
 
     if autofailover == False and restart == True:
         update_node_priority(meta, spec, patch, status, logger, conns, NODE_PRIORITY_NEVER, primary_host)
 
     # first update primary node
+    checkpoint_cmd = ["pgtools", "-w", "0", "-q", "'checkpoint'"]
     for conn in conns:
         if get_connhost(conn) == primary_host:
-            checkpoint_cmd = ["pgtools", "-w", "0", "-q", "'checkpoint'"]
             output = exec_command(conn,
                                   checkpoint_cmd,
                                   logger,
@@ -3425,6 +3446,16 @@ def update_configs_utile(
         waiting_postgresql_ready(readwrite_conns, logger)
         waiting_cluster_final_status(meta, spec, patch, status, logger)
         # must waittin for special_change parameter send to slave
+        for conn in conns:
+            if get_connhost(conn) == primary_host:
+                output = exec_command(conn,
+                                      checkpoint_cmd,
+                                      logger,
+                                      interrupt=False)
+                if output.find(SUCCESS_CHECKPOINT) == -1:
+                    logger.error(
+                        f"update configs {checkpoint_cmd} failed. {output}"
+                    )
         time.sleep(10)
 
     # update slave node
@@ -3542,7 +3573,7 @@ def update_configs(
                     oldname = oldconfig.split("=")[0].strip()
                     oldvalue = oldconfig[oldconfig.find("=") + 1:].strip()
                     if name == oldname and value != oldvalue:
-                        logger.info(f" {name} is restart parameter ")
+                        logger.info(f"{name} is restart parameter ")
                         restart_postgresql = True
                         if name == 'port':
                             port_change = True
@@ -3554,7 +3585,7 @@ def update_configs(
                     oldname = oldconfig.split("=")[0].strip()
                     oldvalue = oldconfig[oldconfig.find("=") + 1:].strip()
                     if name == oldname and int(value) < int(oldvalue):
-                        logger.info(f" {name} must large then slave")
+                        logger.info(f"{name} must large then slave")
                         special_change = True
 
             config = name + '="' + value + '"'
@@ -3593,10 +3624,7 @@ def update_configs(
             tmpcmd.append(PG_CONFIG_PREFIX + config)
             update_configs_utile(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, cmd.copy(), autofailover, True)
             # update port
-            tmpcmd = ["pgtools", "-c"]
-            config = "port" + '="' + new_port + '"'
-            tmpcmd.append('-e')
-            tmpcmd.append(PG_CONFIG_PREFIX + config)
+            tmpcmd = cmd.copy()
             update_configs_port(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, tmpcmd.copy(), autofailover)
 
 
