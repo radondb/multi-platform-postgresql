@@ -168,6 +168,9 @@ function stop_auto_failover(){
 }
 
 if [ "${do_config}" = 1 ]; then
+	user_conf="postgresql_user.conf"
+
+	echo "" > $PGDATA/$user_conf
 
 	env | grep "^$PG_CONFIG" | while read item
 	do
@@ -175,8 +178,9 @@ if [ "${do_config}" = 1 ]; then
 		#conf_name=${conf%%=*}
 		#conf_value=${conf#*=}
 		#name_context=$(eval echo '$'$conf_name)
-		echo "$conf" | sed 's/______/\./' >> $PGDATA/postgresql.conf
+		echo "$conf" | sed 's/______/\./' >> $PGDATA/$user_conf
 	done
+	echo "include '$user_conf'" >> $PGDATA/postgresql.conf
 
 	reload_postgresql
 	echo $SUCCESS
