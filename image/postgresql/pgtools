@@ -225,16 +225,16 @@ if [ "$ready_accept" = 1 ]; then
 fi
 
 if [ "$switchover" = 1 ]; then
-	for i in `seq 1 100`
-	do
-		pg_autoctl perform switchover --pgdata $PGDATA --formation primary
-		if [ $? == 0 ]; then
-			exit 0
-		fi
-		sleep 6
-	done
+	#for i in `seq 1 100`
+	#do
+	#	pg_autoctl perform switchover --pgdata $PGDATA --formation primary
+	#	if [ $? == 0 ]; then
+	#		exit 0
+	#	fi
+	#	sleep 6
+	#done
 	pg_autoctl perform switchover --pgdata $PGDATA --formation primary
-	check_error 1 "switchover failed"
+	check_error $? "switchover failed"
 fi
 
 if [ "${do_query}" = 1 ]; then

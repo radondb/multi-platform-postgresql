@@ -345,16 +345,32 @@ def autofailover_switchover(
     patch: kopf.Patch,
     status: kopf.Status,
     logger: logging.Logger,
+    primary_host: str = None,
 ) -> None:
     auto_failover_conns = connections(spec, meta, patch,
                                       get_field(AUTOFAILOVER), False, None,
                                       logger, None, status, False)
     for conn in auto_failover_conns.get_conns():
         cmd = ["pgtools", "-o"]
-        logger.info(f"switchover with cmd {cmd}")
-        output = exec_command(conn, cmd, logger, interrupt=False)
-        if output.find(SWITCHOVER_FAILED_MESSAGE) != -1:
-            logger.error(f"switchover failed, {output}")
+        i = 0
+        while True:
+            logger.info(f"switchover with cmd {cmd}")
+            if primary_host == None or primary_host == get_primary_host(meta, spec, patch, status, logger):
+                output = exec_command(conn, cmd, logger, interrupt=False)
+                if output.find(SWITCHOVER_FAILED_MESSAGE) != -1:
+                    logger.error(f"switchover failed, {output}")
+                    i += 1
+                    if i >= 100:
+                        logger.error(f"switchover failed, skip..")
+                        break
+                    time.sleep(5)
+                else:
+                    waiting_cluster_final_status(meta, spec, patch, status, logger)
+                    break
+            else:
+                if primary_host != None or primary_host != get_primary_host(meta, spec, patch, status, logger):
+                    waiting_cluster_final_status(meta, spec, patch, status, logger)
+                break
     auto_failover_conns.free_conns()
 
 
@@ -1823,7 +1839,7 @@ def delete_postgresql(
         logger.info("delete postgresql instance from autofailover")
         if get_primary_host(meta, spec, patch, status,
                             logger) == get_connhost(conn):
-            autofailover_switchover(meta, spec, patch, status, logger)
+            autofailover_switchover(meta, spec, patch, status, logger, primary_host=get_connhost(conn))
         cmd = ["pgtools", "-D"]
         output = exec_command(conn, cmd, logger, interrupt=False)
         if output.find("drop auto_failover failed") != -1:
@@ -3510,7 +3526,7 @@ def update_configs_port(
         if get_connhost(conn) == primary_host:
             if autofailover == False and len(readwrite_conns.get_conns()) > 1:
                 autofailover_switchover(meta, spec, patch, status,
-                                        logger)
+                                        logger, primary_host=get_connhost(conn))
                 waiting_cluster_final_status(meta, spec, patch, status,
                                              logger)
             logger.info(f"update configs {cmd} on %s" %
