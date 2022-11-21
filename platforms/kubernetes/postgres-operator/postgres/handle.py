@@ -3584,7 +3584,8 @@ def update_configs(
                 for oldi, oldconfig in enumerate(OLD):
                     oldname = oldconfig.split("=")[0].strip()
                     oldvalue = oldconfig[oldconfig.find("=") + 1:].strip()
-                    if name == oldname and int(value) < int(oldvalue):
+                    #if name == oldname and int(value) < int(oldvalue):
+                    if name == oldname:
                         logger.info(f"{name} must large then slave")
                         special_change = True
 
