@@ -107,7 +107,7 @@ main() {
 			run_port=5432
 		fi
 		if [ -s "$PGDATA/PG_VERSION" ]; then
-			run_port=$(cat ${PGDATA}/postgresql.conf | grep -w port | grep '[0-9]' | tail -n 1 | cut -d '=' -f 2 | cut -d "#" -f 1 | tr -d " ")
+			run_port=$(cat ${PGDATA}/postgresql_user.conf | grep -w port | grep '[0-9]' | tail -n 1 | cut -d '=' -f 2 | cut -d "#" -f 1 | tr -d " ")
 		fi
 		export run_port
 
@@ -167,7 +167,7 @@ main() {
 				run_port=5432
 			fi
 			if [ -s "$PGDATA/PG_VERSION" ]; then
-				run_port=$(cat ${PGDATA}/postgresql.conf | grep -w port | grep '[0-9]' | tail -n 1 | cut -d '=' -f 2 | cut -d "#" -f 1 | tr -d " ")
+				run_port=$(cat ${PGDATA}/postgresql_user.conf | grep -w port | grep '[0-9]' | tail -n 1 | cut -d '=' -f 2 | cut -d "#" -f 1 | tr -d " ")
 				if [ -s "$XDG_CONFIG_HOME/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.cfg" ]; then
 					pg_autoctl config set --pgdata "$PGDATA" postgresql.port $run_port
 				fi
