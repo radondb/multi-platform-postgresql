@@ -229,6 +229,7 @@ EXPORTER_CONTAINER_INDEX = 1
 POSTGRESQL_CONTAINER_INDEX = 0
 NODE_PRIORITY_DEFAULT = 50
 NODE_PRIORITY_NEVER = 0
+WAIT_TIMEOUT = MINUTES * 20
 
 
 def set_cluster_status(meta: kopf.Meta, statefield: str, state: str,
@@ -2703,9 +2704,25 @@ def resize_pvc(
         core_v1_api.patch_namespaced_persistent_volume_claim(pvc_name,
                                          meta["namespace"],
                                          patch_pvc_body(size))
+        i = 0
+        real_size = "0Gi"
+        real_status = ""
+        while i < WAIT_TIMEOUT and real_size != size and real_status != "FileSystemResizePending":
+            pvc = client.V1PersistentVolumeClaim(core_v1_api.read_namespaced_persistent_volume_claim(name=pvc_name,
+                                                                                                     namespace=meta["namespace"]))
+            pvc_status = pvc.to_dict().get("api_version", {}).get("status", {})
+            real_size = pvc_status.get("capacity", {}).get("storage")
+            real_status = ""
+            if pvc_status.get("conditions", None) is not None:
+                real_status = pvc_status.get("conditions", [])[0].get("type")
+            i += 1
+            time.sleep(SECONDS)
+            logger.warning(f"resize_pvc on {pvc_name} not success, try {i} times.")
+            if i == WAIT_TIMEOUT:
+                logger.error(f"resize_pvc on {pvc_name} timeout, skip waiting.")
     except Exception as e:
         logger.error(
-            "Exception when calling AppsV1Api->patch_namespaced_persistent_volume_claim: %s\n"
+            "Exception when calling AppsV1Api->patch_namespaced_persistent_volume_claim or read_namespaced_persistent_volume_claim: %s\n"
             % e)
 
 
