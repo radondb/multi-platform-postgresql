@@ -2739,6 +2739,7 @@ def resize_pvc(
         logger.error(
             "Exception when calling AppsV1Api->patch_namespaced_persistent_volume_claim or read_namespaced_persistent_volume_claim: %s\n"
             % e)
+        time.sleep(SECONDS * 10)
 
 
 def get_conn_role(conn: InstanceConnection) -> str:
