@@ -2732,9 +2732,9 @@ def resize_pvc(
                 real_status = pvc_status.get("conditions", [])[0].get("type")
             i += 1
             time.sleep(SECONDS)
-            logger.warning(f"resize_pvc on {pvc_name} not success, try {i} times.")
+            logger.warning(f"resize_pvc on {pvc_name} not success, try {i} times. current status is {real_status}, current size is {real_size}")
             if i == WAIT_TIMEOUT:
-                logger.error(f"resize_pvc on {pvc_name} timeout, skip waiting.")
+                logger.error(f"resize_pvc on {pvc_name} timeout, skip waiting. current status is {real_status}, current size is {real_size}")
     except Exception as e:
         logger.error(
             "Exception when calling AppsV1Api->patch_namespaced_persistent_volume_claim or read_namespaced_persistent_volume_claim: %s\n"
