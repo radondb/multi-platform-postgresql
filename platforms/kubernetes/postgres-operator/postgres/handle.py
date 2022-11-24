@@ -2725,7 +2725,7 @@ def resize_pvc(
         while i < WAIT_TIMEOUT and real_size != size and real_status != "FileSystemResizePending":
             pvc = client.V1PersistentVolumeClaim(core_v1_api.read_namespaced_persistent_volume_claim(name=pvc_name,
                                                                                                      namespace=meta["namespace"]))
-            pvc_status = client.V1PersistentVolumeClaimStatus(pvc.status).to_dict()
+            pvc_status = pvc.to_dict().get("api_version", {}).get("status", {})
             real_size = pvc_status.get("capacity", {}).get("storage")
             real_status = ""
             if pvc_status.get("conditions", None) is not None:
