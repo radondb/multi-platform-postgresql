@@ -2615,7 +2615,10 @@ def delete_pvc(logger: logging.Logger, name: str, namespace: str) -> None:
     core_v1_api = client.CoreV1Api()
 
     logger.info(f"delete pvc {name}")
-    core_v1_api.delete_namespaced_persistent_volume_claim(name, namespace)
+    try:
+        core_v1_api.delete_namespaced_persistent_volume_claim(name, namespace)
+    except Exception as e:
+        logger.error("Exception when calling CoreV1Api->delete_namespaced_persistent_volume_claim: %s\n" % e)
 
 
 def delete_storage(
