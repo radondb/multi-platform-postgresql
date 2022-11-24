@@ -602,18 +602,28 @@ def waiting_target_postgresql_ready(meta: kopf.Meta,
         raise kopf.PermanentError("waiting_postgresql_ready timeout.")
 
 
-def waiting_instance_ready(conns: InstanceConnections, logger: logging.Logger):
+def waiting_instance_ready(conns: InstanceConnections,
+                           logger: logging.Logger,
+                           connect_start: int = None,
+                           connect_end: int = None,
+                           timeout: int = WAIT_TIMEOUT):
+    if connect_start is None:
+        connect_start = 0
+    if connect_end is None:
+        connect_end = conns.get_number()
+    conns = conns.get_conns()[connect_start:connect_end]
+
     success_message = 'running success'
     cmd = ['echo', "'%s'" % success_message]
-    for conn in conns.get_conns():
+    for conn in conns:
         i = 0
-        maxtry = 300
+        maxtry = timeout
         while True:
             output = exec_command(conn, cmd, logger, interrupt=False)
             if output != success_message:
                 i += 1
                 time.sleep(1)
-                logger.error(f"instance not start. try {i} times. {output}")
+                logger.warning(f"instance not start. try {i} times. {output}")
                 if i >= maxtry:
                     logger.warning(f"instance not start. skip waitting.")
                     break
@@ -681,8 +691,11 @@ def create_statefulset(
 
     logger.info(f"create statefulset with {statefulset_body}")
     kopf.adopt(statefulset_body)
-    apps_v1_api.create_namespaced_stateful_set(namespace=namespace,
-                                               body=statefulset_body)
+    try:
+        apps_v1_api.create_namespaced_stateful_set(namespace=namespace,
+                                                   body=statefulset_body)
+    except Exception as e:
+        print("Exception when calling AppsV1Api->create_namespaced_stateful_set: %s\n" % e)
 
 
 def get_realimage_from_env(yaml_image: str) -> str:
@@ -1208,6 +1221,8 @@ def create_postgresql(
                                localspec[PODSPEC],
                                localspec[VOLUMECLAIMTEMPLATES], antiaffinity,
                                k8s_env, logger, k8s_exporter_env)
+            # waiting pull image success and instance ready
+            waiting_instance_ready(conns, logger, replica, replica + 1)
 
         # wait primary node create finish
         if wait_primary == True and field == get_field(
@@ -1217,7 +1232,7 @@ def create_postgresql(
             if is_restore_mode(meta, spec, patch, status, logger) == False:
                 tmpconns: InstanceConnections = InstanceConnections()
                 tmpconns.add(tmpconn)
-                waiting_postgresql_ready(tmpconns, logger, timeout = MINUTES * 10)
+                waiting_postgresql_ready(tmpconns, logger, timeout = MINUTES * 5)
 
                 create_log_table(
                     logger, tmpconn,
@@ -1246,7 +1261,7 @@ def restore_postgresql_fromssh(
     tmpconns.add(conn)
 
     # wait postgresql ready
-    waiting_postgresql_ready(tmpconns, logger, timeout = MINUTES * 10)
+    waiting_postgresql_ready(tmpconns, logger, timeout = MINUTES * 5)
 
     # drop from autofailover and pause start postgresql
     cmd = ["pgtools", "-d", "-p", POSTGRESQL_PAUSE]
@@ -2527,7 +2542,7 @@ def create_postgresql_cluster(
     create_autofailover(meta, spec, patch, status, logger,
                         get_autofailover_labels(meta))
     waiting_target_postgresql_ready(meta, spec, patch, get_field(AUTOFAILOVER),
-                                    status, logger, timeout = MINUTES * 10)
+                                    status, logger, timeout = MINUTES * 5)
 
     # create postgresql & readwrite node
     # set_create_cluster(patch, CLUSTER_CREATE_ADD_READWRITE)
@@ -2566,7 +2581,7 @@ def create_cluster(
         create_postgresql_cluster(meta, spec, patch, status, logger)
 
         logger.info("waiting for create_cluster success")
-        waiting_cluster_final_status(meta, spec, patch, status, logger, timeout = MINUTES * 10)
+        waiting_cluster_final_status(meta, spec, patch, status, logger, timeout = MINUTES * 5)
 
         update_pgpassfile(meta, spec, patch, status, logger)
 
@@ -3224,19 +3239,19 @@ def update_podspec_volume(
                        0:len(DIFF_FIELD_AUTOFAILOVER_VOLUME
                              )] == DIFF_FIELD_AUTOFAILOVER_VOLUME:
         rolling_update(meta, spec, patch, status, logger,
-                       [get_field(AUTOFAILOVER)], timeout = MINUTES * 10)
+                       [get_field(AUTOFAILOVER)], timeout = MINUTES * 5)
     if FIELD[0:len(DIFF_FIELD_READWRITE_PODSPEC
                    )] == DIFF_FIELD_READWRITE_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_READWRITE_VOLUME
                              )] == DIFF_FIELD_READWRITE_VOLUME:
         rolling_update(meta, spec, patch, status, logger,
-                       [get_field(POSTGRESQL, READWRITEINSTANCE)], timeout = MINUTES * 10)
+                       [get_field(POSTGRESQL, READWRITEINSTANCE)], timeout = MINUTES * 5)
     if FIELD[0:len(DIFF_FIELD_READONLY_PODSPEC
                    )] == DIFF_FIELD_READONLY_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_READONLY_VOLUME
                              )] == DIFF_FIELD_READONLY_VOLUME:
         rolling_update(meta, spec, patch, status, logger,
-                       [get_field(POSTGRESQL, READONLYINSTANCE)], timeout = MINUTES * 10)
+                       [get_field(POSTGRESQL, READONLYINSTANCE)], timeout = MINUTES * 5)
 
 
 def update_antiaffinity(
@@ -3999,7 +4014,7 @@ def update_cluster(
             update_antiaffinity(meta, spec, patch, status, logger, [
                 get_field(POSTGRESQL, READWRITEINSTANCE),
                 get_field(POSTGRESQL, READONLYINSTANCE)
-            ], True, timeout = MINUTES * 10)
+            ], True, timeout = MINUTES * 5)
 
         for diff in diffs:
             AC = diff[0]
@@ -4022,7 +4037,7 @@ def update_cluster(
 
         # after waiting_cluster_final_status. update number_sync
         if need_update_number_sync_standbys:
-            waiting_cluster_final_status(meta, spec, patch, status, logger, timeout = MINUTES * 10)
+            waiting_cluster_final_status(meta, spec, patch, status, logger, timeout = MINUTES * 5)
             update_number_sync_standbys(meta, spec, patch, status, logger)
 
         # wait a few seconds to prevent the pod not running
