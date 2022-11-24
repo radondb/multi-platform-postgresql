@@ -3243,19 +3243,19 @@ def update_podspec_volume(
                        0:len(DIFF_FIELD_AUTOFAILOVER_VOLUME
                              )] == DIFF_FIELD_AUTOFAILOVER_VOLUME:
         rolling_update(meta, spec, patch, status, logger,
-                       [get_field(AUTOFAILOVER)], timeout = MINUTES * 5)
+                       [get_field(AUTOFAILOVER)], exit = True, timeout = MINUTES * 5)
     if FIELD[0:len(DIFF_FIELD_READWRITE_PODSPEC
                    )] == DIFF_FIELD_READWRITE_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_READWRITE_VOLUME
                              )] == DIFF_FIELD_READWRITE_VOLUME:
         rolling_update(meta, spec, patch, status, logger,
-                       [get_field(POSTGRESQL, READWRITEINSTANCE)], timeout = MINUTES * 5)
+                       [get_field(POSTGRESQL, READWRITEINSTANCE)], exit = True,  timeout = MINUTES * 5)
     if FIELD[0:len(DIFF_FIELD_READONLY_PODSPEC
                    )] == DIFF_FIELD_READONLY_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_READONLY_VOLUME
                              )] == DIFF_FIELD_READONLY_VOLUME:
         rolling_update(meta, spec, patch, status, logger,
-                       [get_field(POSTGRESQL, READONLYINSTANCE)], timeout = MINUTES * 5)
+                       [get_field(POSTGRESQL, READONLYINSTANCE)], exit = True, timeout = MINUTES * 5)
 
 
 def update_antiaffinity(
