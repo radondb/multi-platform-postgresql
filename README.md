@@ -61,7 +61,7 @@ kubectl apply -f https://raw.githubusercontent.com/radondb/multi-platform-postgr
 
 ### Step 2: Deploy a RadonDB PostgreSQL Cluster.
 
-Run the following command to create an instance of the `postgresqls.postgres.radondb.io` CRD and thereby create a RadonDB MySQL cluster by using the default parameters.
+Run the following command to create an instance of the `postgresqls.postgres.radondb.io` CRD and thereby create a RadonDB PostgreSQL cluster by using the default parameters.
 
 ```plain
 curl https://raw.githubusercontent.com/radondb/multi-platform-postgresql/V3.0.0/platforms/kubernetes/postgres-operator/deploy/postgresql.yaml | sed -e "s/image: /image: radondb\//g" > postgresql.yaml
