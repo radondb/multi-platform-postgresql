@@ -80,7 +80,9 @@ RUN	cd /usr/src/postgresql; \
 	>/dev/null; \
 	make -j `expr $(nproc) - 2` >/dev/null; \
 	make install; \
-	make -C contrib install;
+	make -C contrib install; \
+	echo "huge_pages=off" >> /var/lib/postgresql/share/postgresql.conf.sample;
+
 
 ADD pg_auto_failover /usr/src/pg_auto_failover
 RUN	cd /usr/src/pg_auto_failover; \
