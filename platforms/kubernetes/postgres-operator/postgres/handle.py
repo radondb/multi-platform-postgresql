@@ -3101,6 +3101,12 @@ def update_action(
             for conn in conns:
                 postgresql_action(meta, spec, patch, status, logger, conn,
                                   start)
+
+            if NEW == ACTION_START:
+                waiting_postgresql_ready(readwrite_conns, logger)
+                waiting_postgresql_ready(readonly_conns, logger)
+                waiting_cluster_final_status(meta, spec, patch, status, logger)
+
             autofailover_conns.free_conns()
             readwrite_conns.free_conns()
             readonly_conns.free_conns()
@@ -4036,8 +4042,10 @@ def update_cluster(
             update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
 
-        logger.info("waiting for update_cluster success")
-        waiting_cluster_final_status(meta, spec, patch, status, logger)
+        # waiting
+        if spec[ACTION] == ACTION_START:
+            logger.info("waiting for update_cluster success")
+            waiting_cluster_final_status(meta, spec, patch, status, logger)
 
         # after waiting_cluster_final_status. update number_sync
         if need_update_number_sync_standbys:
