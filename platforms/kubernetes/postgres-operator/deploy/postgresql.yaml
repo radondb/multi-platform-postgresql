@@ -61,6 +61,9 @@ spec:
         - image: radondb-postgres-exporter:v1.1.0
           imagePullPolicy: IfNotPresent
           name: exporter # can't change the name
+          volumeMounts:
+            - name: data # can't change the name
+              mountPath: /var/lib/postgresql/data
           resources:
             limits:
               memory: "100Mi"
@@ -106,6 +109,9 @@ spec:
           - image: radondb-postgres-exporter:v1.1.0
             imagePullPolicy: IfNotPresent
             name: exporter # can't change the name
+            volumeMounts:
+              - name: data # can't change the name
+                mountPath: /var/lib/postgresql/data
             resources:
               limits:
                 memory: "100Mi"
@@ -137,6 +143,9 @@ spec:
           - image: radondb-postgres-exporter:v1.1.0
             imagePullPolicy: IfNotPresent
             name: exporter # can't change the name
+            volumeMounts:
+              - name: data # can't change the name
+                mountPath: /var/lib/postgresql/data
             resources:
               limits:
                 memory: "100Mi"
