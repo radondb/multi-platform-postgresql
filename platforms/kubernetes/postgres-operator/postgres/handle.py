@@ -210,12 +210,12 @@ PG_CONFIG_RESTART = (
     "track_commit_timestamp", "unix_socket_directories", "unix_socket_group",
     "unix_socket_permissions", "wal_buffers", "wal_level", "wal_log_hints")
 units = {
-    "Ki": 2 << 10,
-    "Mi": 2 << 20,
-    "Gi": 2 << 30,
-    "Ti": 2 << 40,
-    "Pi": 2 << 50,
-    "Ei": 2 << 60,
+    "Ki": 1 << 10,
+    "Mi": 1 << 20,
+    "Gi": 1 << 30,
+    "Ti": 1 << 40,
+    "Pi": 1 << 50,
+    "Ei": 1 << 60,
     "K": pow(1000, 1),
     "M": pow(1000, 2),
     "G": pow(1000, 3),
