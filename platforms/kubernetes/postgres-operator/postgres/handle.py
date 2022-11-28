@@ -2743,7 +2743,7 @@ def resize_pvc(
             return
 
         i = 0
-        while i < WAIT_TIMEOUT and real_status != "FileSystemResizePending" and convert_to_bytes(real_size) <= convert_to_bytes(size):
+        while i < WAIT_TIMEOUT and real_status != "FileSystemResizePending" and convert_to_bytes(real_size) < convert_to_bytes(size):
             real_size, real_status = read_pvc_size_and_status(meta, spec, patch, status, logger, pvc_name)
             i += 1
             time.sleep(SECONDS)
