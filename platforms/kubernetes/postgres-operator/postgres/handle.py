@@ -209,6 +209,20 @@ PG_CONFIG_RESTART = (
     "superuser_reserved_connections", "track_activity_query_size",
     "track_commit_timestamp", "unix_socket_directories", "unix_socket_group",
     "unix_socket_permissions", "wal_buffers", "wal_level", "wal_log_hints")
+units = {
+    "Ki": 2 << 10,
+    "Mi": 2 << 20,
+    "Gi": 2 << 30,
+    "Ti": 2 << 40,
+    "Pi": 2 << 50,
+    "Ei": 2 << 60,
+    "K": pow(1000, 1),
+    "M": pow(1000, 2),
+    "G": pow(1000, 3),
+    "T": pow(1000, 4),
+    "P": pow(1000, 5),
+    "E": pow(1000, 6)
+}
 
 
 POSTGRESQL_PAUSE = "pause"
@@ -2719,20 +2733,18 @@ def resize_pvc(
     core_v1_api = client.CoreV1Api()
 
     try:
+        real_size, real_status = read_pvc_size_and_status(meta, spec, patch, status, logger, pvc_name)
         core_v1_api.patch_namespaced_persistent_volume_claim(pvc_name,
-                                         meta["namespace"],
-                                         patch_pvc_body(size))
+                                                             meta["namespace"],
+                                                             patch_pvc_body(size))
+
+        if convert_to_bytes(real_size) >= convert_to_bytes(size):
+            logger.warning(f"pvc {pvc_name} does not need expand.")
+            return
+
         i = 0
-        real_size = "0Gi"
-        real_status = ""
-        while i < WAIT_TIMEOUT and real_size != size and real_status != "FileSystemResizePending":
-            pvc = client.V1PersistentVolumeClaim(core_v1_api.read_namespaced_persistent_volume_claim(name=pvc_name,
-                                                                                                     namespace=meta["namespace"]))
-            pvc_status = pvc.to_dict().get("api_version", {}).get("status", {})
-            real_size = pvc_status.get("capacity", {}).get("storage")
-            real_status = ""
-            if pvc_status.get("conditions", None) is not None:
-                real_status = pvc_status.get("conditions", [])[0].get("type")
+        while i < WAIT_TIMEOUT and real_status != "FileSystemResizePending" and convert_to_bytes(real_size) <= convert_to_bytes(size):
+            real_size, real_status = read_pvc_size_and_status(meta, spec, patch, status, logger, pvc_name)
             i += 1
             time.sleep(SECONDS)
             logger.warning(f"resize_pvc on {pvc_name} not success, try {i} times. current status is {real_status}, current size is {real_size}")
@@ -2743,6 +2755,39 @@ def resize_pvc(
             "Exception when calling AppsV1Api->patch_namespaced_persistent_volume_claim or read_namespaced_persistent_volume_claim: %s\n"
             % e)
         time.sleep(SECONDS * 10)
+
+
+def read_pvc_size_and_status(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    pvc_name: str,
+) -> (str, str):
+    core_v1_api = client.CoreV1Api()
+
+    pvc = client.V1PersistentVolumeClaim(core_v1_api.read_namespaced_persistent_volume_claim(name=pvc_name,
+                                                                                             namespace=meta["namespace"]))
+    pvc_status = pvc.to_dict().get("api_version", {}).get("status", {})
+    real_size = pvc_status.get("capacity", {}).get("storage")
+    real_status = ""
+    if pvc_status.get("conditions", None) is not None:
+        real_status = pvc_status.get("conditions", [])[0].get("type")
+    return real_size, real_status
+
+
+def convert_to_bytes(pvc: str) -> int:
+    index = 0
+    for i in range(len(pvc)):
+        try:
+            int(pvc[i])
+        except:
+            index = i
+            break
+    value = pvc[:index]
+    unit = pvc[index:]
+    return int(value) * int(units.get(unit, 1))
 
 
 def get_conn_role(conn: InstanceConnection) -> str:
