@@ -1,6 +1,7 @@
 # Build container
 FROM python:3.10-slim
 
+ENV TZ=Asia/Shanghai
 RUN mkdir -pv /src
 
 WORKDIR /src

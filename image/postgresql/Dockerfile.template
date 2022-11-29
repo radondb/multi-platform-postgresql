@@ -118,6 +118,7 @@ RUN cd /var/lib/postgresql; \
 FROM debian:{{ .debian }}
 
 ENV LANG en_US.utf8
+ENV TZ=Asia/Shanghai
 ENV DATA /var/lib/postgresql/data
 ENV XDG_CONFIG_HOME /var/lib/postgresql/data/auto_failover
 ENV XDG_DATA_HOME /var/lib/postgresql/data/auto_failover
