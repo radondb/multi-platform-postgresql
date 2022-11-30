@@ -138,6 +138,7 @@ from constants import (
     MINUTES,
     HOURS,
     DAYS,
+    UPDATE_TOLERATION,
 )
 
 PGLOG_DIR = "log"
@@ -417,9 +418,12 @@ def waiting_cluster_final_status(
     status: kopf.Status,
     logger: logging.Logger,
     timeout: int = MINUTES * 1,
-) -> None:
+    except_nodes: int = None,
+) -> bool:
+    is_health = True
+
     if spec[ACTION] == ACTION_STOP:
-        return
+        return is_health
 
     # waiting for restart
     auto_failover_conns = connections(spec, meta, patch,
@@ -449,6 +453,7 @@ def waiting_cluster_final_status(
             if i >= maxtry:
                 logger.warning(
                     f"cluster maybe maybe not right. skip waitting.")
+                is_health = False
                 break
             output = exec_command(conn, primary_cmd, logger, interrupt=False)
             if output != '1':
@@ -475,6 +480,8 @@ def waiting_cluster_final_status(
                     spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(MACHINES)
                 ) + len(
                     spec.get(POSTGRESQL).get(READONLYINSTANCE).get(MACHINES))
+            if except_nodes is not None:
+                total_nodes = except_nodes
             output = exec_command(conn, nodes_cmd, logger, interrupt=False)
             if output != str(total_nodes):
                 logger.warning(
@@ -484,6 +491,7 @@ def waiting_cluster_final_status(
 
             break
     auto_failover_conns.free_conns()
+    return is_health
 
 
 def waiting_cluster_correct_status(
@@ -3321,7 +3329,7 @@ def update_antiaffinity(
     timeout: int = MINUTES * 5,
 ) -> None:
     # local volume
-    if spec.get(SPEC_VOLUME_TYPE) == SPEC_VOLUME_LOCAL:
+    if spec.get(SPEC_VOLUME_TYPE, 'local') == SPEC_VOLUME_LOCAL:
         delete_disk = True
         timeout = HOURS * 1
     rolling_update(meta, spec, patch, status, logger, target_roles, exit,
@@ -3407,6 +3415,8 @@ def update_replicas(
         create_services(meta, spec, patch, status, logger)
 
         need_update_number_sync_standbys = True
+
+    waiting_cluster_final_status(meta, spec, patch, status, logger, 1 * HOURS)
 
     return need_update_number_sync_standbys
 
@@ -4019,6 +4029,48 @@ def update_users(
         auto_failover_conns.free_conns()
 
 
+def get_except_nodes(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    diffs: kopf.Diff,
+) -> int:
+    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(
+        spec)
+    except_readwrite_nodes = readwrite_replicas
+    except_readonly_nodes = readonly_replicas
+
+    for diff in diffs:
+        AC = diff[0]
+        FIELD = diff[1]
+        OLD = diff[2]
+        NEW = diff[3]
+
+        if FIELD == DIFF_FIELD_READWRITE_REPLICAS:
+            if AC != DIFF_CHANGE:
+                logger.error(
+                    str(DIFF_FIELD_ACTION) + " only support " + DIFF_CHANGE)
+            else:
+                except_readwrite_nodes = OLD
+
+        if FIELD == DIFF_FIELD_READWRITE_MACHINES:
+            if AC != DIFF_CHANGE:
+                logger.error(
+                    str(DIFF_FIELD_ACTION) + " only support " + DIFF_CHANGE)
+            else:
+                except_readwrite_nodes = len(OLD)
+
+        if FIELD == DIFF_FIELD_READONLY_REPLICAS:
+            except_readwrite_nodes = OLD
+
+        if FIELD == DIFF_FIELD_READONLY_MACHINES:
+            except_readwrite_nodes = len(OLD)
+
+    return except_readwrite_nodes + except_readonly_nodes
+
+
 # kubectl patch pg lzzhang --patch '{"spec": {"action": "stop"}}' --type=merge
 def update_cluster(
     meta: kopf.Meta,
@@ -4035,6 +4087,8 @@ def update_cluster(
         check_param(spec, logger, create=False)
         need_roll_update = False
         need_update_number_sync_standbys = False
+        update_toleration = spec.get(UPDATE_TOLERATION, False)
+        except_nodes = get_except_nodes(meta, spec, patch, status, logger, diffs)
 
         for diff in diffs:
             AC = diff[0]
@@ -4055,10 +4109,25 @@ def update_cluster(
             OLD = diff[2]
             NEW = diff[3]
 
+            if update_toleration == False and waiting_cluster_final_status(meta, spec, patch, status, logger, except_nodes=except_nodes) == False:
+                logger.error(f"cluster status is not health.")
+                raise kopf.PermanentError(f"cluster status is not health.")
+
             return_update_number_sync_standbys = update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD,
                             NEW)
             if need_update_number_sync_standbys == False and return_update_number_sync_standbys == True:
                 need_update_number_sync_standbys = True
+
+        for diff in diffs:
+            AC = diff[0]
+            FIELD = diff[1]
+            OLD = diff[2]
+            NEW = diff[3]
+
+            if update_toleration == False and waiting_cluster_final_status(meta, spec, patch, status, logger) == False:
+                logger.error(f"cluster status is not health.")
+                raise kopf.PermanentError(f"cluster status is not health.")
+
             update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
                                   OLD, NEW)
             if FIELD[0:len(DIFF_FIELD_SPEC_ANTIAFFINITY
@@ -4076,6 +4145,10 @@ def update_cluster(
             FIELD = diff[1]
             OLD = diff[2]
             NEW = diff[3]
+
+            if update_toleration == False and waiting_cluster_final_status(meta, spec, patch, status, logger) == False:
+                logger.error(f"cluster status is not health.")
+                raise kopf.PermanentError(f"cluster status is not health.")
 
             update_hbas(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
             update_users(meta, spec, patch, status, logger, AC, FIELD, OLD,
