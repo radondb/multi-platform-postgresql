@@ -4063,10 +4063,10 @@ def get_except_nodes(
                 except_readwrite_nodes = len(OLD)
 
         if FIELD == DIFF_FIELD_READONLY_REPLICAS:
-            except_readwrite_nodes = OLD
+            except_readonly_nodes = OLD
 
         if FIELD == DIFF_FIELD_READONLY_MACHINES:
-            except_readwrite_nodes = len(OLD)
+            except_readonly_nodes = len(OLD)
 
     return except_readwrite_nodes + except_readonly_nodes
 
