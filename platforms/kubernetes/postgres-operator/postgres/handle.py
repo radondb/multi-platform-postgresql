@@ -3416,8 +3416,6 @@ def update_replicas(
 
         need_update_number_sync_standbys = True
 
-    waiting_cluster_final_status(meta, spec, patch, status, logger, 1 * HOURS)
-
     return need_update_number_sync_standbys
 
 
@@ -4103,20 +4101,25 @@ def update_cluster(
             update_service(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
 
-        for diff in diffs:
-            AC = diff[0]
-            FIELD = diff[1]
-            OLD = diff[2]
-            NEW = diff[3]
+        if update_toleration == False and waiting_cluster_final_status(meta, spec, patch, status, logger,
+                                                                       except_nodes=except_nodes) == False:
+            logger.error(f"cluster status is not health.")
+            raise kopf.PermanentError(f"cluster status is not health.")
+        else:
+            for diff in diffs:
+                AC = diff[0]
+                FIELD = diff[1]
+                OLD = diff[2]
+                NEW = diff[3]
+    
+                return_update_number_sync_standbys = update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD,
+                                NEW)
+                if need_update_number_sync_standbys == False and return_update_number_sync_standbys == True:
+                    need_update_number_sync_standbys = True
 
-            if update_toleration == False and waiting_cluster_final_status(meta, spec, patch, status, logger, except_nodes=except_nodes) == False:
-                logger.error(f"cluster status is not health.")
-                raise kopf.PermanentError(f"cluster status is not health.")
-
-            return_update_number_sync_standbys = update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD,
-                            NEW)
-            if need_update_number_sync_standbys == False and return_update_number_sync_standbys == True:
-                need_update_number_sync_standbys = True
+        # update readwrite replicas or update readonly replicas need wait pg_basebackup
+        if need_update_number_sync_standbys:
+            waiting_cluster_final_status(meta, spec, patch, status, logger, 1 * HOURS)
 
         for diff in diffs:
             AC = diff[0]
