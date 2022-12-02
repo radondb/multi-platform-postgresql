@@ -2860,8 +2860,11 @@ def correct_postgresql_password(
     readwrite_conns = connections(spec, meta, patch,
                                   get_field(POSTGRESQL, READWRITEINSTANCE),
                                   False, None, logger, None, status, False)
-    conn = get_primary_conn(readwrite_conns, 0, logger)
-    correct_user_password(meta, spec, patch, status, logger, conn)
+    conn = get_primary_conn(readwrite_conns, 0, logger, interrupt = False)
+    if conn == None:
+        logger.error(f"can't correct readwrite password. because get primary conn failed")
+    else:
+        correct_user_password(meta, spec, patch, status, logger, conn)
     readwrite_conns.free_conns()
 
 
@@ -2967,8 +2970,8 @@ def timer_cluster(
 ) -> None:
 
     correct_postgresql_role(meta, spec, patch, status, logger)
-    correct_postgresql_password(meta, spec, patch, status, logger)
     correct_keepalived(meta, spec, patch, status, logger)
+    correct_postgresql_password(meta, spec, patch, status, logger)
 
 def update_number_sync_standbys(
     meta: kopf.Meta,
@@ -3530,7 +3533,7 @@ def update_configs_utile(
     # pg_autoctl set node candidate-priority 0 --pgdata=s
 
     if autofailover == False and restart == True:
-        update_node_priority(meta, spec, patch, status, logger, conns, NODE_PRIORITY_NEVER, primary_host)
+        update_node_priority(meta, spec, patch, status, logger, readwrite_conns.get_conns(), NODE_PRIORITY_NEVER, primary_host)
 
     # first update primary node
     checkpoint_cmd = ["pgtools", "-w", "0", "-q", "'checkpoint'"]
@@ -3583,7 +3586,7 @@ def update_configs_utile(
     waiting_postgresql_ready(readonly_conns, logger)
     waiting_cluster_final_status(meta, spec, patch, status, logger)
     if autofailover == False and restart == True:
-        update_node_priority(meta, spec, patch, status, logger, conns, NODE_PRIORITY_DEFAULT, primary_host)
+        update_node_priority(meta, spec, patch, status, logger, readwrite_conns.get_conns(), NODE_PRIORITY_DEFAULT, primary_host)
     waiting_cluster_final_status(meta, spec, patch, status, logger)
 
 def update_configs_port(
