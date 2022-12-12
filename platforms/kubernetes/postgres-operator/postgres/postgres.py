@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import kopf
 from constants import (
@@ -6,7 +7,8 @@ from constants import (
     RESOURCE_POSTGRESQL,
 )
 from config import operator_config
-from handle import create_cluster, delete_cluster, timer_cluster, update_cluster
+from handle import create_cluster, delete_cluster, timer_cluster, update_cluster, daemon_cluster
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from kubernetes import client, config
 
@@ -110,3 +112,38 @@ def cluster_timer(
     **_kwargs,
 ):
     timer_cluster(meta, spec, patch, status, logger)
+
+
+@kopf.daemon(
+    API_GROUP,
+    API_VERSION_V1,
+    RESOURCE_POSTGRESQL,
+    backoff=operator_config.BOOTSTRAP_RETRY_DELAY,
+    initial_delay=30,
+    cancellation_timeout=3.0,
+)
+def cluster_daemon(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    **_kwargs,
+):
+
+    # init and start BackgroundScheduler
+    scheduler = BackgroundScheduler()
+    job_defaults = {
+        'coalesce': False,
+        'max_instances': 1
+    }
+    scheduler.configure(job_defaults)
+    scheduler.start()
+    try:
+        while True:
+            await daemon_cluster(meta, spec, patch, status, logger, scheduler)
+            await asyncio.sleep(60)
+    except asyncio.CancelledError:
+        scheduler.remove_all_jobs()
+        scheduler.shutdown()
+        logger.warning(f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done. remove all jobs and shutdown scheduler.")
