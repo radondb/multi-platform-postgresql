@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import kopf
 import paramiko
@@ -4756,7 +4755,7 @@ def cron_backup(
         traceback.format_exc()
 
 
-async def cron_cluster(
+def cron_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -4803,7 +4802,7 @@ async def cron_cluster(
         set_cluster_status(meta, CLUSTER_STATUS_CRON_NEXT_RUN, next_run_time, logger)
 
 
-async def daemon_cluster(
+def daemon_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -4814,7 +4813,7 @@ async def daemon_cluster(
 
     try:
         logger.info(f"Daemon 'daemon_cluster' execute.")
-        await cron_cluster(meta, spec, patch, status, logger, scheduler)
+        cron_cluster(meta, spec, patch, status, logger, scheduler)
         logger.info(f"Daemon 'daemon_cluster' succeeded.")
     except ValueError:
         logger.error(f"cluster_daemon failed.")

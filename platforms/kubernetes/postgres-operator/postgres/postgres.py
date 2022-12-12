@@ -1,4 +1,4 @@
-import asyncio
+import time
 import logging
 import kopf
 from constants import (
@@ -128,6 +128,7 @@ def cluster_daemon(
     patch: kopf.Patch,
     status: kopf.Status,
     logger: logging.Logger,
+    stopped: kopf.DaemonStopped,
     **_kwargs,
 ):
 
@@ -139,11 +140,12 @@ def cluster_daemon(
     }
     scheduler.configure(job_defaults)
     scheduler.start()
-    try:
-        while True:
-            await daemon_cluster(meta, spec, patch, status, logger, scheduler)
-            await asyncio.sleep(60)
-    except asyncio.CancelledError:
-        scheduler.remove_all_jobs()
-        scheduler.shutdown()
-        logger.warning(f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done. remove all jobs and shutdown scheduler.")
+    
+    while not stopped:
+        daemon_cluster(meta, spec, patch, status, logger, scheduler)
+        time.sleep(60)
+
+    scheduler.remove_all_jobs()
+    scheduler.shutdown()
+    logger.warning(
+        f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done. remove all jobs and shutdown scheduler.")
