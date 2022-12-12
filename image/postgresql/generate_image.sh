@@ -44,6 +44,7 @@ build_image()
 	cp -r ../../source_code/pg_dirtyread "$dir/"
 	cp -r ../../source_code/citus "$dir/"
 	cp -r ../../source_code/postgis "$dir/"
+	cp -r ../../source_code/barman "$dir/"
 
 	cd "$dir"
 	echo "build docker image $image ..."
