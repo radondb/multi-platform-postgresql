@@ -54,7 +54,7 @@ kubectl create ns radondb-postgres-operator
 ##### 2) 部署 Operator
 
 ```plain
-kubectl apply -f https://raw.githubusercontent.com/radondb/multi-platform-postgresql/V3.0.0/platforms/kubernetes/postgres-operator/deploy/postgres-operator.yaml
+kubectl apply -f https://raw.githubusercontent.com/radondb/multi-platform-postgresql/main/platforms/kubernetes/postgres-operator/deploy/postgres-operator.yaml
 ```
 
 ### 步骤 2: 部署 RadonDB PostgreSQL 集群
@@ -62,7 +62,7 @@ kubectl apply -f https://raw.githubusercontent.com/radondb/multi-platform-postgr
 执行以下指令，以默认参数为 CRD `postgresqls.postgres.radondb.io` 创建一个实例，即创建 RadonDB PostgreSQL 集群。
 
 ```plain
-curl https://raw.githubusercontent.com/radondb/multi-platform-postgresql/V3.0.0/platforms/kubernetes/postgres-operator/deploy/postgresql.yaml | sed -e "s/image: /image: radondb\//g" > postgresql.yaml
+curl https://raw.githubusercontent.com/radondb/multi-platform-postgresql/main/platforms/kubernetes/postgres-operator/deploy/postgresql.yaml | sed -e "s/image: /image: radondb\//g" > postgresql.yaml
 kubectl apply -f postgresql.yaml
 ```
 

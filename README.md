@@ -56,7 +56,7 @@ kubectl create ns radondb-postgres-operator
 ##### 2) Install Operator.
 
 ```plain
-kubectl apply -f https://raw.githubusercontent.com/radondb/multi-platform-postgresql/V3.0.0/platforms/kubernetes/postgres-operator/deploy/postgres-operator.yaml
+kubectl apply -f https://raw.githubusercontent.com/radondb/multi-platform-postgresql/main/platforms/kubernetes/postgres-operator/deploy/postgres-operator.yaml
 ```
 
 ### Step 2: Deploy a RadonDB PostgreSQL Cluster.
@@ -64,7 +64,7 @@ kubectl apply -f https://raw.githubusercontent.com/radondb/multi-platform-postgr
 Run the following command to create an instance of the `postgresqls.postgres.radondb.io` CRD and thereby create a RadonDB PostgreSQL cluster by using the default parameters.
 
 ```plain
-curl https://raw.githubusercontent.com/radondb/multi-platform-postgresql/V3.0.0/platforms/kubernetes/postgres-operator/deploy/postgresql.yaml | sed -e "s/image: /image: radondb\//g" > postgresql.yaml
+curl https://raw.githubusercontent.com/radondb/multi-platform-postgresql/main/platforms/kubernetes/postgres-operator/deploy/postgresql.yaml | sed -e "s/image: /image: radondb\//g" > postgresql.yaml
 kubectl apply -f postgresql.yaml
 ```
 
