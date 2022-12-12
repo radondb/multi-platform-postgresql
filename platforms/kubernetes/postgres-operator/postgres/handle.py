@@ -139,6 +139,9 @@ from constants import (
     HOURS,
     DAYS,
     UPDATE_TOLERATION,
+    SPEC_POD_PRIORITY_CLASS,
+    SPEC_POD_PRIORITY_CLASS_SCOPE_NODE,
+    SPEC_POD_PRIORITY_CLASS_SCOPE_CLUSTER,
 )
 
 PGLOG_DIR = "log"
@@ -680,6 +683,8 @@ def create_statefulset(
         "serviceName"] = statefulset_name_get_service_name(name)
     podspec = podspec_need_copy.copy()
     podspec["restartPolicy"] = "Always"
+    podspec.setdefault(SPEC_POD_PRIORITY_CLASS,
+                       SPEC_POD_PRIORITY_CLASS_SCOPE_CLUSTER)
     antiaffinity = antiaffinity_need_copy.copy()
     is_required = antiaffinity[
         SPEC_ANTIAFFINITY_POLICY] == SPEC_ANTIAFFINITY_REQUIRED
@@ -3011,6 +3016,37 @@ def update_number_sync_standbys(
                 break
         autofailover_conns.free_conns()
 
+def update_number_sync_standbys(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(
+        spec)
+
+    pg_nodes = readwrite_replicas + readonly_replicas
+    number_sync = readwrite_replicas + readonly_replicas if spec[POSTGRESQL][READONLYINSTANCE][STREAMING] == STREAMING_SYNC else readwrite_replicas
+    expect_number = number_sync - 2
+    if expect_number < 0:
+        expect_number = 0
+
+    if pg_nodes >= 2:
+        autofailover_conns = connections(spec, meta, patch,
+                                         get_field(AUTOFAILOVER), False,
+                                         None, logger, None, status, False)
+        cmd = [
+            "pgtools", "-S",
+            "' formation number-sync-standbys  " + str(expect_number) + PRIMARY_FORMATION + "'"
+        ]
+        logger.info(f"set number-sync-standbys with cmd {cmd}")
+        output = exec_command(autofailover_conns.get_conns()[0], cmd, logger, interrupt=False)
+        if output.find(SUCCESS) == -1:
+            logger.error(
+                    f"set number-sync-standbys failed {cmd}  {output}")
+        autofailover_conns.free_conns()
+
 
 def update_streaming(
     meta: kopf.Meta,
@@ -3047,6 +3083,7 @@ def update_streaming(
                                 get_field(POSTGRESQL, READONLYINSTANCE), False,
                                 None, logger, None, status, False)
             for conn in conns.get_conns():
+
                 i = 0
                 while True:
                     output = exec_command(conn, cmd, logger, interrupt=False)
@@ -3058,6 +3095,7 @@ def update_streaming(
                             break
                     else:
                         break
+
             conns.free_conns()
 
     return need_update_number_sync_standbys
@@ -4091,6 +4129,7 @@ def update_cluster(
         update_toleration = spec.get(UPDATE_TOLERATION, False)
         except_nodes = get_except_nodes(meta, spec, patch, status, logger, diffs)
 
+
         for diff in diffs:
             AC = diff[0]
             FIELD = diff[1]
@@ -4130,9 +4169,11 @@ def update_cluster(
             OLD = diff[2]
             NEW = diff[3]
 
+
             if update_toleration == False and waiting_cluster_final_status(meta, spec, patch, status, logger) == False:
                 logger.error(f"cluster status is not health.")
                 raise kopf.PermanentError(f"cluster status is not health.")
+
 
             update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
                                   OLD, NEW)
@@ -4174,6 +4215,10 @@ def update_cluster(
         # after waiting_cluster_final_status. update number_sync
         if need_update_number_sync_standbys:
             waiting_cluster_final_status(meta, spec, patch, status, logger, timeout = MINUTES * 5)
+            update_number_sync_standbys(meta, spec, patch, status, logger)
+
+        # after waiting_cluster_final_status. update number_sync
+        if need_update_number_sync_standbys:
             update_number_sync_standbys(meta, spec, patch, status, logger)
 
         # wait a few seconds to prevent the pod not running
