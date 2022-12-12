@@ -21,6 +21,8 @@ class Config:
     DATA_PATH: str = "/data"
     DATA_PATH_AUTOFAILOVER: str = os.path.join(DATA_PATH, AUTOFAILOVER)
     DATA_PATH_POSTGRESQL: str = os.path.join(DATA_PATH, POSTGRESQL)
+    IMAGE_REGISTRY: str = ""
+    NAMESPACE_OVERRIDE: str = ""
 
     def __init__(self, *, prefix: str):
         self._prefix = prefix
@@ -112,6 +114,12 @@ class Config:
         # TESTING
         testing = self.env("TESTING", default=str(self.TESTING))
         self.TESTING = testing.lower() == "true"
+
+        # IMAGE_REGISTRY
+        self.IMAGE_REGISTRY = self.env("IMAGE_REGISTRY", default=self.IMAGE_REGISTRY)
+
+        # NAMESPACE_OVERRIDE
+        self.NAMESPACE_OVERRIDE = self.env("NAMESPACE_OVERRIDE", default=self.NAMESPACE_OVERRIDE)
 
     def env(self, name: str, *, default=UNDEFINED) -> str:
         full_name = f"{self._prefix}{name}"

@@ -32,6 +32,7 @@ STREAMING = "streaming"
 STREAMING_ASYNC = "async"
 STREAMING_SYNC = "sync"
 DELETE_PVC = "deletepvc"
+UPDATE_TOLERATION = "updatetoleration"
 POSTGRESQL_PVC_NAME = "data"
 SUCCESS = "exec_success"
 FAILED = "exec_failed"
@@ -64,7 +65,7 @@ RESOURCE_POSTGRESQL = "postgresqls"
 RESOURCE_KIND_POSTGRESQL = "PostgreSQL"
 
 # status.CLUSTER_CREATE_CLUSTER
-CLUSTER_CREATE_CLUSTER = "cluster_create"
+CLUSTER_STATE = "state"
 CLUSTER_CREATE_BEGIN = "begin"
 CLUSTER_CREATE_ADD_FAILOVER = "addition failover"
 CLUSTER_CREATE_ADD_READWRITE = "addition readwrite"
@@ -110,6 +111,7 @@ LABEL_STATEFULSET_NAME = "statefulset"
 # other
 MACHINE_MODE = "machine"
 K8S_MODE = "k8s"
+PGHOME = "/var/lib/postgresql"
 
 # antiaffinity
 SPEC_ANTIAFFINITY = "antiaffinity"

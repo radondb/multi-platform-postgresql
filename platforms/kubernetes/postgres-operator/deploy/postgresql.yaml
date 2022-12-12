@@ -6,7 +6,6 @@ metadata:
 spec:
   action: start #stop start
   deletepvc: true
-  volume_type: local       # local/cloud
   antiaffinity:
     policy: preferred                             # preferred/required
     podAntiAffinityTerm: autofailover-readwrite   # none/autofailover-readwrite/autofailover-readwrite-readonly
@@ -49,7 +48,7 @@ spec:
       terminationGracePeriodSeconds: 60
 #      priorityClassName: high-priority
       containers:
-        - image: radondb-postgresql:12.12-v1.0.0
+        - image: radondb-postgresql:15.0-v1.1.0
           imagePullPolicy: IfNotPresent
           name: postgresql #can't change the name
           volumeMounts:
@@ -59,9 +58,12 @@ spec:
             limits:
               memory: "200Mi"
               cpu: "0.2"
-        - image: radondb-postgres-exporter:v0.9.0
+        - image: radondb-postgres-exporter:v1.1.0
           imagePullPolicy: IfNotPresent
           name: exporter # can't change the name
+          volumeMounts:
+            - name: data # can't change the name
+              mountPath: /var/lib/postgresql/data
           resources:
             limits:
               memory: "100Mi"
@@ -94,7 +96,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: radondb-postgresql:12.12-v1.0.0
+          - image: radondb-postgresql:15.0-v1.1.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
@@ -104,9 +106,12 @@ spec:
               limits:
                 memory: "200Mi"
                 cpu: "0.2"
-          - image: radondb-postgres-exporter:v0.9.0
+          - image: radondb-postgres-exporter:v1.1.0
             imagePullPolicy: IfNotPresent
             name: exporter # can't change the name
+            volumeMounts:
+              - name: data # can't change the name
+                mountPath: /var/lib/postgresql/data
             resources:
               limits:
                 memory: "100Mi"
@@ -125,7 +130,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: radondb-postgresql:12.12-v1.0.0
+          - image: radondb-postgresql:15.0-v1.1.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
@@ -135,9 +140,12 @@ spec:
               limits:
                 memory: "200Mi"
                 cpu: "0.2"
-          - image: radondb-postgres-exporter:v0.9.0
+          - image: radondb-postgres-exporter:v1.1.0
             imagePullPolicy: IfNotPresent
             name: exporter # can't change the name
+            volumeMounts:
+              - name: data # can't change the name
+                mountPath: /var/lib/postgresql/data
             resources:
               limits:
                 memory: "100Mi"

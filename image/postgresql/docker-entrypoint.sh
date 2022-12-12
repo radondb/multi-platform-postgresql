@@ -107,7 +107,7 @@ main() {
 			run_port=5432
 		fi
 		if [ -s "$PGDATA/PG_VERSION" ]; then
-			run_port=$(cat ${PGDATA}/postgresql.conf | grep -w port | grep '[0-9]' | tail -n 1 | cut -d '=' -f 2 | cut -d "#" -f 1 | tr -d " ")
+			run_port=$(cat ${PGDATA}/postgresql_user.conf | grep -w port | grep '[0-9]' | tail -n 1 | cut -d '=' -f 2 | cut -d "#" -f 1 | tr -d " ")
 		fi
 		export run_port
 
@@ -133,7 +133,12 @@ main() {
 		# auto_failover data directory
 		#export XDG_CONFIG_HOME=${DATA}/auto_failover
 		#export XDG_DATA_HOME=${DATA}/auto_failover
-		export PGPASSWORD=$AUTOCTL_REPLICATOR_PASSWORD
+		#export PGPASSWORD=$AUTOCTL_REPLICATOR_PASSWORD
+		if [ ! -s "$PGPASSFILE" ]; then
+			echo "*:*:*:pgautofailover_replicator:$AUTOCTL_REPLICATOR_PASSWORD" > $PGPASSFILE
+			echo "*:*:*:autoctl_node:$AUTOCTL_NODE_PASSWORD" >> $PGPASSFILE
+			chmod 0600 $PGPASSFILE
+		fi
 
 		monitor_port=55555
 		formation=primary
@@ -162,7 +167,7 @@ main() {
 				run_port=5432
 			fi
 			if [ -s "$PGDATA/PG_VERSION" ]; then
-				run_port=$(cat ${PGDATA}/postgresql.conf | grep -w port | grep '[0-9]' | tail -n 1 | cut -d '=' -f 2 | cut -d "#" -f 1 | tr -d " ")
+				run_port=$(cat ${PGDATA}/postgresql_user.conf | grep -w port | grep '[0-9]' | tail -n 1 | cut -d '=' -f 2 | cut -d "#" -f 1 | tr -d " ")
 				if [ -s "$XDG_CONFIG_HOME/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.cfg" ]; then
 					pg_autoctl config set --pgdata "$PGDATA" postgresql.port $run_port
 				fi

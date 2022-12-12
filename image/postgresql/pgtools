@@ -65,6 +65,7 @@ do
 			;;
 		e)
 			env_name=${OPTARG%%=*}
+			env_name=`echo $env_name | sed 's/\./______/'`
 			env_value=${OPTARG#*=}
 			export "$env_name"="$env_value"
 			;;
@@ -143,9 +144,9 @@ function reload_postgresql(){
 function restart_postgresql(){
 	if [ "$PG_MODE" = monitor -o "$PG_MODE" = readwrite -o "$PG_MODE" = readonly ]; then
 		# auto_failover start it
-		pg_ctl restart -D $PGDATA
+		pg_ctl restart -D $PGDATA -l ${ASSIST}/restart_log
 	else
-		pg_ctl restart -D $PGDATA
+		pg_ctl restart -D $PGDATA -l ${ASSIST}/restart_log
 	fi
 	check_error $? "restart postgresql failed"
 }
@@ -167,6 +168,9 @@ function stop_auto_failover(){
 }
 
 if [ "${do_config}" = 1 ]; then
+	user_conf="postgresql_user.conf"
+
+	echo "" > $PGDATA/$user_conf
 
 	env | grep "^$PG_CONFIG" | while read item
 	do
@@ -174,8 +178,9 @@ if [ "${do_config}" = 1 ]; then
 		#conf_name=${conf%%=*}
 		#conf_value=${conf#*=}
 		#name_context=$(eval echo '$'$conf_name)
-		echo "$conf" >> $PGDATA/postgresql.conf
+		echo "$conf" | sed 's/______/\./' >> $PGDATA/$user_conf
 	done
+	echo "include '$user_conf'" >> $PGDATA/postgresql.conf
 
 	reload_postgresql
 	echo $SUCCESS
@@ -220,16 +225,16 @@ if [ "$ready_accept" = 1 ]; then
 fi
 
 if [ "$switchover" = 1 ]; then
-	for i in `seq 1 100`
-	do
-		pg_autoctl perform switchover --pgdata $PGDATA --formation primary
-		if [ $? == 0 ]; then
-			exit 0
-		fi
-		sleep 6
-	done
+	#for i in `seq 1 100`
+	#do
+	#	pg_autoctl perform switchover --pgdata $PGDATA --formation primary
+	#	if [ $? == 0 ]; then
+	#		exit 0
+	#	fi
+	#	sleep 6
+	#done
 	pg_autoctl perform switchover --pgdata $PGDATA --formation primary
-	check_error 1 "switchover failed"
+	check_error $? "switchover failed"
 fi
 
 if [ "${do_query}" = 1 ]; then

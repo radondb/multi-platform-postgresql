@@ -20,7 +20,7 @@ build_image()
 	cp -r ../../platforms/kubernetes/postgres-operator/postgres .
 
 	echo "build docker image $image ..."
-	docker buildx build --no-cache -t $image --platform $platform .
+	docker builder build --no-cache -t $image --platform $platform .
 }
 
 image=$(jq -r '.image' versions.json)

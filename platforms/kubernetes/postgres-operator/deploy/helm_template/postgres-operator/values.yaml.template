@@ -1,0 +1,8 @@
+enablePrometheusMonitor: {{ .template_enablePrometheusMonitor }}
+localRegistry: {{ .template_imageRegistry }}
+namespaceOverride: {{ .template_namespaceOverride }}
+
+operator:
+  name: {{ .template_name }}
+  image: {{ .template_image }}
+

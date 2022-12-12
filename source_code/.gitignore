@@ -1,3 +1,5 @@
 pg_auto_failover
 postgresql
 pg_dirtyread
+citus
+postgis

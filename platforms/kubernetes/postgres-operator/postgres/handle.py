@@ -64,7 +64,7 @@ from constants import (
     API_VERSION_V1,
     RESOURCE_POSTGRESQL,
     RESOURCE_KIND_POSTGRESQL,
-    CLUSTER_CREATE_CLUSTER,
+    CLUSTER_STATE,
     CLUSTER_CREATE_BEGIN,
     CLUSTER_CREATE_ADD_FAILOVER,
     CLUSTER_CREATE_ADD_READWRITE,
@@ -89,6 +89,7 @@ from constants import (
     LABEL_STATEFULSET_NAME,
     MACHINE_MODE,
     K8S_MODE,
+    PGHOME,
     DOCKER_COMPOSE_FILE,
     DOCKER_COMPOSE_FILE_DATA,
     DOCKER_COMPOSE_ENV,
@@ -137,11 +138,13 @@ from constants import (
     MINUTES,
     HOURS,
     DAYS,
+    UPDATE_TOLERATION,
     SPEC_POD_PRIORITY_CLASS,
     SPEC_POD_PRIORITY_CLASS_SCOPE_NODE,
     SPEC_POD_PRIORITY_CLASS_SCOPE_CLUSTER,
 )
 
+PGLOG_DIR = "log"
 PRIMARY_FORMATION = " --formation primary "
 FIELD_DELIMITER = "-"
 WAITING_POSTGRESQL_READY_COMMAND = ["pgtools", "-a"]
@@ -153,6 +156,7 @@ EXPORTER_PORT = 9187
 DIFF_ADD = "add"
 DIFF_CHANGE = "change"
 DIFF_REMOVE = "remove"
+PGPASSFILE_PATH = ASSIST_DIR + "/pgpassfile"
 DIFF_FIELD_ACTION = (SPEC, ACTION)
 DIFF_FIELD_SERVICE = (SPEC, SERVICES)
 DIFF_FIELD_AUTOFAILOVER_HBAS = (SPEC, AUTOFAILOVER, HBAS)
@@ -182,6 +186,7 @@ DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
 DIFF_FIELD_SPEC_ANTIAFFINITY = (SPEC, SPEC_ANTIAFFINITY)
 STATEFULSET_REPLICAS = 1
+PG_CONFIG_MASTER_LARGE_THAN_SLAVE = ("max_connections", "max_worker_processes", "max_wal_senders", "max_prepared_transactions", "max_locks_per_transaction")
 PG_CONFIG_IGNORE = ("block_size", "data_checksums", "data_directory_mode",
                     "debug_assertions", "integer_datetimes", "lc_collate",
                     "lc_ctype", "max_function_args", "max_identifier_length",
@@ -193,17 +198,36 @@ PG_CONFIG_RESTART = (
     "autovacuum_max_workers", "autovacuum_multixact_freeze_max_age", "bonjour",
     "bonjour_name", "cluster_name", "config_file", "data_directory",
     "data_sync_retry", "dynamic_shared_memory_type", "event_source",
-    "external_pid_file", "hba_file", "hot_standby", "huge_pages", "ident_file",
-    "jit_provider", "listen_addresses", "logging_collector", "max_connections",
+    "external_pid_file", "hba_file", "hot_standby", "huge_pages", "huge_page_size",
+    "ident_file", "ignore_invalid_pages", "jit_provider",
+    "listen_addresses", "logging_collector", "max_connections",
     "max_files_per_process", "max_locks_per_transaction",
     "max_logical_replication_workers", "max_pred_locks_per_transaction",
     "max_prepared_transactions", "max_replication_slots", "max_wal_senders",
-    "max_worker_processes", "old_snapshot_threshold", "pg_stat_statements.max",
-    "port", "primary_conninfo", "primary_slot_name", "recovery_target",
+    "max_worker_processes", "min_dynamic_shared_memory", "old_snapshot_threshold",
+    "pg_stat_statements.max", "port", "primary_conninfo", "primary_slot_name", "recovery_target",
     "recovery_target_action", "recovery_target_inclusive",
     "recovery_target_lsn", "recovery_target_name", "recovery_target_time",
     "recovery_target_timeline", "recovery_target_xid", "restore_command",
-    "shared_buffers", "shared_memory_type")
+    "shared_buffers", "shared_memory_type", "shared_preload_libraries",
+    "superuser_reserved_connections", "track_activity_query_size",
+    "track_commit_timestamp", "unix_socket_directories", "unix_socket_group",
+    "unix_socket_permissions", "wal_buffers", "wal_level", "wal_log_hints")
+units = {
+    "Ki": 1 << 10,
+    "Mi": 1 << 20,
+    "Gi": 1 << 30,
+    "Ti": 1 << 40,
+    "Pi": 1 << 50,
+    "Ei": 1 << 60,
+    "K": pow(1000, 1),
+    "M": pow(1000, 2),
+    "G": pow(1000, 3),
+    "T": pow(1000, 4),
+    "P": pow(1000, 5),
+    "E": pow(1000, 6)
+}
+
 
 POSTGRESQL_PAUSE = "pause"
 POSTGRESQL_RESUME = "resume"
@@ -221,6 +245,9 @@ CONTAINER_ENV_NAME = "name"
 CONTAINER_ENV_VALUE = "value"
 EXPORTER_CONTAINER_INDEX = 1
 POSTGRESQL_CONTAINER_INDEX = 0
+NODE_PRIORITY_DEFAULT = 50
+NODE_PRIORITY_NEVER = 0
+WAIT_TIMEOUT = MINUTES * 20
 
 
 def set_cluster_status(meta: kopf.Meta, statefield: str, state: str,
@@ -337,16 +364,32 @@ def autofailover_switchover(
     patch: kopf.Patch,
     status: kopf.Status,
     logger: logging.Logger,
+    primary_host: str = None,
 ) -> None:
     auto_failover_conns = connections(spec, meta, patch,
                                       get_field(AUTOFAILOVER), False, None,
                                       logger, None, status, False)
     for conn in auto_failover_conns.get_conns():
         cmd = ["pgtools", "-o"]
-        logger.info(f"switchover with cmd {cmd}")
-        output = exec_command(conn, cmd, logger, interrupt=False)
-        if output.find(SWITCHOVER_FAILED_MESSAGE) != -1:
-            logger.error(f"switchover failed, {output}")
+        i = 0
+        while True:
+            logger.info(f"switchover with cmd {cmd}")
+            if primary_host == None or primary_host == get_primary_host(meta, spec, patch, status, logger):
+                output = exec_command(conn, cmd, logger, interrupt=False)
+                if output.find(SWITCHOVER_FAILED_MESSAGE) != -1:
+                    logger.error(f"switchover failed, {output}")
+                    i += 1
+                    if i >= 100:
+                        logger.error(f"switchover failed, skip..")
+                        break
+                    time.sleep(5)
+                else:
+                    waiting_cluster_final_status(meta, spec, patch, status, logger)
+                    break
+            else:
+                if primary_host != None or primary_host != get_primary_host(meta, spec, patch, status, logger):
+                    waiting_cluster_final_status(meta, spec, patch, status, logger)
+                break
     auto_failover_conns.free_conns()
 
 
@@ -377,9 +420,13 @@ def waiting_cluster_final_status(
     patch: kopf.Patch,
     status: kopf.Status,
     logger: logging.Logger,
-) -> None:
+    timeout: int = MINUTES * 1,
+    except_nodes: int = None,
+) -> bool:
+    is_health = True
+
     if spec[ACTION] == ACTION_STOP:
-        return
+        return is_health
 
     # waiting for restart
     auto_failover_conns = connections(spec, meta, patch,
@@ -400,7 +447,7 @@ def waiting_cluster_final_status(
         ]
 
         i = 0
-        maxtry = 60
+        maxtry = timeout
         while True:
             logger.info(
                 f"waiting auto_failover cluster final status, {i} times. ")
@@ -409,6 +456,7 @@ def waiting_cluster_final_status(
             if i >= maxtry:
                 logger.warning(
                     f"cluster maybe maybe not right. skip waitting.")
+                is_health = False
                 break
             output = exec_command(conn, primary_cmd, logger, interrupt=False)
             if output != '1':
@@ -435,6 +483,8 @@ def waiting_cluster_final_status(
                     spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(MACHINES)
                 ) + len(
                     spec.get(POSTGRESQL).get(READONLYINSTANCE).get(MACHINES))
+            if except_nodes is not None:
+                total_nodes = except_nodes
             output = exec_command(conn, nodes_cmd, logger, interrupt=False)
             if output != str(total_nodes):
                 logger.warning(
@@ -444,6 +494,7 @@ def waiting_cluster_final_status(
 
             break
     auto_failover_conns.free_conns()
+    return is_health
 
 
 def waiting_cluster_correct_status(
@@ -576,18 +627,28 @@ def waiting_target_postgresql_ready(meta: kopf.Meta,
         raise kopf.PermanentError("waiting_postgresql_ready timeout.")
 
 
-def waiting_instance_ready(conns: InstanceConnections, logger: logging.Logger):
+def waiting_instance_ready(conns: InstanceConnections,
+                           logger: logging.Logger,
+                           connect_start: int = None,
+                           connect_end: int = None,
+                           timeout: int = WAIT_TIMEOUT):
+    if connect_start is None:
+        connect_start = 0
+    if connect_end is None:
+        connect_end = conns.get_number()
+    conns = conns.get_conns()[connect_start:connect_end]
+
     success_message = 'running success'
     cmd = ['echo', "'%s'" % success_message]
-    for conn in conns.get_conns():
+    for conn in conns:
         i = 0
-        maxtry = 300
+        maxtry = timeout
         while True:
             output = exec_command(conn, cmd, logger, interrupt=False)
             if output != success_message:
                 i += 1
                 time.sleep(1)
-                logger.error(f"instance not start. try {i} times. {output}")
+                logger.warning(f"instance not start. try {i} times. {output}")
                 if i >= maxtry:
                     logger.warning(f"instance not start. skip waitting.")
                     break
@@ -646,6 +707,7 @@ def create_statefulset(
             }
         if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_EXPORTER_CONTAINER:
             container["env"] = exporter_env
+        container[IMAGE] = get_realimage_from_env(container[IMAGE])
     statefulset_body["spec"]["template"] = {
         "metadata": {
             "labels": labels
@@ -656,8 +718,35 @@ def create_statefulset(
 
     logger.info(f"create statefulset with {statefulset_body}")
     kopf.adopt(statefulset_body)
-    apps_v1_api.create_namespaced_stateful_set(namespace=namespace,
-                                               body=statefulset_body)
+    try:
+        apps_v1_api.create_namespaced_stateful_set(namespace=namespace,
+                                                   body=statefulset_body)
+    except Exception as e:
+        print("Exception when calling AppsV1Api->create_namespaced_stateful_set: %s\n" % e)
+
+
+def get_realimage_from_env(yaml_image: str) -> str:
+    image_list = yaml_image.split("/")
+    res = list()
+    # Assume res length is 3. (yaml image cannot support registry field)
+    #  res[0] is registry
+    #  res[1] is namespace
+    #  res[2] is image and tag
+    # if IMAGE_REGISTRY, NAMESPACE_OVERRIDE exists, replace registry, namespace
+    for i in range(3 - len(image_list)):
+        res.append("")
+    res.extend(image_list)
+
+    if operator_config.IMAGE_REGISTRY.strip():
+        res[0] = operator_config.IMAGE_REGISTRY
+    if operator_config.NAMESPACE_OVERRIDE.strip():
+        res[1] = operator_config.NAMESPACE_OVERRIDE
+    elif len(image_list) == 1:
+        res[1] = "library"
+
+    res = [i for i in res if i != ""]
+
+    return '/'.join(res)
 
 
 def get_antiaffinity(meta: kopf.Meta, labels: LabelType,
@@ -706,7 +795,7 @@ def get_antiaffinity_from_template(meta: kopf.Meta,
 
 
 def get_statefulset_name(name: str, field: str, replica: int) -> str:
-    return name + "-" + field + "-" + str(replica)
+    return name + "-" + field.split(FIELD_DELIMITER)[-1:][0] + "-" + str(replica)
 
 
 def get_statefulset_service_name(name: str, field: str, replica: int) -> str:
@@ -927,9 +1016,10 @@ def create_postgresql(
                 CONTAINER_ENV_VALUE: value
             })
     if mode == MACHINE_MODE:
+        machine_env += PG_CONFIG_PREFIX + "shared_preload_libraries='citus,pgautofailover,pg_stat_statements'" + "\n"
         machine_env += PG_CONFIG_PREFIX + 'log_truncate_on_rotation=true' + "\n"
         machine_env += PG_CONFIG_PREFIX + 'logging_collector=on' + "\n"
-        machine_env += PG_CONFIG_PREFIX + "log_directory='log'" + "\n"
+        machine_env += PG_CONFIG_PREFIX + "log_directory='" + PGLOG_DIR + "'" + "\n"
         machine_env += PG_CONFIG_PREFIX + "log_filename='postgresql_%d'" + "\n"
         machine_env += PG_CONFIG_PREFIX + "log_line_prefix='[%m][%r][%a][%u][%d][%x][%p]'" + "\n"
         machine_env += PG_CONFIG_PREFIX + "log_destination='csvlog'" + "\n"
@@ -942,6 +1032,10 @@ def create_postgresql(
         machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_count=4" + "\n"
     else:
         k8s_env.append({
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "shared_preload_libraries",
+            CONTAINER_ENV_VALUE: "'citus,pgautofailover,pg_stat_statements'"
+        })
+        k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_truncate_on_rotation",
             CONTAINER_ENV_VALUE: "true"
         })
@@ -951,7 +1045,7 @@ def create_postgresql(
         })
         k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_directory",
-            CONTAINER_ENV_VALUE: "'log'"
+            CONTAINER_ENV_VALUE: "'" + PGLOG_DIR + "'"
         })
         k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_filename",
@@ -1154,6 +1248,8 @@ def create_postgresql(
                                localspec[PODSPEC],
                                localspec[VOLUMECLAIMTEMPLATES], antiaffinity,
                                k8s_env, logger, k8s_exporter_env)
+            # waiting pull image success and instance ready
+            waiting_instance_ready(conns, logger, replica, replica + 1)
 
         # wait primary node create finish
         if wait_primary == True and field == get_field(
@@ -1163,7 +1259,7 @@ def create_postgresql(
             if is_restore_mode(meta, spec, patch, status, logger) == False:
                 tmpconns: InstanceConnections = InstanceConnections()
                 tmpconns.add(tmpconn)
-                waiting_postgresql_ready(tmpconns, logger)
+                waiting_postgresql_ready(tmpconns, logger, timeout = MINUTES * 5)
 
                 create_log_table(
                     logger, tmpconn,
@@ -1192,7 +1288,7 @@ def restore_postgresql_fromssh(
     tmpconns.add(conn)
 
     # wait postgresql ready
-    waiting_postgresql_ready(tmpconns, logger)
+    waiting_postgresql_ready(tmpconns, logger, timeout = MINUTES * 5)
 
     # drop from autofailover and pause start postgresql
     cmd = ["pgtools", "-d", "-p", POSTGRESQL_PAUSE]
@@ -1305,6 +1401,9 @@ def restore_postgresql(
 def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      postgresql_major_version: int) -> None:
     logger.info("create postgresql log table")
+    cmd = ["truncate", "--size", "0", "%s/%s/*" % (PG_DATABASE_DIR, PGLOG_DIR)]
+    output = exec_command(conn, cmd, logger, interrupt=False)
+
     cmd = ["pgtools", "-q", '"create extension file_fdw"']
     output = exec_command(conn, cmd, logger, interrupt=False)
     if output.find("CREATE EXTENSION") == -1:
@@ -1321,7 +1420,7 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
 
     for day in range(1, 32):
         table_name = 'log_postgresql_' + "%02d" % day
-        log_filepath = "log/postgresql_" + "%02d" % day + '.csv'
+        log_filepath = PGLOG_DIR + "/postgresql_" + "%02d" % day + '.csv'
         if postgresql_major_version == 12:
             query = """ CREATE foreign TABLE %s
                 (
@@ -1348,7 +1447,7 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      query_pos integer,
                      location text,
                      application_name text
-                ) server pg_file_server options(filename '%s',format 'csv',header 'true') """ % (
+                ) server pg_file_server options(program 'grep -v pg_auto_failover %s',format 'csv',header 'true') """ % (
                 table_name, log_filepath)
         elif postgresql_major_version == 13:
             query = """ CREATE foreign TABLE %s
@@ -1377,9 +1476,9 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      location text,
                      application_name text,
                      backend_type text
-                ) server pg_file_server options(filename '%s',format 'csv',header 'true') """ % (
+                ) server pg_file_server options(program 'grep -v pg_auto_failover %s',format 'csv',header 'true') """ % (
                 table_name, log_filepath)
-        elif postgresql_major_version == 14:
+        elif postgresql_major_version == 14 or postgresql_major_version == 15:
             query = """ CREATE foreign TABLE %s
                 (
                      log_time timestamp(3),
@@ -1408,7 +1507,7 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      backend_type text,
                      leader_pid integer,
                      query_id bigint
-                ) server pg_file_server options(filename '%s',format 'csv',header 'true') """ % (
+                ) server pg_file_server options(program 'grep -v pg_auto_failover %s',format 'csv',header 'true') """ % (
                 table_name, log_filepath)
         else:
             logger.warning(
@@ -1442,7 +1541,7 @@ def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      backend_type text,
                      leader_pid integer,
                      query_id bigint
-                ) server pg_file_server options(filename '%s',format 'csv',header 'true') """ % (
+                ) server pg_file_server options(program 'grep -v pg_auto_failover %s',format 'csv',header 'true') """ % (
                 table_name, log_filepath)
 
         logger.info(f"create postgresql log table {table_name} query {query}")
@@ -1676,7 +1775,7 @@ def connections(
         role = POSTGRESQL
 
     if machines == None:
-        logger.info("connect node in k8s mode")
+        #logger.info("connect node in k8s mode")
         conns = connect_pods(meta, spec, field)
         if create:
             create_postgresql(K8S_MODE, spec, meta, field, labels, logger,
@@ -1685,8 +1784,7 @@ def connections(
     else:
         for replica, machine in enumerate(machines):
             conn = connect_machine(machine, role)
-            logger.info("connect node in machine mode, host is " +
-                        conn.get_machine().get_host())
+            #logger.info("connect node in machine mode, host is " + conn.get_machine().get_host())
             conns.add(conn)
         if create:
             create_postgresql(MACHINE_MODE, spec, meta, field, labels, logger,
@@ -1784,7 +1882,7 @@ def delete_postgresql(
         logger.info("delete postgresql instance from autofailover")
         if get_primary_host(meta, spec, patch, status,
                             logger) == get_connhost(conn):
-            autofailover_switchover(meta, spec, patch, status, logger)
+            autofailover_switchover(meta, spec, patch, status, logger, primary_host=get_connhost(conn))
         cmd = ["pgtools", "-D"]
         output = exec_command(conn, cmd, logger, interrupt=False)
         if output.find("drop auto_failover failed") != -1:
@@ -2452,7 +2550,7 @@ def check_param(spec: kopf.Spec,
     logger.info("parameters are correct")
 
 
-async def create_postgresql_cluster(
+def create_postgresql_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2471,7 +2569,7 @@ async def create_postgresql_cluster(
     create_autofailover(meta, spec, patch, status, logger,
                         get_autofailover_labels(meta))
     waiting_target_postgresql_ready(meta, spec, patch, get_field(AUTOFAILOVER),
-                                    status, logger)
+                                    status, logger, timeout = MINUTES * 5)
 
     # create postgresql & readwrite node
     # set_create_cluster(patch, CLUSTER_CREATE_ADD_READWRITE)
@@ -2494,7 +2592,7 @@ async def create_postgresql_cluster(
     # set_create_cluster(patch, CLUSTER_CREATE_FINISH)
 
 
-async def create_cluster(
+def create_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2502,47 +2600,52 @@ async def create_cluster(
     logger: logging.Logger,
 ) -> None:
     try:
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_CREATE,
+        set_cluster_status(meta, CLUSTER_STATE, CLUSTER_STATUS_CREATE,
                            logger)
 
         logging.info("check create_cluster params")
         check_param(spec, logger, create=True)
-        await create_postgresql_cluster(meta, spec, patch, status, logger)
+        create_postgresql_cluster(meta, spec, patch, status, logger)
 
         logger.info("waiting for create_cluster success")
-        waiting_cluster_final_status(meta, spec, patch, status, logger)
+        waiting_cluster_final_status(meta, spec, patch, status, logger, timeout = MINUTES * 5)
+
+        update_pgpassfile(meta, spec, patch, status, logger)
 
         # wait a few seconds to prevent the pod not running
         time.sleep(5)
         # cluster running
         update_number_sync_standbys(meta, spec, patch, status, logger)
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_RUN,
+        set_cluster_status(meta, CLUSTER_STATE, CLUSTER_STATUS_RUN,
                            logger)
     except Exception as e:
         logger.error(f"error occurs, {e}")
         traceback.print_exc()
         traceback.format_exc()
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER,
+        set_cluster_status(meta, CLUSTER_STATE,
                            CLUSTER_STATUS_CREATE_FAILED, logger)
 
 
-async def delete_cluster(
+def delete_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
-    set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_TERMINATE,
+    set_cluster_status(meta, CLUSTER_STATE, CLUSTER_STATUS_TERMINATE,
                        logger)
-    await delete_postgresql_cluster(meta, spec, patch, status, logger)
+    delete_postgresql_cluster(meta, spec, patch, status, logger)
 
 
 def delete_pvc(logger: logging.Logger, name: str, namespace: str) -> None:
     core_v1_api = client.CoreV1Api()
 
     logger.info(f"delete pvc {name}")
-    core_v1_api.delete_namespaced_persistent_volume_claim(name, namespace)
+    try:
+        core_v1_api.delete_namespaced_persistent_volume_claim(name, namespace)
+    except Exception as e:
+        logger.error("Exception when calling CoreV1Api->delete_namespaced_persistent_volume_claim: %s\n" % e)
 
 
 def delete_storage(
@@ -2598,7 +2701,7 @@ def delete_storages(
     conns.free_conns()
 
 
-async def delete_postgresql_cluster(
+def delete_postgresql_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2621,6 +2724,83 @@ def patch_statefulset_restartPolicy(policy: str) -> TypedDict:
 def patch_role_body(role: str) -> TypedDict:
     role_body = {"metadata": {"labels": {"role": role}}}
     return role_body
+
+def patch_pvc_body(size: str) -> TypedDict:
+    pvc_body = {"spec": {"resources": {"requests": {"storage": size}}}}
+    return pvc_body
+
+#  name: data-zzz-postgresql-readwriteinstance-0-0
+#spec:
+#  resources:
+#    requests:
+#      storage: 10Gi
+def resize_pvc(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    pvc_name: str,
+    size: str,
+) -> None:
+    core_v1_api = client.CoreV1Api()
+
+    try:
+        real_size, real_status = read_pvc_size_and_status(meta, spec, patch, status, logger, pvc_name)
+        core_v1_api.patch_namespaced_persistent_volume_claim(pvc_name,
+                                                             meta["namespace"],
+                                                             patch_pvc_body(size))
+
+        if convert_to_bytes(real_size) >= convert_to_bytes(size):
+            logger.warning(f"pvc {pvc_name} does not need expand.")
+            return
+
+        i = 0
+        while i < WAIT_TIMEOUT and real_status != "FileSystemResizePending" and convert_to_bytes(real_size) < convert_to_bytes(size):
+            real_size, real_status = read_pvc_size_and_status(meta, spec, patch, status, logger, pvc_name)
+            i += 1
+            time.sleep(SECONDS)
+            logger.warning(f"resize_pvc on {pvc_name} not success, try {i} times. current status is {real_status}, current size is {real_size}")
+            if i == WAIT_TIMEOUT:
+                logger.error(f"resize_pvc on {pvc_name} timeout, skip waiting. current status is {real_status}, current size is {real_size}")
+    except Exception as e:
+        logger.error(
+            "Exception when calling AppsV1Api->patch_namespaced_persistent_volume_claim or read_namespaced_persistent_volume_claim: %s\n"
+            % e)
+        time.sleep(SECONDS * 10)
+
+
+def read_pvc_size_and_status(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    pvc_name: str,
+) -> (str, str):
+    core_v1_api = client.CoreV1Api()
+
+    pvc = client.V1PersistentVolumeClaim(core_v1_api.read_namespaced_persistent_volume_claim(name=pvc_name,
+                                                                                             namespace=meta["namespace"]))
+    pvc_status = pvc.to_dict().get("api_version", {}).get("status", {})
+    real_size = pvc_status.get("capacity", {}).get("storage")
+    real_status = ""
+    if pvc_status.get("conditions", None) is not None:
+        real_status = pvc_status.get("conditions", [])[0].get("type")
+    return real_size, real_status
+
+
+def convert_to_bytes(pvc: str) -> int:
+    index = 0
+    for i in range(len(pvc)):
+        try:
+            int(pvc[i])
+        except:
+            index = i
+            break
+    value = pvc[:index]
+    unit = pvc[index:]
+    return int(value) * int(units.get(unit, 1))
 
 
 def get_conn_role(conn: InstanceConnection) -> str:
@@ -2661,14 +2841,14 @@ def correct_user_password(
         '''"PGPASSWORD=%s psql -h %s -d postgres -U %s -p %d -t -c 'select 1'"'''
         % (password, get_connhost(conn), user, port)
     ]
-    logger.info(f"check password with cmd {cmd} ")
+    #logger.info(f"check password with cmd {cmd} ")
     output = exec_command(conn, cmd, logger, interrupt=False).strip()
     if output.find(PASSWORD_FAILED_MESSAGEd) != -1:
-        logger.info(f"password error: {output}")
+        logger.error(f"password error: {output}")
         change_user_password(conn, user, password, logger)
 
 
-async def correct_postgresql_password(
+def correct_postgresql_password(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2685,12 +2865,15 @@ async def correct_postgresql_password(
     readwrite_conns = connections(spec, meta, patch,
                                   get_field(POSTGRESQL, READWRITEINSTANCE),
                                   False, None, logger, None, status, False)
-    conn = get_primary_conn(readwrite_conns, 0, logger)
-    correct_user_password(meta, spec, patch, status, logger, conn)
+    conn = get_primary_conn(readwrite_conns, 0, logger, interrupt = False)
+    if conn == None:
+        logger.error(f"can't correct readwrite password. because get primary conn failed")
+    else:
+        correct_user_password(meta, spec, patch, status, logger, conn)
     readwrite_conns.free_conns()
 
 
-async def correct_keepalived(
+def correct_keepalived(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2739,7 +2922,7 @@ async def correct_keepalived(
     readonly_conns.free_conns()
 
 
-async def correct_postgresql_role(
+def correct_postgresql_role(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2783,7 +2966,7 @@ async def correct_postgresql_role(
                     % e)
 
 
-async def timer_cluster(
+def timer_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -2791,9 +2974,47 @@ async def timer_cluster(
     logger: logging.Logger,
 ) -> None:
 
-    await correct_postgresql_role(meta, spec, patch, status, logger)
-    await correct_postgresql_password(meta, spec, patch, status, logger)
-    await correct_keepalived(meta, spec, patch, status, logger)
+    correct_postgresql_role(meta, spec, patch, status, logger)
+    correct_keepalived(meta, spec, patch, status, logger)
+    correct_postgresql_password(meta, spec, patch, status, logger)
+
+def update_number_sync_standbys(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(
+        spec)
+
+    pg_nodes = readwrite_replicas + readonly_replicas
+    number_sync = readwrite_replicas + readonly_replicas if spec[POSTGRESQL][READONLYINSTANCE][STREAMING] == STREAMING_SYNC else readwrite_replicas
+    expect_number = number_sync - 2
+    if expect_number < 0:
+        expect_number = 0
+
+    if pg_nodes >= 2:
+        autofailover_conns = connections(spec, meta, patch,
+                                         get_field(AUTOFAILOVER), False,
+                                         None, logger, None, status, False)
+        cmd = [
+            "pgtools", "-S",
+            "' formation number-sync-standbys  " + str(expect_number) + PRIMARY_FORMATION + "'"
+        ]
+        i = 0
+        while True:
+            logger.info(f"set number-sync-standbys with cmd {cmd}")
+            output = exec_command(autofailover_conns.get_conns()[0], cmd, logger, interrupt=False)
+            if output.find(SUCCESS) == -1:
+                logger.error(f"set number-sync-standbys failed {cmd}  {output}")
+                i += 1
+                if i >= 60:
+                    logger.error(f"set number-sync-standbys failed, skip ")
+                    break
+            else:
+                break
+        autofailover_conns.free_conns()
 
 def update_number_sync_standbys(
     meta: kopf.Meta,
@@ -2862,10 +3083,17 @@ def update_streaming(
                                 get_field(POSTGRESQL, READONLYINSTANCE), False,
                                 None, logger, None, status, False)
             for conn in conns.get_conns():
-                output = exec_command(conn, cmd, logger, interrupt=False)
-                if output.find(SUCCESS) == -1:
-                    logger.error(
-                        f"set readonly streaming failed {cmd}  {output}")
+                i = 0
+                while True:
+                    output = exec_command(conn, cmd, logger, interrupt=False)
+                    if output.find(SUCCESS) == -1:
+                        logger.error(f"set readonly streaming failed {cmd}  {output}")
+                        i += 1
+                        if i >= 60:
+                            logger.error(f"set readonly streaming failed, skip")
+                            break
+                    else:
+                        break
             conns.free_conns()
 
     return need_update_number_sync_standbys
@@ -2965,10 +3193,18 @@ def update_action(
             for conn in conns:
                 postgresql_action(meta, spec, patch, status, logger, conn,
                                   start)
+
+            if NEW == ACTION_START:
+                waiting_postgresql_ready(readwrite_conns, logger)
+                waiting_postgresql_ready(readonly_conns, logger)
+                waiting_cluster_final_status(meta, spec, patch, status, logger)
+
             autofailover_conns.free_conns()
             readwrite_conns.free_conns()
             readonly_conns.free_conns()
 
+def get_vct_size(vct: TypedDict) -> str:
+    return vct["spec"]["resources"]["requests"]["storage"]
 
 def rolling_update(
     meta: kopf.Meta,
@@ -2985,82 +3221,107 @@ def rolling_update(
         return
 
     # rolling update autofailover, not allow autofailover delete disk when update cluster
-    if get_field(AUTOFAILOVER) in target_roles:
+    field = get_field(AUTOFAILOVER)
+    if field in target_roles:
         autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
         if autofailover_machines != None:
             delete_autofailover(meta, spec, patch, status, logger,
-                                get_field(AUTOFAILOVER), autofailover_machines,
+                                field, autofailover_machines,
                                 None, False)
         else:
             delete_autofailover(meta, spec, patch, status, logger,
-                                get_field(AUTOFAILOVER), None, [0, 1], False)
+                                field, None, [0, 1], False)
+            for vct in spec.get(AUTOFAILOVER).get(VOLUMECLAIMTEMPLATES):
+                if vct["metadata"]["name"] == POSTGRESQL_PVC_NAME:
+                    size = get_vct_size(vct)
+            resize_pvc(meta, spec, patch, status, logger, get_pvc_name(get_pod_name(meta["name"], field, 0)), size)
         create_autofailover(meta, spec, patch, status, logger,
                             get_autofailover_labels(meta))
+        # wait postgresql ready, then wait the right status.
         waiting_target_postgresql_ready(meta, spec, patch,
-                                        get_field(AUTOFAILOVER), status,
+                                        field, status,
                                         logger, 0, 1, exit, timeout)
+        waiting_cluster_final_status(meta, spec, patch, status, logger)
 
     # rolling update readwrite
-    if get_field(POSTGRESQL, READWRITEINSTANCE) in target_roles:
+    field = get_field(POSTGRESQL, READWRITEINSTANCE)
+    if field in target_roles:
         readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
             MACHINES)
         if readwrite_machines != None:
             for replica in range(0, len(readwrite_machines)):
                 delete_postgresql_readwrite(
                     meta, spec, patch, status, logger,
-                    get_field(POSTGRESQL, READWRITEINSTANCE),
+                    field,
                     readwrite_machines[replica:replica + 1], None, delete_disk)
                 create_postgresql_readwrite(meta, spec, patch, status, logger,
                                             get_readwrite_labels(meta),
                                             replica, False, replica + 1)
+                # wait postgresql ready, then wait the right status.
                 waiting_target_postgresql_ready(
-                    meta, spec, patch, get_field(POSTGRESQL,
-                                                 READWRITEINSTANCE), status,
+                    meta, spec, patch, field, status,
                     logger, replica, replica + 1, exit, timeout)
+                waiting_cluster_final_status(meta, spec, patch, status, logger)
         else:
             for replica in range(
                     0, spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]):
                 delete_postgresql_readwrite(
                     meta, spec, patch, status, logger,
-                    get_field(POSTGRESQL, READWRITEINSTANCE), None,
+                    field, None,
                     [replica, replica + 1], delete_disk)
+                if delete_disk == False:
+                    for vct in spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(VOLUMECLAIMTEMPLATES):
+                        if vct["metadata"]["name"] == POSTGRESQL_PVC_NAME:
+                            size = get_vct_size(vct)
+                    resize_pvc(meta, spec, patch, status, logger, get_pvc_name(get_pod_name(meta["name"], field, replica)), size)
                 create_postgresql_readwrite(meta, spec, patch, status, logger,
                                             get_readwrite_labels(meta),
                                             replica, False, replica + 1)
+                # wait postgresql ready, then wait the right status.
                 waiting_target_postgresql_ready(
-                    meta, spec, patch, get_field(POSTGRESQL,
-                                                 READWRITEINSTANCE), status,
+                    meta, spec, patch, field, status,
                     logger, replica, replica + 1, exit, timeout)
+                waiting_cluster_final_status(meta, spec, patch, status, logger)
 
     # rolling update readonly
-    if get_field(POSTGRESQL, READONLYINSTANCE) in target_roles:
+    field = get_field(POSTGRESQL, READONLYINSTANCE)
+    if field in target_roles:
         readonly_machines = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
             MACHINES)
         if readonly_machines != None:
             for replica in range(0, len(readonly_machines)):
                 delete_postgresql_readonly(
                     meta, spec, patch, status, logger,
-                    get_field(POSTGRESQL, READONLYINSTANCE),
+                    field,
                     readonly_machines[replica:replica + 1], None, delete_disk)
                 create_postgresql_readonly(meta, spec, patch, status, logger,
                                            get_readonly_labels(meta), replica,
                                            replica + 1)
+                # wait postgresql ready, then wait the right status.
                 waiting_target_postgresql_ready(
-                    meta, spec, patch, get_field(POSTGRESQL, READONLYINSTANCE),
+                    meta, spec, patch, field,
                     status, logger, replica, replica + 1, exit, timeout)
+                waiting_cluster_final_status(meta, spec, patch, status, logger)
         else:
             for replica in range(0,
                                  spec[POSTGRESQL][READONLYINSTANCE][REPLICAS]):
                 delete_postgresql_readonly(
                     meta, spec, patch, status, logger,
-                    get_field(POSTGRESQL, READONLYINSTANCE), None,
+                    field, None,
                     [replica, replica + 1], delete_disk)
+                if delete_disk == False:
+                    for vct in spec.get(POSTGRESQL).get(READONLYINSTANCE).get(VOLUMECLAIMTEMPLATES):
+                        if vct["metadata"]["name"] == POSTGRESQL_PVC_NAME:
+                            size = get_vct_size(vct)
+                    resize_pvc(meta, spec, patch, status, logger, get_pvc_name(get_pod_name(meta["name"], field, replica)), size)
                 create_postgresql_readonly(meta, spec, patch, status, logger,
                                            get_readonly_labels(meta), replica,
                                            replica + 1)
+                # wait postgresql ready, then wait the right status.
                 waiting_target_postgresql_ready(
-                    meta, spec, patch, get_field(POSTGRESQL, READONLYINSTANCE),
+                    meta, spec, patch, field,
                     status, logger, replica, replica + 1, exit, timeout)
+                waiting_cluster_final_status(meta, spec, patch, status, logger)
 
 
 def update_podspec_volume(
@@ -3080,19 +3341,19 @@ def update_podspec_volume(
                        0:len(DIFF_FIELD_AUTOFAILOVER_VOLUME
                              )] == DIFF_FIELD_AUTOFAILOVER_VOLUME:
         rolling_update(meta, spec, patch, status, logger,
-                       [get_field(AUTOFAILOVER)])
+                       [get_field(AUTOFAILOVER)], exit = True, timeout = MINUTES * 5)
     if FIELD[0:len(DIFF_FIELD_READWRITE_PODSPEC
                    )] == DIFF_FIELD_READWRITE_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_READWRITE_VOLUME
                              )] == DIFF_FIELD_READWRITE_VOLUME:
         rolling_update(meta, spec, patch, status, logger,
-                       [get_field(POSTGRESQL, READWRITEINSTANCE)])
+                       [get_field(POSTGRESQL, READWRITEINSTANCE)], exit = True,  timeout = MINUTES * 5)
     if FIELD[0:len(DIFF_FIELD_READONLY_PODSPEC
                    )] == DIFF_FIELD_READONLY_PODSPEC or FIELD[
                        0:len(DIFF_FIELD_READONLY_VOLUME
                              )] == DIFF_FIELD_READONLY_VOLUME:
         rolling_update(meta, spec, patch, status, logger,
-                       [get_field(POSTGRESQL, READONLYINSTANCE)])
+                       [get_field(POSTGRESQL, READONLYINSTANCE)], exit = True, timeout = MINUTES * 5)
 
 
 def update_antiaffinity(
@@ -3107,7 +3368,7 @@ def update_antiaffinity(
     timeout: int = MINUTES * 5,
 ) -> None:
     # local volume
-    if spec.get(SPEC_VOLUME_TYPE) == SPEC_VOLUME_LOCAL:
+    if spec.get(SPEC_VOLUME_TYPE, 'local') == SPEC_VOLUME_LOCAL:
         delete_disk = True
         timeout = HOURS * 1
     rolling_update(meta, spec, patch, status, logger, target_roles, exit,
@@ -3256,6 +3517,160 @@ def update_service(
         delete_services(meta, spec, patch, status, logger)
         create_services(meta, spec, patch, status, logger)
 
+def update_node_priority(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conns: [InstanceConnection],
+    priority: int,
+    primary_host: str = None,
+) -> bool:
+    cmd = [
+        "pgtools", "-S",
+        "'node candidate-priority " + str(priority) + "'"
+    ]
+    if primary_host == None:
+        primary_host = get_primary_host(meta, spec, patch, status, logger)
+
+    for conn in conns:
+        if get_connhost(conn) == primary_host:
+            continue
+        i = 0
+        while True:
+            logger.info(f"set node priority {cmd} on %s" % get_connhost(conn))
+            output = exec_command(conn, cmd, logger, interrupt=False)
+            if output.find(SUCCESS) == -1:
+                logger.error(f"set node priority failed {cmd}  {output}")
+                i += 1
+                if i >= 60:
+                    logger.error(f"set node priority failed")
+                    break
+            else:
+                break
+
+def update_configs_utile(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conns: [InstanceConnection],
+    readwrite_conns: InstanceConnections,
+    readonly_conns: InstanceConnections,
+    cmd: TypedDict,
+    autofailover: bool,
+    restart: bool,
+) -> None:
+    primary_host = get_primary_host(meta, spec, patch, status, logger)
+    if restart == True:
+        cmd.append('-r')
+    # pg_autoctl set node candidate-priority 0 --pgdata=s
+
+    if autofailover == False and restart == True:
+        update_node_priority(meta, spec, patch, status, logger, readwrite_conns.get_conns(), NODE_PRIORITY_NEVER, primary_host)
+
+    # first update primary node
+    checkpoint_cmd = ["pgtools", "-w", "0", "-q", "'checkpoint'"]
+    for conn in conns:
+        if get_connhost(conn) == primary_host:
+            output = exec_command(conn,
+                                  checkpoint_cmd,
+                                  logger,
+                                  interrupt=False)
+            if output.find(SUCCESS_CHECKPOINT) == -1:
+                logger.error(
+                    f"update configs {checkpoint_cmd} failed. {output}"
+                )
+            logger.info(f"update configs {cmd} on %s" %
+                        get_connhost(conn))
+            output = exec_command(conn,
+                                  cmd,
+                                  logger,
+                                  interrupt=False)
+            if output.find(SUCCESS) == -1:
+                logger.error(f"update configs {cmd} failed. {output}")
+
+    if autofailover == False and restart == True:
+        waiting_postgresql_ready(readwrite_conns, logger)
+        waiting_cluster_final_status(meta, spec, patch, status, logger)
+        # must waittin for special_change parameter send to slave
+        for conn in conns:
+            if get_connhost(conn) == primary_host:
+                output = exec_command(conn,
+                                      checkpoint_cmd,
+                                      logger,
+                                      interrupt=False)
+                if output.find(SUCCESS_CHECKPOINT) == -1:
+                    logger.error(
+                        f"update configs {checkpoint_cmd} failed. {output}"
+                    )
+        time.sleep(10)
+
+    # update slave node
+    for conn in conns:
+        if get_connhost(conn) == primary_host:
+            continue
+
+        logger.info(f"update configs {cmd} on %s" % get_connhost(conn))
+        output = exec_command(conn, cmd, logger, interrupt=False)
+        if output.find(SUCCESS) == -1:
+            logger.error(f"update configs {cmd} failed. {output}")
+
+    waiting_postgresql_ready(readwrite_conns, logger)
+    waiting_postgresql_ready(readonly_conns, logger)
+    waiting_cluster_final_status(meta, spec, patch, status, logger)
+    if autofailover == False and restart == True:
+        update_node_priority(meta, spec, patch, status, logger, readwrite_conns.get_conns(), NODE_PRIORITY_DEFAULT, primary_host)
+    waiting_cluster_final_status(meta, spec, patch, status, logger)
+
+def update_configs_port(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conns: [InstanceConnection],
+    readwrite_conns: InstanceConnections,
+    readonly_conns: InstanceConnections,
+    cmd: TypedDict,
+    autofailover: bool,
+) -> None:
+    primary_host = get_primary_host(meta, spec, patch, status, logger)
+    cmd.append('-d')
+
+    # first update slave node
+    for conn in conns:
+        if get_connhost(conn) == primary_host:
+            continue
+
+        logger.info(f"update configs {cmd} on %s" % get_connhost(conn))
+        output = exec_command(conn, cmd, logger, interrupt=False)
+        if output.find(SUCCESS) == -1:
+            logger.error(f"update configs {cmd} failed. {output}")
+
+    if autofailover == False:
+        waiting_postgresql_ready(readwrite_conns, logger)
+        waiting_postgresql_ready(readonly_conns, logger)
+        waiting_cluster_final_status(meta, spec, patch, status, logger)
+
+    # update primary node
+    for conn in conns:
+        if get_connhost(conn) == primary_host:
+            if autofailover == False and len(readwrite_conns.get_conns()) > 1:
+                autofailover_switchover(meta, spec, patch, status,
+                                        logger, primary_host=get_connhost(conn))
+                waiting_cluster_final_status(meta, spec, patch, status,
+                                             logger)
+            logger.info(f"update configs {cmd} on %s" %
+                        get_connhost(conn))
+            output = exec_command(conn, cmd, logger, interrupt=False)
+            if output.find(SUCCESS) == -1:
+                logger.error(f"update configs {cmd} failed. {output}")
+    if autofailover == False:
+        waiting_postgresql_ready(readwrite_conns, logger)
+        waiting_cluster_final_status(meta, spec, patch, status, logger)
 
 def update_configs(
     meta: kopf.Meta,
@@ -3272,7 +3687,11 @@ def update_configs(
     cmd = ["pgtools", "-c"]
     restart_postgresql = False
     port_change = False
+    old_port = None
+    new_port = None
     autofailover = False
+    special_change = False
+
 
     if FIELD == DIFF_FIELD_AUTOFAILOVER_CONFIGS:
         autofailover_conns = connections(spec, meta, patch,
@@ -3304,100 +3723,60 @@ def update_configs(
                     oldname = oldconfig.split("=")[0].strip()
                     oldvalue = oldconfig[oldconfig.find("=") + 1:].strip()
                     if name == oldname and value != oldvalue:
-                        logger.info(f" {name} is restart parameter ")
+                        logger.info(f"{name} is restart parameter ")
                         restart_postgresql = True
                         if name == 'port':
                             port_change = True
+                            new_port = value
+                            old_port = oldvalue
+                            logger.info(f"change port from {old_port} to {new_port}")
+            if name in PG_CONFIG_MASTER_LARGE_THAN_SLAVE:
+                for oldi, oldconfig in enumerate(OLD):
+                    oldname = oldconfig.split("=")[0].strip()
+                    oldvalue = oldconfig[oldconfig.find("=") + 1:].strip()
+                    if name == oldname and int(value) != int(oldvalue):
+                        logger.info(f"{name} must large then slave")
+                        special_change = True
 
             config = name + '="' + value + '"'
             cmd.append('-e')
             cmd.append(PG_CONFIG_PREFIX + config)
 
-        waiting_postgresql_ready(readwrite_conns, logger)
-        waiting_postgresql_ready(readonly_conns, logger)
-        primary_host = get_primary_host(meta, spec, patch, status, logger)
-        if port_change == True:
-            cmd.append('-d')
-            # first update slave node
-            for conn in conns:
-                if get_connhost(conn) == primary_host:
-                    continue
-
-                logger.info(f"update configs {cmd} on %s" % get_connhost(conn))
-                output = exec_command(conn, cmd, logger, interrupt=False)
-                if output.find(SUCCESS) == -1:
-                    logger.error(f"update configs {cmd} failed. {output}")
-
+        if autofailover == False:
+            waiting_postgresql_ready(readwrite_conns, logger)
+            waiting_postgresql_ready(readonly_conns, logger)
             waiting_cluster_final_status(meta, spec, patch, status, logger)
-            time.sleep(2)
+        #fisrst: port_change
+        #second: restart_postgresql
+        #third: special_change
+        #bitmap: 000 001 010 011 100 101 110 111
+        # if port_change is 1, restart_postgresql must be 1 can't be 0.
+        # if special_change is 1, restart_postgresql must be 1 can't be 0.
+        if port_change == False and restart_postgresql == False and special_change == False:
+            update_configs_utile(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, cmd.copy(), autofailover, False)
+        if port_change == False and restart_postgresql == False and special_change == True:
+            pass
+        if port_change == False and restart_postgresql == True and special_change == False:
+            update_configs_utile(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, cmd.copy(), autofailover, True)
+        if port_change == False and restart_postgresql == True and special_change == True:
+            update_configs_utile(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, cmd.copy(), autofailover, True)
+        if port_change == True and restart_postgresql == False and special_change == False:
+            pass
+        if port_change == True and restart_postgresql == False and special_change == True:
+            pass
+        if port_change == True and restart_postgresql == True and special_change == False:
+            update_configs_port(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, cmd.copy(), autofailover)
+        if port_change == True and restart_postgresql == True and special_change == True:
+            # don't update port
+            config = "port" + '="' + old_port + '"'
+            tmpcmd = cmd.copy()
+            tmpcmd.append('-e')
+            tmpcmd.append(PG_CONFIG_PREFIX + config)
+            update_configs_utile(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, cmd.copy(), autofailover, True)
+            # update port
+            tmpcmd = cmd.copy()
+            update_configs_port(meta, spec, patch, status, logger, conns, readwrite_conns, readonly_conns, tmpcmd.copy(), autofailover)
 
-            # update primary node
-            for conn in conns:
-                if get_connhost(conn) == primary_host:
-                    if len(readwrite_conns.get_conns()) > 1:
-                        autofailover_switchover(meta, spec, patch, status,
-                                                logger)
-                        waiting_cluster_final_status(meta, spec, patch, status,
-                                                     logger)
-                        time.sleep(2)
-                    logger.info(f"update configs {cmd} on %s" %
-                                get_connhost(conn))
-                    output = exec_command(conn, cmd, logger, interrupt=False)
-                    if output.find(SUCCESS) == -1:
-                        logger.error(f"update configs {cmd} failed. {output}")
-            waiting_cluster_final_status(meta, spec, patch, status, logger)
-        else:
-            checkpoint_cmd = ["pgtools", "-w", "0", "-q", "'checkpoint'"]
-            primary_cmd = cmd.copy()
-            slave_cmd = cmd.copy()
-            if restart_postgresql == True:
-                primary_cmd.append('-r')
-                slave_cmd.append('-R')
-            # first update primary node
-            for conn in conns:
-                if get_connhost(conn) == primary_host:
-                    logger.info(f"update configs {cmd} on %s" %
-                                get_connhost(conn))
-                    output = exec_command(conn,
-                                          checkpoint_cmd,
-                                          logger,
-                                          interrupt=False)
-                    if output.find(SUCCESS_CHECKPOINT) == -1:
-                        logger.error(
-                            f"update configs {checkpoint_cmd} failed. {output}"
-                        )
-                    output = exec_command(conn,
-                                          primary_cmd,
-                                          logger,
-                                          interrupt=False)
-                    if output.find(SUCCESS) == -1:
-                        logger.error(f"update configs {cmd} failed. {output}")
-
-            if restart_postgresql == True:
-                waiting_cluster_final_status(meta, spec, patch, status, logger)
-                for conn in conns:
-                    if get_connhost(conn) == primary_host:
-                        output = exec_command(conn,
-                                              checkpoint_cmd,
-                                              logger,
-                                              interrupt=False)
-                        if output.find(SUCCESS_CHECKPOINT) == -1:
-                            logger.error(
-                                f"update configs {checkpoint_cmd} failed. {output}"
-                            )
-                time.sleep(20)
-
-            # update slave node
-            for conn in conns:
-                if get_connhost(conn) == primary_host:
-                    continue
-
-                logger.info(f"update configs {cmd} on %s" % get_connhost(conn))
-                output = exec_command(conn, slave_cmd, logger, interrupt=False)
-                if output.find(SUCCESS) == -1:
-                    logger.error(f"update configs {cmd} failed. {output}")
-
-            waiting_cluster_final_status(meta, spec, patch, status, logger)
 
         if port_change == True:
             delete_services(meta, spec, patch, status, logger)
@@ -3465,6 +3844,87 @@ def update_hbas(
         readonly_conns.free_conns()
 
 
+def pgpassfile_item(
+    user: str,
+    password: str
+) -> str:
+    return "*:*:*:%s:%s\n" % (user, password)
+
+
+def get_pgpassfile(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    users_kind: str,
+) -> str:
+    pgpassfile = ""
+    if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(users_kind) != None:
+        users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][users_kind]
+        for user in users:
+            pgpassfile += pgpassfile_item(user[SPEC_POSTGRESQL_USERS_USER_NAME], user[SPEC_POSTGRESQL_USERS_USER_PASSWORD])
+
+    return pgpassfile
+
+def update_pgpassfile(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    pgpassfile = ""
+
+    #autoctl node
+    autoctl_node_password = patch.status.get(AUTOCTL_NODE)
+    if autoctl_node_password == None:
+        autoctl_node_password = status.get(AUTOCTL_NODE)
+    pgpassfile += pgpassfile_item(AUTOCTL_NODE, autoctl_node_password)
+
+    # PGAUTOFAILOVER_REPLICATOR
+    autoctl_replicator_password = patch.status.get(PGAUTOFAILOVER_REPLICATOR)
+    if autoctl_replicator_password == None:
+        autoctl_replicator_password = status.get(PGAUTOFAILOVER_REPLICATOR)
+    pgpassfile += pgpassfile_item(PGAUTOFAILOVER_REPLICATOR, autoctl_replicator_password)
+
+    # users
+    pgpassfile += get_pgpassfile(meta, spec, patch, status, logger, SPEC_POSTGRESQL_USERS_ADMIN)
+    pgpassfile += get_pgpassfile(meta, spec, patch, status, logger, SPEC_POSTGRESQL_USERS_MAINTENANCE)
+    pgpassfile += get_pgpassfile(meta, spec, patch, status, logger, SPEC_POSTGRESQL_USERS_NORMAL)
+
+    logger.info(f"update pgpassfile, {pgpassfile}")
+    conns = connections(spec, meta, patch,
+                        get_field(POSTGRESQL, READWRITEINSTANCE), False,
+                        None, logger, None, status, False)
+    readonly_conns = connections(spec, meta, patch,
+                                 get_field(POSTGRESQL, READONLYINSTANCE),
+                                 False, None, logger, None, status, False)
+    for conn in (conns.get_conns() + readonly_conns.get_conns()):
+        # clean old data
+        cmd = ["truncate", "--size", "0", PGPASSFILE_PATH]
+        output = exec_command(conn, cmd, logger, interrupt=False)
+
+        # sed can't work when file size is 0.
+        cmd = ["truncate", "--size", "1", PGPASSFILE_PATH]
+        output = exec_command(conn, cmd, logger, interrupt=False)
+
+        # ">" can't run in docker exec
+        for onepass in pgpassfile.split("\n"):
+            if len(onepass) < 5:
+                continue
+            cmd = ["sed", "-i", "-e", "'1i" + onepass + "'", PGPASSFILE_PATH]
+            output = exec_command(conn, cmd, logger, interrupt=False)
+
+        cmd = ["chmod", "0600", PGPASSFILE_PATH]
+        output = exec_command(conn, cmd, logger, interrupt=False)
+
+        cmd = ["chown", "postgres:postgres", PGPASSFILE_PATH]
+        output = exec_command(conn, cmd, logger, interrupt=False)
+    conns.free_conns()
+    readonly_conns.free_conns()
+
+
 def update_users(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -3480,6 +3940,8 @@ def update_users(
             or FIELD == DIFF_FIELD_POSTGRESQL_USERS_ADMIN \
             or FIELD == DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE \
             or FIELD == DIFF_FIELD_POSTGRESQL_USERS_NORMAL:
+        update_pgpassfile(meta, spec, patch, status, logger)
+
         conns = connections(spec, meta, patch,
                             get_field(POSTGRESQL, READWRITEINSTANCE), False,
                             None, logger, None, status, False)
@@ -3604,8 +4066,50 @@ def update_users(
         auto_failover_conns.free_conns()
 
 
+def get_except_nodes(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    diffs: kopf.Diff,
+) -> int:
+    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(
+        spec)
+    except_readwrite_nodes = readwrite_replicas
+    except_readonly_nodes = readonly_replicas
+
+    for diff in diffs:
+        AC = diff[0]
+        FIELD = diff[1]
+        OLD = diff[2]
+        NEW = diff[3]
+
+        if FIELD == DIFF_FIELD_READWRITE_REPLICAS:
+            if AC != DIFF_CHANGE:
+                logger.error(
+                    str(DIFF_FIELD_ACTION) + " only support " + DIFF_CHANGE)
+            else:
+                except_readwrite_nodes = OLD
+
+        if FIELD == DIFF_FIELD_READWRITE_MACHINES:
+            if AC != DIFF_CHANGE:
+                logger.error(
+                    str(DIFF_FIELD_ACTION) + " only support " + DIFF_CHANGE)
+            else:
+                except_readwrite_nodes = len(OLD)
+
+        if FIELD == DIFF_FIELD_READONLY_REPLICAS:
+            except_readonly_nodes = OLD
+
+        if FIELD == DIFF_FIELD_READONLY_MACHINES:
+            except_readonly_nodes = len(OLD)
+
+    return except_readwrite_nodes + except_readonly_nodes
+
+
 # kubectl patch pg lzzhang --patch '{"spec": {"action": "stop"}}' --type=merge
-async def update_cluster(
+def update_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
     patch: kopf.Patch,
@@ -3614,12 +4118,14 @@ async def update_cluster(
     diffs: kopf.Diff,
 ) -> None:
     try:
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, CLUSTER_STATUS_UPDATE,
+        set_cluster_status(meta, CLUSTER_STATE, CLUSTER_STATUS_UPDATE,
                            logger)
         logger.info("check update_cluster params")
         check_param(spec, logger, create=False)
         need_roll_update = False
         need_update_number_sync_standbys = False
+        update_toleration = spec.get(UPDATE_TOLERATION, False)
+        except_nodes = get_except_nodes(meta, spec, patch, status, logger, diffs)
 
         for diff in diffs:
             AC = diff[0]
@@ -3634,16 +4140,36 @@ async def update_cluster(
             update_service(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
 
+        if update_toleration == False and waiting_cluster_final_status(meta, spec, patch, status, logger,
+                                                                       except_nodes=except_nodes) == False:
+            logger.error(f"cluster status is not health.")
+            raise kopf.PermanentError(f"cluster status is not health.")
+        else:
+            for diff in diffs:
+                AC = diff[0]
+                FIELD = diff[1]
+                OLD = diff[2]
+                NEW = diff[3]
+    
+                return_update_number_sync_standbys = update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD,
+                                NEW)
+                if need_update_number_sync_standbys == False and return_update_number_sync_standbys == True:
+                    need_update_number_sync_standbys = True
+
+        # update readwrite replicas or update readonly replicas need wait pg_basebackup
+        if need_update_number_sync_standbys:
+            waiting_cluster_final_status(meta, spec, patch, status, logger, 1 * HOURS)
+
         for diff in diffs:
             AC = diff[0]
             FIELD = diff[1]
             OLD = diff[2]
             NEW = diff[3]
 
-            return_update_number_sync_standbys = update_replicas(meta, spec, patch, status, logger, AC, FIELD, OLD,
-                            NEW)
-            if need_update_number_sync_standbys == False and return_update_number_sync_standbys == True:
-                need_update_number_sync_standbys = True
+            if update_toleration == False and waiting_cluster_final_status(meta, spec, patch, status, logger) == False:
+                logger.error(f"cluster status is not health.")
+                raise kopf.PermanentError(f"cluster status is not health.")
+
             update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
                                   OLD, NEW)
             if FIELD[0:len(DIFF_FIELD_SPEC_ANTIAFFINITY
@@ -3654,13 +4180,17 @@ async def update_cluster(
             update_antiaffinity(meta, spec, patch, status, logger, [
                 get_field(POSTGRESQL, READWRITEINSTANCE),
                 get_field(POSTGRESQL, READONLYINSTANCE)
-            ], True)
+            ], True, timeout = MINUTES * 5)
 
         for diff in diffs:
             AC = diff[0]
             FIELD = diff[1]
             OLD = diff[2]
             NEW = diff[3]
+
+            if update_toleration == False and waiting_cluster_final_status(meta, spec, patch, status, logger) == False:
+                logger.error(f"cluster status is not health.")
+                raise kopf.PermanentError(f"cluster status is not health.")
 
             update_hbas(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
             update_users(meta, spec, patch, status, logger, AC, FIELD, OLD,
@@ -3672,11 +4202,14 @@ async def update_cluster(
             update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
 
-        logger.info("waiting for update_cluster success")
-        waiting_cluster_final_status(meta, spec, patch, status, logger)
+        # waiting
+        if spec[ACTION] == ACTION_START:
+            logger.info("waiting for update_cluster success")
+            waiting_cluster_final_status(meta, spec, patch, status, logger)
 
         # after waiting_cluster_final_status. update number_sync
         if need_update_number_sync_standbys:
+            waiting_cluster_final_status(meta, spec, patch, status, logger, timeout = MINUTES * 5)
             update_number_sync_standbys(meta, spec, patch, status, logger)
 
         # wait a few seconds to prevent the pod not running
@@ -3686,11 +4219,12 @@ async def update_cluster(
         else:
             cluster_status = CLUSTER_STATUS_RUN
         # set Running
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER, cluster_status,
+        set_cluster_status(meta, CLUSTER_STATE, cluster_status,
                            logger)
     except Exception as e:
         logger.error(f"error occurs, {e}")
         traceback.print_exc()
         traceback.format_exc()
-        set_cluster_status(meta, CLUSTER_CREATE_CLUSTER,
+        set_cluster_status(meta, CLUSTER_STATE,
                            CLUSTER_STATUS_UPDATE_FAILED, logger)
+

@@ -42,10 +42,12 @@ build_image()
 	cp -r ../../source_code/postgresql "$dir/"
 	cp -r ../../source_code/pg_auto_failover "$dir/"
 	cp -r ../../source_code/pg_dirtyread "$dir/"
+	cp -r ../../source_code/citus "$dir/"
+	cp -r ../../source_code/postgis "$dir/"
 
 	cd "$dir"
 	echo "build docker image $image ..."
-	docker buildx build --no-cache -t $image --platform $pf .
+	docker builder build --no-cache -t $image --platform $pf .
 	cd -
 }
 
