@@ -46,6 +46,9 @@ build_image()
 	cp -r ../../source_code/postgis "$dir/"
 	cp -r ../../source_code/barman "$dir/"
 
+	echo "copy config ..."
+	cp -r ../config/ "$dir/"
+
 	cd "$dir"
 	echo "build docker image $image ..."
 	docker builder build --no-cache -t $image --platform $pf .
