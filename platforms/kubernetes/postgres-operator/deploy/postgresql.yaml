@@ -46,6 +46,7 @@ spec:
       - enable_seqscan=on
     podspec:
       terminationGracePeriodSeconds: 60
+#      priorityClassName: high-priority
       containers:
         - image: radondb-postgresql:15.0-v1.1.0
           imagePullPolicy: IfNotPresent
