@@ -151,10 +151,11 @@ def cluster_daemon(
             daemon_cluster(meta, spec, patch, status, logger, scheduler)
             stopped.wait(60)
     except (ValueError, Exception):
-        scheduler.remove_all_jobs()
-        scheduler.shutdown()
         logger.warning(
             f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done. remove all jobs and shutdown scheduler.")
         traceback.print_exc()
         traceback.format_exc()
+    finally:
+        scheduler.remove_all_jobs()
+        scheduler.shutdown()
         raise Exception("cluster_daemon failed.")
