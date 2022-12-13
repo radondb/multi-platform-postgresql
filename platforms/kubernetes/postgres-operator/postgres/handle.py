@@ -4811,11 +4811,6 @@ def daemon_cluster(
     scheduler: BackgroundScheduler,
 ) -> None:
 
-    try:
-        logger.info(f"Daemon 'daemon_cluster' execute.")
-        cron_cluster(meta, spec, patch, status, logger, scheduler)
-        logger.info(f"Daemon 'daemon_cluster' succeeded.")
-    except ValueError:
-        logger.error(f"cluster_daemon failed.")
-        traceback.print_exc()
-        traceback.format_exc()
+    logger.info(f"Daemon 'daemon_cluster' execute.")
+    cron_cluster(meta, spec, patch, status, logger, scheduler)
+    logger.info(f"Daemon 'daemon_cluster' succeeded.")

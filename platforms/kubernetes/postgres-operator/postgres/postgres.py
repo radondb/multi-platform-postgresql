@@ -1,6 +1,6 @@
-import time
 import logging
 import kopf
+import traceback
 from constants import (
     API_GROUP,
     API_VERSION_V1,
@@ -11,6 +11,11 @@ from handle import create_cluster, delete_cluster, timer_cluster, update_cluster
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from kubernetes import client, config
+
+from constants import (
+    SPEC_BACKUP,
+    SPEC_BACKUP_CRON,
+)
 
 
 @kopf.on.startup()
@@ -120,7 +125,7 @@ def cluster_timer(
     RESOURCE_POSTGRESQL,
     backoff=operator_config.BOOTSTRAP_RETRY_DELAY,
     initial_delay=30,
-    cancellation_timeout=3.0,
+    when=lambda spec, **_: spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, None) is not None,
 )
 def cluster_daemon(
     meta: kopf.Meta,
@@ -140,12 +145,16 @@ def cluster_daemon(
     }
     scheduler.configure(job_defaults)
     scheduler.start()
-    
-    while not stopped:
-        daemon_cluster(meta, spec, patch, status, logger, scheduler)
-        time.sleep(60)
 
-    scheduler.remove_all_jobs()
-    scheduler.shutdown()
-    logger.warning(
-        f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done. remove all jobs and shutdown scheduler.")
+    try:
+        while not stopped:
+            daemon_cluster(meta, spec, patch, status, logger, scheduler)
+            stopped.wait(60)
+    except (ValueError, Exception):
+        scheduler.remove_all_jobs()
+        scheduler.shutdown()
+        logger.warning(
+            f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done. remove all jobs and shutdown scheduler.")
+        traceback.print_exc()
+        traceback.format_exc()
+        raise Exception("cluster_daemon failed.")
