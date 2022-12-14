@@ -1,7 +1,7 @@
 apiVersion: postgres.radondb.io/v1
 kind: PostgreSQL
 metadata:
-  name: lzzhang
+  name: pg-15
   #namespace: radondb-postgres-operator
 spec:
   action: start #stop start
@@ -168,10 +168,10 @@ spec:
     SECRET_KEY: "7f3SBspTALsJw2NXmuD1253LcxwdCvSdoMs03NkV"
     ENDPOINT: "http://s3.pek3.qingstor.com/"
     BUCKET: "postgresql"
-    PATH: "test/backup"
+    PATH: "testpg15/backup"
 #  backup:
 #    manual:
-#      id: 1
+#      id: 2
 #    cron:
 #      enable: true                          # whether to enable scheduled backup
 #      schedule: "0 1 * * wed,sat"             # cron expression: minute(0-59) hour(0-23) day(1-31) month(1-12) day_of_week(0-6, mon,tue,wed,thu,fri,sat,sun)
@@ -189,9 +189,9 @@ spec:
                                                   # none: backup does not expire
                                                   # REDUNDANCY value: keep the number of backups. eg: REDUNDANCY 10.
                                                   # RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}: keep backup time. eg: RECOVERY WINDOW OF 60 DAYS
-#  restore:
-#    froms3:
-#      recovery: latest-full             # backupid or recovery_time or macro variable
+  restore:
+    froms3:
+      recovery: latest             # backupid or recovery_time or macro variable
                                                 # supported macro variable:
                                                       # latest: Restoring to latest state
                                                       # latest-full: Restoring to the latest full backup state
