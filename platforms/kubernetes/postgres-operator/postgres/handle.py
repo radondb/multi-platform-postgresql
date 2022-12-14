@@ -170,6 +170,7 @@ from constants import (
     RESTORE_FROMS3_RECOVERY_LATEST,
     RESTORE_FROMS3_RECOVERY_LATEST_FULL,
     RESTORE_FROMS3_RECOVERY_OLDEST_FULL,
+    RECOVERY_FINISH,
 )
 
 PGLOG_DIR = "log"
@@ -689,6 +690,41 @@ def waiting_instance_ready(conns: InstanceConnections,
                     break
             else:
                 break
+
+
+def waiting_postgresql_recovery_completed(
+        conns: InstanceConnections,
+        logger: logging.Logger,
+        timeout: int = WAIT_TIMEOUT
+) -> bool:
+
+    recovery_is_success = False
+    recover_completed_cmd = ["cat", ASSIST_DIR + "/" + RECOVERY_FINISH]
+    pg_running_cmd = ["ps -ef | grep -v grep | grep 'postgres -D'"]
+
+    for conn in conns.get_conns():
+        i = 0
+        maxtry = timeout
+        while True:
+            output = exec_command(conn, recover_completed_cmd, logger, interrupt=False)
+            i += 1
+            time.sleep(1)
+            if output.find("No such file or directory") != -1:
+                logger.warning(f"recovery not completed. try {i} times. {output}")
+            else:
+                recovery_is_success = True
+                break
+
+            output = exec_command(conn, pg_running_cmd, logger, interrupt=False)
+            if output.strip() == "":
+                logger.warning(f"waiting recovery but PostgreSQL is not running. maybe recovery not completed, please check PostgreSQL log. {output}")
+                break
+
+            if i >= maxtry:
+                logger.warning(f"recovery not completed. skip waitting.")
+                break
+
+    return recovery_is_success
 
 
 def create_statefulset(
@@ -1633,8 +1669,11 @@ def restore_postgresql_froms3(
     output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
     logging.warning(f"point-in-time recovery start postgresql by pg_ctl: {output}")
 
-    # waiting posgresql ready
+    # waiting postgresql ready
     waiting_postgresql_ready(tmpconns, logger)
+
+    # waiting recovery completed
+    waiting_postgresql_recovery_completed(tmpconns, logger)
 
     # sleep a lettle to wait point-in-time recovery(pitr) complete
     time.sleep(MINUTES)
