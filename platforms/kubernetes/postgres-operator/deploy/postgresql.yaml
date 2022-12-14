@@ -104,8 +104,8 @@ spec:
                 mountPath: /var/lib/postgresql/data
             resources:
               limits:
-                memory: "200Mi"
-                cpu: "0.2"
+                memory: "500Mi"
+                cpu: "0.5"
           - image: radondb-postgres-exporter:v1.1.0
             imagePullPolicy: IfNotPresent
             name: exporter # can't change the name
@@ -138,8 +138,8 @@ spec:
                 mountPath: /var/lib/postgresql/data
             resources:
               limits:
-                memory: "200Mi"
-                cpu: "0.2"
+                memory: "500Mi"
+                cpu: "0.5"
           - image: radondb-postgres-exporter:v1.1.0
             imagePullPolicy: IfNotPresent
             name: exporter # can't change the name
@@ -191,7 +191,7 @@ spec:
                                                   # RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}: keep backup time. eg: RECOVERY WINDOW OF 60 DAYS
   restore:
     froms3:
-      recovery: oldest-full             # backupid or recovery_time or macro variable
+      recovery: latest                      # backupid or recovery_time or macro variable
                                                 # supported macro variable:
                                                       # latest: Restoring to latest state
                                                       # latest-full: Restoring to the latest full backup state
