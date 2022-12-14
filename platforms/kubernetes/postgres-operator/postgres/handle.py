@@ -1541,7 +1541,7 @@ def get_latest_backupid(backup_info: str) -> str:
 
 def get_oldest_backupid(backup_info: str) -> str:
     backupid = None
-    min_timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    min_timestamp = time.time()
 
     backup_info = backup_info["backups_list"]
     for backup in backup_info:

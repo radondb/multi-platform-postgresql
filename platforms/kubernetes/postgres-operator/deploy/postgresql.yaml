@@ -191,7 +191,7 @@ spec:
                                                   # RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}: keep backup time. eg: RECOVERY WINDOW OF 60 DAYS
   restore:
     froms3:
-      recovery: latest             # backupid or recovery_time or macro variable
+      recovery: oldest-full             # backupid or recovery_time or macro variable
                                                 # supported macro variable:
                                                       # latest: Restoring to latest state
                                                       # latest-full: Restoring to the latest full backup state
