@@ -208,6 +208,7 @@ DATA_DIR = "/var/lib/postgresql/data"
 PG_DATABASE_DIR = "/var/lib/postgresql/data/pg_data"
 INIT_FINISH = "init_finish"
 RECOVERY_FINISH = "recovery_finish"
+PG_LOG_FILENAME = "start.log"
 
 PG_CONFIG_PREFIX = "PG_CONFIG_"
 PG_HBA_PREFIX = "PG_HBA_"

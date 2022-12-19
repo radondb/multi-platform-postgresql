@@ -171,6 +171,7 @@ from constants import (
     RESTORE_FROMS3_RECOVERY_LATEST_FULL,
     RESTORE_FROMS3_RECOVERY_OLDEST_FULL,
     RECOVERY_FINISH,
+    PG_LOG_FILENAME,
 )
 
 PGLOG_DIR = "log"
@@ -699,7 +700,7 @@ def waiting_postgresql_recovery_completed(
 ) -> bool:
 
     recovery_is_success = False
-    recover_completed_cmd = ["cat", ASSIST_DIR + "/" + RECOVERY_FINISH]
+    recover_completed_cmd = ["cat", os.path.join(ASSIST_DIR, RECOVERY_FINISH)]
     pg_running_cmd = ["ps -ef | grep -v grep | grep 'postgres -D'"]
 
     for conn in conns.get_conns():
@@ -1665,9 +1666,9 @@ def restore_postgresql_froms3(
     ################## point-in-time recovery(pitr) recovery start
 
     # start postgresql by pg_ctl
-    cmd = ["pg_ctl", "start", "-D", PG_DATABASE_DIR]
+    cmd = ["pg_ctl", "start", "-D", PG_DATABASE_DIR, "-l", os.path.join(PG_DATABASE_DIR, PG_LOG_FILENAME)]
     output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
-    logging.warning(f"point-in-time recovery start postgresql by pg_ctl: {output}")
+    logging.warning(f"point-in-time recovery start postgresql by pg_ctl. {output}")
 
     # waiting postgresql ready
     waiting_postgresql_ready(tmpconns, logger)
