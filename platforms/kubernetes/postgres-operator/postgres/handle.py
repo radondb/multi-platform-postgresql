@@ -8,10 +8,13 @@ import time
 import random
 import tempfile
 import re
+import ast
 from kubernetes import client, config
 from kubernetes.stream import stream
 from config import operator_config
 from typed import LabelType, InstanceConnection, InstanceConnections, TypedDict, InstanceConnectionMachine, InstanceConnectionK8S, Tuple, Any, List
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from constants import (
     VIP,
@@ -142,6 +145,33 @@ from constants import (
     SPEC_POD_PRIORITY_CLASS,
     SPEC_POD_PRIORITY_CLASS_SCOPE_NODE,
     SPEC_POD_PRIORITY_CLASS_SCOPE_CLUSTER,
+    SPEC_S3,
+    SPEC_S3_ACCESS_KEY,
+    SPEC_S3_SECRET_KEY,
+    SPEC_S3_ENDPOINT,
+    SPEC_S3_BUCKET,
+    SPEC_S3_PATH,
+    SPEC_BACKUP,
+    SPEC_BACKUP_MANUAL,
+    SPEC_BACKUP_ID,
+    SPEC_BACKUP_CRON,
+    SPEC_BACKUP_CRON_ENABLE,
+    SPEC_BACKUP_CRON_SCHEDULE,
+    SPEC_BACKUP_POLICY,
+    SPEC_BACKUP_POLICY_ARCHIVE,
+    SPEC_BACKUP_POLICY_COMPRESSION,
+    SPEC_BACKUP_POLICY_ENCRYPTION,
+    SPEC_BACKUP_POLICY_RETENTION,
+    RESTORE_FROMS3,
+    RESTORE_FROMS3_RECOVERY,
+    CLUSTER_STATUS_BACKUP,
+    CLUSTER_STATUS_ARCHIVE,
+    CLUSTER_STATUS_CRON_NEXT_RUN,
+    RESTORE_FROMS3_RECOVERY_LATEST,
+    RESTORE_FROMS3_RECOVERY_LATEST_FULL,
+    RESTORE_FROMS3_RECOVERY_OLDEST_FULL,
+    RECOVERY_FINISH,
+    PG_LOG_FILENAME,
 )
 
 PGLOG_DIR = "log"
@@ -185,6 +215,9 @@ DIFF_FIELD_READWRITE_VOLUME = (SPEC, POSTGRESQL, READWRITEINSTANCE,
 DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
 DIFF_FIELD_SPEC_ANTIAFFINITY = (SPEC, SPEC_ANTIAFFINITY)
+DIFF_FIELD_SPEC_S3 = (SPEC, SPEC_S3)
+DIFF_FIELD_SPEC_BACKUP = (SPEC, SPEC_BACKUP)
+DIFF_FIELD_SPEC_BACKUP_MANUAL = (SPEC, SPEC_BACKUP, SPEC_BACKUP_MANUAL)
 STATEFULSET_REPLICAS = 1
 PG_CONFIG_MASTER_LARGE_THAN_SLAVE = ("max_connections", "max_worker_processes", "max_wal_senders", "max_prepared_transactions", "max_locks_per_transaction")
 PG_CONFIG_IGNORE = ("block_size", "data_checksums", "data_directory_mode",
@@ -238,6 +271,8 @@ STATUS_KEEPALIVED = "systemctl status keepalived.service"
 RECOVERY_CONF_FILE = "postgresql-auto-failover-standby.conf"
 RECOVERY_SET_FILE = "postgresql-auto-failover.conf"
 STANDBY_SIGNAL = "standby.signal"
+RECOVERY_SIGNAL = "recovery.signal"
+POSTGRESQL_CONFIG = "postgresql.conf"
 GET_INET_CMD = "ip addr | grep inet"
 SUCCESS_CHECKPOINT = "CHECKPOINT"
 CONTAINER_ENV = "env"
@@ -248,6 +283,8 @@ POSTGRESQL_CONTAINER_INDEX = 0
 NODE_PRIORITY_DEFAULT = 50
 NODE_PRIORITY_NEVER = 0
 WAIT_TIMEOUT = MINUTES * 20
+
+SUPPORTED_DATE_FORMAT = ["%a %b %d %H:%M:%S %Y", "%Y-%m-%d %H:%M:%S"]
 
 
 def set_cluster_status(meta: kopf.Meta, statefield: str, state: str,
@@ -656,6 +693,41 @@ def waiting_instance_ready(conns: InstanceConnections,
                 break
 
 
+def waiting_postgresql_recovery_completed(
+        conns: InstanceConnections,
+        logger: logging.Logger,
+        timeout: int = WAIT_TIMEOUT
+) -> bool:
+
+    recovery_is_success = False
+    recover_completed_cmd = ["cat", os.path.join(ASSIST_DIR, RECOVERY_FINISH)]
+    pg_running_cmd = ["ps -ef | grep -v grep | grep 'postgres -D'"]
+
+    for conn in conns.get_conns():
+        i = 0
+        maxtry = timeout
+        while True:
+            output = exec_command(conn, recover_completed_cmd, logger, interrupt=False)
+            i += 1
+            time.sleep(1)
+            if output.find("No such file or directory") != -1:
+                logger.warning(f"recovery not completed. try {i} times. {output}")
+            else:
+                recovery_is_success = True
+                break
+
+            output = exec_command(conn, pg_running_cmd, logger, interrupt=False)
+            if output.strip() == "":
+                logger.warning(f"waiting recovery but PostgreSQL is not running. maybe recovery not completed, please check PostgreSQL log. {output}")
+                break
+
+            if i >= maxtry:
+                logger.warning(f"recovery not completed. skip waitting.")
+                break
+
+    return recovery_is_success
+
+
 def create_statefulset(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -1030,6 +1102,8 @@ def create_postgresql(
         machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_idle=60" + "\n"
         machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_interval=30" + "\n"
         machine_env += PG_CONFIG_PREFIX + "tcp_keepalives_count=4" + "\n"
+        machine_env += PG_CONFIG_PREFIX + "archive_mode=on" + "\n"
+        machine_env += PG_CONFIG_PREFIX + "archive_command='/bin/true'" + "\n"
     else:
         k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "shared_preload_libraries",
@@ -1087,6 +1161,14 @@ def create_postgresql(
         k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "tcp_keepalives_count",
             CONTAINER_ENV_VALUE: "4"
+        })
+        k8s_env.append({
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "archive_mode",
+            CONTAINER_ENV_VALUE: "on"
+        })
+        k8s_env.append({
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "archive_command",
+            CONTAINER_ENV_VALUE: "'/bin/true'"
         })
     for replica in range(create_begin, replicas):
         name = get_statefulset_name(meta["name"], field, replica)
@@ -1381,8 +1463,254 @@ def is_restore_mode(
 
     if spec[RESTORE].get(RESTORE_FROMSSH) != None:
         return True
+    
+    if spec[RESTORE].get(RESTORE_FROMS3) != None and spec.get(SPEC_S3) != None:
+        return True
 
     return False
+
+
+def is_backup_id(backupid: str) -> bool:
+    try:
+        time.strptime(backupid, "%Y%m%dT%H%M%S")
+        return True
+    except:
+        return False
+
+
+def valid_date_format(date: str) -> str:
+    res = None
+    for format in SUPPORTED_DATE_FORMAT:
+        try:
+            time.strptime(date, format)
+            res = format
+            break
+        except:
+            continue
+    return res
+
+
+def compare_timestamp(t1: str, t2: str) -> str:
+    if int(t1) >= int(t2):
+        return t1
+    else:
+        return t2
+
+
+"""
+begin_time: "Mon Sep 26 16:17:13 2022"
+begin_wal:  "000000050000000000000010"
+end_time:   "Mon Sep 26 16:17:23 2022"
+end_wal:    "000000050000000000000010"
+backup_id:  "20220926T081713"
+"""
+def get_backupid_from_backupinfo(recovery_time: str, backup_info: str) -> str:
+    backupid = None
+    date_format = valid_date_format(recovery_time)
+    if date_format is None:
+        return backupid
+    recovery_timestamp = time.mktime(time.strptime(recovery_time, date_format))
+    max_require_timestamp = None
+
+    backup_info = backup_info["backups_list"]
+    for backup in backup_info:
+        temp = time.mktime(time.strptime(backup["end_time"], '%a %b %d %H:%M:%S %Y'))
+        # backup end_time more than recovery_time
+        if compare_timestamp(recovery_timestamp, temp) == temp:
+            continue
+        elif compare_timestamp(recovery_timestamp, temp) == recovery_timestamp:
+            if max_require_timestamp is None or compare_timestamp(max_require_timestamp, temp) == temp:
+                max_require_timestamp = temp
+                backupid = backup["backup_id"]
+
+    return backupid
+
+
+def get_latest_backupid(backup_info: str) -> str:
+    backupid = None
+    max_timestamp = 0
+
+    backup_info = backup_info["backups_list"]
+    for backup in backup_info:
+        temp = time.mktime(time.strptime(backup["end_time"], '%a %b %d %H:%M:%S %Y'))
+        if compare_timestamp(max_timestamp, temp) == temp:
+            max_timestamp = temp
+            backupid = backup["backup_id"]
+
+    return backupid
+
+
+def get_oldest_backupid(backup_info: str) -> str:
+    backupid = None
+    min_timestamp = time.time()
+
+    backup_info = backup_info["backups_list"]
+    for backup in backup_info:
+        temp = time.mktime(time.strptime(backup["end_time"], '%a %b %d %H:%M:%S %Y'))
+        if compare_timestamp(min_timestamp, temp) == min_timestamp:
+            min_timestamp = temp
+            backupid = backup["backup_id"]
+
+    return backupid
+
+
+def get_s3_env_cmd(s3: List) -> List:
+    res = list()
+    # use SPEC_S3 prefix replace key (must use S3_ prefix)
+    for k in list(s3.keys()):
+        old = k
+        new = SPEC_S3 + "_" + k
+        s3[new] = s3.pop(old)
+    for k, v in s3.items():
+        if k == SPEC_BACKUP_POLICY_RETENTION:
+            continue
+        env = k + '="' + v + '"'
+        res.append('-e')
+        res.append(env)
+
+    return res
+
+
+def restore_postgresql_froms3(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conn: InstanceConnection,
+) -> None:
+
+    logger.info("restore_postgresql_froms3")
+    recovery_backupid = None
+    recovery_time = None
+
+    recovery = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_RECOVERY, None)
+
+    # add s3 env by pgtools -e
+    s3 = spec[SPEC_S3].copy()
+    s3_info = get_s3_env_cmd(s3)
+
+    tmpconns: InstanceConnections = InstanceConnections()
+    tmpconns.add(conn)
+
+    # wait postgresql ready
+    waiting_postgresql_ready(tmpconns, logger)
+
+    # get backup info
+    cmd = ["pgtools", "-v"] + s3_info
+    output = exec_command(conn, cmd, logger, interrupt=True)
+    if output == "":
+        logger.error(f"get backup info failed, exit backup")
+        raise kopf.PermanentError("get backup info failed.")
+    logger.warning(f"backup verbose info = {output}")
+    backup_info = ast.literal_eval(output)
+
+    # recovery param processing
+    if recovery is None:
+        pass
+    elif recovery == RESTORE_FROMS3_RECOVERY_LATEST:
+        recovery_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    elif recovery == RESTORE_FROMS3_RECOVERY_LATEST_FULL:
+        recovery_backupid = get_latest_backupid(backup_info)
+    elif recovery == RESTORE_FROMS3_RECOVERY_OLDEST_FULL:
+        recovery_backupid = get_oldest_backupid(backup_info)
+    elif is_backup_id(recovery):
+        recovery_backupid = recovery
+    else:
+        recovery_time = recovery
+
+    # get backupid
+    if recovery_backupid is not None:
+        backupid = recovery_backupid
+    elif recovery_time is not None:
+        backupid = get_backupid_from_backupinfo(recovery_time, backup_info)
+    else:
+        backupid = None
+
+    if backupid is None:
+        logger.error(f"backupid field not valid.")
+        raise kopf.PermanentError("backupid field not valid.")
+
+    logger.warning(f"restore_postgresql_froms3 get backupid = {backupid}, recovery_time = {recovery_time}")
+
+    # drop from autofailover and pause start postgresql
+    cmd = ["pgtools", "-d", "-p", POSTGRESQL_PAUSE]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    waiting_instance_ready(tmpconns, logger)
+
+    # restore param
+    param = "-e BACKUP_ID='" + backupid + "'"
+    if recovery_time is not None:
+        param += " -e recovery_time='" + recovery_time + "'"
+
+    cmd = ["pgtools", "-E", param] + s3_info
+    logging.warning(f"restore_postgresql_froms3 execute {cmd} to restore data")
+    output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
+    if output.find(SUCCESS) == -1:
+        logger.error(f"execute {cmd} failed. {output}")
+        raise kopf.PermanentError("restore cluster from s3 failed.")
+
+    # remove standby.signal file
+    cmd = ["rm", "-rf", os.path.join(PG_DATABASE_DIR, STANDBY_SIGNAL)]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    # remove old status data
+    cmd = [
+        "rm", "-rf",
+        "/var/lib/postgresql/data/auto_failover/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.init",
+        "/var/lib/postgresql/data/auto_failover/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.state"
+    ]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    ################## point-in-time recovery(pitr) recovery start
+
+    # start postgresql by pg_ctl
+    cmd = ["pg_ctl", "start", "-D", PG_DATABASE_DIR, "-l", os.path.join(PG_DATABASE_DIR, PG_LOG_FILENAME)]
+    output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
+    logging.warning(f"point-in-time recovery start postgresql by pg_ctl. {output}")
+
+    # waiting postgresql ready
+    waiting_postgresql_ready(tmpconns, logger)
+
+    # waiting recovery completed
+    waiting_postgresql_recovery_completed(tmpconns, logger)
+
+    # sleep a lettle to wait point-in-time recovery(pitr) complete
+    time.sleep(MINUTES)
+
+    # stop postgresql by pg_ctl
+    cmd = ["pg_ctl", "stop", "-D", PG_DATABASE_DIR]
+    output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
+    logging.warning(f"point-in-time recovery stop postgresql by pg_ctl: {output}")
+
+    # rm recovery.signal file
+    cmd = ["rm", "-rf", os.path.join(PG_DATABASE_DIR, RECOVERY_SIGNAL)]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    # clear recovery_target, recovery_target_time param
+    cmd = ["sed", "-i", "-e", "'/recovery_target /d;/recovery_target_time /d'", os.path.join(PG_DATABASE_DIR, POSTGRESQL_CONFIG)]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    # clear recovery_finish file
+    cmd = ["rm", "-rf", os.path.join(ASSIST_DIR, RECOVERY_FINISH)]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    ################## point-in-time recovery(pitr) recovery end
+
+    time.sleep(SECONDS * 10)
+
+    # resume postgresql
+    cmd = ["pgtools", "-p", POSTGRESQL_RESUME]
+    exec_command(conn, cmd, logger, interrupt=True)
+
+    # waiting posgresql ready
+    waiting_postgresql_ready(tmpconns, logger)
+
+    # update pgautofailover_replicator password
+    correct_user_password(meta, spec, patch, status, logger, conn)
+
+    tmpconns.free_conns()
 
 
 def restore_postgresql(
@@ -1395,6 +1723,161 @@ def restore_postgresql(
 ) -> None:
     if spec[RESTORE].get(RESTORE_FROMSSH) != None:
         restore_postgresql_fromssh(meta, spec, patch, status, logger, conn)
+    if spec[RESTORE].get(RESTORE_FROMS3) != None:
+        restore_postgresql_froms3(meta, spec, patch, status, logger, conn)
+
+
+def is_backup_mode(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> bool:
+    if spec.get(SPEC_BACKUP) == None:
+        return False
+
+    if spec.get(SPEC_S3) == None:
+        logger.warning("s3 related information is not set.")
+        return False
+
+    if spec[SPEC_BACKUP].get(SPEC_BACKUP_MANUAL) != None and spec[SPEC_BACKUP].get(SPEC_BACKUP_POLICY) != None:
+        return True
+
+    return False
+
+
+def is_cron_backup_mode(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> bool:
+    if spec.get(SPEC_BACKUP) == None:
+        return False
+
+    if spec.get(SPEC_S3) == None:
+        logger.warning("s3 related information is not set.")
+        return False
+
+    if spec[SPEC_BACKUP].get(SPEC_BACKUP_CRON) != None and spec[SPEC_BACKUP].get(SPEC_BACKUP_POLICY) != None:
+        return True
+
+    return False
+
+
+def get_backup_status_from_backup_info(backup_info: dict, need_field: List = ["backup_id", "begin_time", "end_time", "begin_xlog", "end_xlog"]) -> List:
+    res = list()
+    backup_info = backup_info["backups_list"]
+    for backup in backup_info:
+        temp = dict()
+        for field in need_field:
+            if field in backup:
+                temp[field] = backup[field]
+        res.append(temp)
+    return res
+
+
+def backup_postgresql_to_s3(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+
+    s3_info = list()
+    logger.info(f"backup cluster to s3")
+    # get readwrite connections
+    conns = connections(spec, meta, patch,
+                        get_field(POSTGRESQL, READWRITEINSTANCE), False, None,
+                        logger, None, status, False)
+    # wait postgresql ready
+    waiting_postgresql_ready(conns, logger)
+
+    backup_policy = spec[SPEC_BACKUP][SPEC_BACKUP_POLICY]
+    s3 = spec[SPEC_S3].copy()
+    # use SPEC_S3 prefix replace key (must use S3_ prefix)
+    for k in list(s3.keys()):
+        old = k
+        new = SPEC_S3 + "_" + k
+        s3[new] = s3.pop(old)
+    envs = {**backup_policy, **s3}
+    for k, v in envs.items():
+        if k == SPEC_BACKUP_POLICY_RETENTION:
+            continue
+        env = k + '="' + v + '"'
+        s3_info.append('-e')
+        s3_info.append(env)
+
+    cmd = ["pgtools", "-b"] + s3_info
+    logging.warning(f"backup_postgresql_to_s3 execute {cmd} to backup cluster on readwrite node")
+
+    for conn in conns.get_conns():
+        # backup
+        output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
+        if output.find(SUCCESS) == -1:
+            logger.error(f"execute {cmd} failed. {output}")
+            raise kopf.PermanentError("backup cluster to s3 failed.")
+
+    # delete expired backup
+    if envs.get(SPEC_BACKUP_POLICY_RETENTION, "") != "none":
+        param = 'BACKUP_POLICY' + '="' + envs.get(SPEC_BACKUP_POLICY_RETENTION, "") + '"'
+        cmd = ["pgtools", "-B", "-e", param] + s3_info
+        output = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
+        logger.warning(f"delete expired backup, and output = {output}")
+
+    # backup status
+    old_backup_status = status.get(CLUSTER_STATUS_BACKUP, None)
+    cmd = ["pgtools", "-v"] + s3_info
+    output = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
+    if output == "":
+        logger.error(f"backup_postgresql_to_s3 get backup info failed, exit backup")
+        raise kopf.PermanentError("backup_postgresql_to_s3 get backup info failed.")
+    logger.warning(f"backup_postgresql_to_s3 get backup verbose info = {output}")
+    backup_info = ast.literal_eval(output)
+    new_backup_status = get_backup_status_from_backup_info(backup_info)
+
+    logger.warning(f"old_backup_status = {old_backup_status}")
+    logger.warning(f"new_backup_status = {new_backup_status}")
+
+    res = list()
+    for new_status in new_backup_status:
+        # old backup
+        is_old_backup = False
+        if old_backup_status is not None:
+            for old_status in old_backup_status:
+                if new_status["backup_id"] == old_status["backup_id"]:
+                    res.append(old_status)
+                    is_old_backup = True
+                    break
+        if is_old_backup:
+            continue
+        # new backup add size field
+        backup_id = new_status["backup_id"]
+        param = 'BACKUP_ID' + '="' + backup_id + '"'
+        cmd = ["pgtools", "-m", "-e", param] + s3_info
+        size = exec_command(conns.get_conns()[0], cmd, logger, interrupt=True, user="postgres")
+        new_status["size"] = size.strip()
+        res.append(new_status)
+
+    # set backup status
+    set_cluster_status(meta, CLUSTER_STATUS_BACKUP, res, logger)
+
+    # free conns
+    conns.free_conns()
+
+
+def backup_postgresql(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    backup_postgresql_to_s3(meta, spec, patch, status, logger)
+    logger.info(f"backup_postgresql cluster success.")
 
 
 # LABEL: MULTI_PG_VERSIONS
@@ -2612,6 +3095,10 @@ def create_cluster(
 
         update_pgpassfile(meta, spec, patch, status, logger)
 
+        # if is backup mode, execute signal backup and archive wal log
+        if is_backup_mode(meta, spec, patch, status, logger):
+            backup_postgresql(meta, spec, patch, status, logger)
+
         # wait a few seconds to prevent the pod not running
         time.sleep(5)
         # cluster running
@@ -2966,6 +3453,55 @@ def correct_postgresql_role(
                     % e)
 
 
+def correct_backup_status(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    if is_backup_mode(meta, spec, patch, status, logger) or is_cron_backup_mode(meta, spec, patch, status, logger):
+        if spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_POLICY, {}).get(SPEC_BACKUP_POLICY_ARCHIVE, "") == "on":
+            readwrite_conns = connections(spec, meta, patch,
+                                          get_field(POSTGRESQL, READWRITEINSTANCE),
+                                          False, None, logger, None, status, False)
+            conn = get_primary_conn(readwrite_conns, 0, logger)
+            cmd = ["pgtools", "-w", "0", "-q", ''' "select last_archived_wal, last_archived_time from pg_stat_archiver limit 1;" ''']
+            logger.info(f"correct_backup_status with cmd {cmd}")
+            output = exec_command(conn, cmd, logger, interrupt=False).split("|")
+            keys = ["last_archived_wal", "last_archived_time"]
+            state = dict(zip(keys, output))
+        else:
+            state = ""
+        if status.get(CLUSTER_STATUS_ARCHIVE, None) != state:
+            set_cluster_status(meta, CLUSTER_STATUS_ARCHIVE, state, logger)
+
+        readwrite_conns.free_conns()
+
+
+def correct_s3_profile(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    if is_backup_mode(meta, spec, patch, status, logger) or is_cron_backup_mode(meta, spec, patch, status, logger):
+        s3 = spec[SPEC_S3].copy()
+        s3_info = get_s3_env_cmd(s3)
+        readwrite_conns = connections(spec, meta, patch,
+                                      get_field(POSTGRESQL, READWRITEINSTANCE),
+                                      False, None, logger, None, status, False)
+        for conn in readwrite_conns.get_conns():
+            cmd = ["aws configure list | grep 'None' | wc -l"]
+            output = exec_command(conn, cmd, logger, interrupt=False, user="postgres")
+            if int(output) == 4:
+                cmd = ["pgtools", "-v"] + s3_info
+                exec_command(conn, cmd, logger, interrupt=True)
+
+        readwrite_conns.free_conns()
+
+
 def timer_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -2977,6 +3513,9 @@ def timer_cluster(
     correct_postgresql_role(meta, spec, patch, status, logger)
     correct_keepalived(meta, spec, patch, status, logger)
     correct_postgresql_password(meta, spec, patch, status, logger)
+    correct_backup_status(meta, spec, patch, status, logger)
+    correct_s3_profile(meta, spec, patch, status, logger)
+
 
 def update_number_sync_standbys(
     meta: kopf.Meta,
@@ -4126,6 +4665,7 @@ def update_cluster(
         need_update_number_sync_standbys = False
         update_toleration = spec.get(UPDATE_TOLERATION, False)
         except_nodes = get_except_nodes(meta, spec, patch, status, logger, diffs)
+        need_backup_cluster = False
 
         for diff in diffs:
             AC = diff[0]
@@ -4202,10 +4742,23 @@ def update_cluster(
             update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
 
+            if FIELD[0:len(DIFF_FIELD_SPEC_BACKUP_MANUAL
+                           )] == DIFF_FIELD_SPEC_BACKUP_MANUAL or (
+                               FIELD[0:len(DIFF_FIELD_SPEC_BACKUP)]
+                               == DIFF_FIELD_SPEC_BACKUP and AC == "add"
+                               and OLD is None and SPEC_BACKUP_MANUAL in NEW):
+                need_backup_cluster = True
+
+
         # waiting
         if spec[ACTION] == ACTION_START:
             logger.info("waiting for update_cluster success")
             waiting_cluster_final_status(meta, spec, patch, status, logger)
+
+        # s3 backup
+        if need_backup_cluster:
+            if is_backup_mode(meta, spec, patch, status, logger):
+                backup_postgresql(meta, spec, patch, status, logger)
 
         # after waiting_cluster_final_status. update number_sync
         if need_update_number_sync_standbys:
@@ -4228,3 +4781,80 @@ def update_cluster(
         set_cluster_status(meta, CLUSTER_STATE,
                            CLUSTER_STATUS_UPDATE_FAILED, logger)
 
+
+def cron_backup(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    cron_expression: str,
+) -> None:
+    try:
+        if is_cron_backup_mode(meta, spec, patch, status, logger):
+            backup_postgresql(meta, spec, patch, status, logger)
+    except kopf.PermanentError:
+        logger.error(f"cron_backup failed.")
+        traceback.print_exc()
+        traceback.format_exc()
+
+
+def cron_cluster(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    scheduler: BackgroundScheduler,
+) -> None:
+
+    new_cron_expression = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_SCHEDULE, None)
+    cron_enable = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_ENABLE, None)
+    jobs = scheduler.get_jobs()
+
+    if cron_enable:
+        if not jobs:
+            logger.info(f"current cronjob is empty, add cronjob with {new_cron_expression}")
+            job = scheduler.add_job(func=cron_backup, trigger=CronTrigger.from_crontab(new_cron_expression),
+                                    args=(meta, spec, patch, status, logger, new_cron_expression))
+            logger.info(f"add job success.")
+        else:
+            job = jobs[0]
+            old_cron_expression = job.args[-1]
+            if old_cron_expression != new_cron_expression:
+                # modify job args and reschedule job
+                # job.modify(args=(meta, spec, patch, status, logger, new_cron_expression))
+                # job = scheduler.reschedule_job(job_id=job.id, jobstore=None,
+                #                                trigger=CronTrigger.from_crontab(new_cron_expression))
+                job.remove()
+                job = scheduler.add_job(func=cron_backup, trigger=CronTrigger.from_crontab(new_cron_expression),
+                                        args=(meta, spec, patch, status, logger, new_cron_expression))
+                logger.info(f"reschedule job success.")
+            else:
+                logger.info(f"job exists.")
+    else:
+        # if enable is false but have job, remove job from scheduler
+        if jobs:
+            logger.warning(f"cron not enable, remove job with {jobs[0].args[-1]}")
+            jobs[0].remove()
+
+    next_run_time = ""
+    if cron_enable:
+        next_run_time = str(job.next_run_time).replace(" ", "T")
+        logger.info(f"cronjob next run time is {next_run_time}")
+    if next_run_time != status.get(CLUSTER_STATUS_CRON_NEXT_RUN, None):
+        set_cluster_status(meta, CLUSTER_STATUS_CRON_NEXT_RUN, next_run_time, logger)
+
+
+def daemon_cluster(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    scheduler: BackgroundScheduler,
+) -> None:
+
+    logger.info(f"Daemon 'daemon_cluster' execute.")
+    cron_cluster(meta, spec, patch, status, logger, scheduler)
+    logger.info(f"Daemon 'daemon_cluster' succeeded.")
