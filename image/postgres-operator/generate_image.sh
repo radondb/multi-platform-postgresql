@@ -20,7 +20,41 @@ build_image()
 	cp -r ../../platforms/kubernetes/postgres-operator/postgres .
 
 	echo "build docker image $image ..."
-	docker builder build --no-cache -t $image --platform $platform .
+	build_cmd="docker"
+	docker_version=$(docker version --format '{{index (split .Server.Version ".") 0}}')
+
+	if [ $docker_version -ge 20 ]; then
+		build_cmd="$build_cmd buildx build --no-cache"
+	else
+		build_cmd="$build_cmd builder build --no-cache"
+	fi
+
+	if [ $platform == "all" ]; then
+		echo "build all image need docker login. "
+		builder_exists=$(docker buildx ls | awk '{if ($1=="multi-platform") print $1}')
+		if [ "$builder_exists" ]; then
+			docker buildx rm multi-platform
+		fi
+		# create a new builder instance
+		docker buildx create --use --name multi-platform --platform=linux/amd64,linux/arm64
+
+		temp=($(echo $image | tr "/" " "))
+		if [ ${#temp[@]} == 1 ]; then
+			image="$namespace/$image"
+		fi
+
+		build_cmd="$build_cmd --push --platform linux/amd64,linux/arm64"
+	else
+		build_cmd="$build_cmd --platform linux/${platform}"
+	fi
+
+	build_cmd="$build_cmd -t $image ."
+	$build_cmd
+
+	# remove builder instance
+#	if [ $platform == "all" ]; then
+#		docker buildx rm multi-platform
+#	fi
 }
 
 image=$(jq -r '.image' versions.json)
@@ -28,4 +62,4 @@ if [ "$platform" = arm64 ]; then
 	image=${image}-arm64
 fi
 
-build_image $image "linux/${platform}"
+build_image $image "${platform}"

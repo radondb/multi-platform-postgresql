@@ -13,9 +13,10 @@
 FILEDESC = "multi platform for computer/kubernetes postgresql"
 
 #docker_version ?= ""
-export platform=amd64# make platform=arm64 build arm
+export platform=amd64# make platform=arm64 build arm, make platform=all build and push arm64/amd64 image
 export pgversion=all# make pgversion=12 only build postgresql 12 that in versions.json field.
 export forcebuildimage=0# make forcebuildimage=1 even though the image exists, it also compiles.
+export namespace=radondb# used when make platform=all and no repositry namespace
 
 k8s: download postgres-image operator-yaml operator-image exporter-image
 all: k8s
