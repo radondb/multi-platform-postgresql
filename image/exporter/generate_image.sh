@@ -17,14 +17,7 @@ build_image()
 	fi
 
 	echo "build docker image $image ..."
-	build_cmd="docker"
-	docker_version=$(docker version --format '{{index (split .Server.Version ".") 0}}')
-
-	if [ $docker_version -ge 20 ]; then
-		build_cmd="$build_cmd buildx build --no-cache"
-	else
-		build_cmd="$build_cmd builder build --no-cache"
-	fi
+	build_cmd="docker buildx build --no-cache"
 
 	if [ $platform == "all" ]; then
 		echo "build all image need docker login. "
