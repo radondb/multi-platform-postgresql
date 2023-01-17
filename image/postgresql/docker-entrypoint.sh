@@ -83,7 +83,8 @@ main() {
 		mkdir -p /var/run/postgresql/
 		chmod 777 /var/run/postgresql/
 		mkdir -p "$DATA"
-		chmod 700 "$DATA"
+		mkdir -p "$DATA/barman/data" "$DATA/barman/config"
+		chmod -R 700 "$DATA"
 		chown -R postgres:postgres "$DATA"
 		# postgresql data directory
 		mkdir -p "$PGDATA"

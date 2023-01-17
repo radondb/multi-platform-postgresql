@@ -104,8 +104,8 @@ spec:
                 mountPath: /var/lib/postgresql/data
             resources:
               limits:
-                memory: "200Mi"
-                cpu: "0.2"
+                memory: "500Mi"
+                cpu: "0.5"
           - image: radondb-postgres-exporter:v1.1.0
             imagePullPolicy: IfNotPresent
             name: exporter # can't change the name
@@ -130,7 +130,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: radondb-postgresql:15.0-v1.1.0
+          - image:  radondb-postgresql:15.0-v1.1.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
@@ -138,8 +138,8 @@ spec:
                 mountPath: /var/lib/postgresql/data
             resources:
               limits:
-                memory: "200Mi"
-                cpu: "0.2"
+                memory: "500Mi"
+                cpu: "0.5"
           - image: radondb-postgres-exporter:v1.1.0
             imagePullPolicy: IfNotPresent
             name: exporter # can't change the name
@@ -158,8 +158,46 @@ spec:
             resources:
               requests:
                 storage: 1Gi
-  backup: TODO later. cronbackup, manual backup by kubectl patch
+#  backup: TODO later. cronbackup, manual backup by kubectl patch
   #restore:
   #  fromssh:
   #    path: /home/lzzhang/xx
   #    address: root:password:192.168.0.8:22 # or local 'local' restore from the first postgresql node
+  S3:
+    ACCESS_KEY: "xxxxxxxxxxxxxxxxxxx"
+    SECRET_KEY: "xxxxxxxxxxxxxxxxxxx"
+    ENDPOINT: "http://s3.pek3.qingstor.com/"
+    BUCKET: "postgresql"
+    PATH: "test/backup"
+#  backup:
+#    manual:
+#      trigger-id: 2
+#    cron:
+#      enable: true                          # whether to enable scheduled backup
+#      schedule: "0 1 * * wed,sat"             # cron expression: minute(0-59) hour(0-23) day(1-31) month(1-12) day_of_week(0-6, mon,tue,wed,thu,fri,sat,sun)
+#                                                   execute once a day at 23:00: 0 23 * * *
+#                                                   1:00 every weekend: 0 1 * * sun
+#                                                   executed at 1:00 AM on the first day of each month : 0 1 1 * *
+#                                                   execute once every day at 0:00, 13:00: 0 0,13 * * *
+#                                                   executed at 1:00 AM every Wednesday and Saturday: 0 1 * * wed,sat
+#                                               For more information see https://apscheduler.readthedocs.io/en/3.x/modules/triggers/cron.html?highlight=cron
+#    policy:                                  # take effect on next backup
+#      archive: 'on'                            # whether to archive WAL. on/off
+#      compression: gzip                        # backup compression. none/gzip/bzip2/snappy
+#      encryption: AES256                       # backup encryption. none/AES256/aws:kms
+#      retention: REDUNDANCY 10                 # backup retention policy. none/REDUNDANCY value/RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}
+                                                 # none: backup does not expire
+                                                 # REDUNDANCY value: keep the number of backups. eg: REDUNDANCY 10.
+                                                 # RECOVERY WINDOW OF value {DAYS | WEEKS | MONTHS}: keep backup time. eg: RECOVERY WINDOW OF 60 DAYS
+#  restore:
+#    froms3:
+#      recovery: latest                      # backupid or recovery_time or macro variable
+                                                # supported macro variable:
+                                                      # latest: Restoring to latest state
+                                                      # latest-full: Restoring to the latest full backup state
+                                                      # oldest-full: Restoring to the oldest full backup state
+#      recovery_backupid: 20221011T143943
+#      recovery_time: 2022-10-11 14:45:32
+#    fromssh:
+#      path: /home/lzzhang/xx
+#      address: root:password:192.168.0.8:22 # or local 'local' restore from the first postgresql node
