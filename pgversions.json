@@ -10,7 +10,7 @@
     "postgis": "3.3.1",
     "barman": "release/3.3.0",
     "name": "radondb-postgresql",
-    "version": "v1.1.0",
+    "version": "v1.2.0",
     "arches": [
       "aarch64",
       "x86_64"
@@ -27,7 +27,7 @@
     "postgis": "3.3.1",
     "barman": "release/3.3.0",
     "name": "radondb-postgresql",
-    "version": "v1.1.0",
+    "version": "v1.2.0",
     "arches": [
       "aarch64",
       "x86_64"
@@ -44,7 +44,7 @@
     "postgis": "3.3.1",
     "barman": "release/3.3.0",
     "name": "radondb-postgresql",
-    "version": "v1.1.0",
+    "version": "v1.2.0",
     "arches": [
       "aarch64",
       "x86_64"
@@ -61,7 +61,7 @@
     "postgis": "3.3.1",
     "barman": "release/3.3.0",
     "name": "radondb-postgresql",
-    "version": "v1.1.0",
+    "version": "v1.2.0",
     "arches": [
       "aarch64",
       "x86_64"
