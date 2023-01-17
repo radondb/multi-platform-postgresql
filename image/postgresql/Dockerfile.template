@@ -32,7 +32,7 @@ RUN apt install -y --no-install-recommends \
 		libxslt-dev \
 		uuid-dev \
 		tcl-dev \
-        liblz4-dev \
+		liblz4-dev \
 		libperl-dev \
 		libkrb5-dev \
 		libcurl4-openssl-dev \
@@ -46,7 +46,9 @@ RUN apt install -y --no-install-recommends \
 		libprotobuf-c-dev \
 		protobuf-c-compiler \
 		gdal-bin \
-		libgdal-dev
+		libgdal-dev \
+		python3 \
+		python3-pip
 #{{ if env.arch == "aarch64"  then ( -}}
 #        ""
 #{{ ) else "" end -}}
@@ -111,6 +113,13 @@ RUN	cd /usr/src/postgis; \
 	make PG_CONFIG=/var/lib/postgresql/bin/pg_config -j `expr $(nproc) - 2` >/dev/null; \
 	make install PG_CONFIG=/var/lib/postgresql/bin/pg_config;
 
+ADD barman /usr/src/barman
+RUN python3 -m pip install --trusted-host mirrors.aliyun.com psycopg2-binary -i http://mirrors.aliyun.com/pypi/simple/; \
+	cd /usr/src/barman; \
+	git checkout {{ .barman }}; \
+	python3 setup.py build; \
+	python3 setup.py install --home=/var/lib/postgresql/barman --install-lib=/var/lib/postgresql/barman/lib;
+
 RUN cd /var/lib/postgresql; \
 		tar czhvf lib.tar.gz `find . -type f | xargs ldd 2>/dev/null | grep "=>" | cut -d ">" -f 2 | cut -d "(" -f 1 | sort -u`
 	
@@ -120,6 +129,9 @@ FROM debian:{{ .debian }}
 ENV LANG en_US.utf8
 ENV TZ=Asia/Shanghai
 ENV DATA /var/lib/postgresql/data
+ENV AWS_DATA_PATH $DATA/.aws
+ENV AWS_CONFIG_FILE $AWS_DATA_PATH/config
+ENV AWS_SHARED_CREDENTIALS_FILE $AWS_DATA_PATH/credentials
 ENV XDG_CONFIG_HOME /var/lib/postgresql/data/auto_failover
 ENV XDG_DATA_HOME /var/lib/postgresql/data/auto_failover
 ENV ASSIST /var/lib/postgresql/data/assist
@@ -131,6 +143,7 @@ VOLUME /var/lib/postgresql/data
 COPY --from=builder /var/lib/postgresql/ /var/lib/postgresql
 COPY docker-entrypoint.sh /usr/local/bin/
 COPY pgtools /usr/local/bin/
+COPY config/barman/barman.conf /etc/
 
 RUN set -eux; \
 	groupadd -r postgres --gid=999; \
@@ -146,8 +159,15 @@ RUN set -eux; \
 	apt install -y --no-install-recommends vim sysstat inetutils-ping procps net-tools ssh sshpass curl ; \
 	apt install -y --no-install-recommends gosu locales ; \
 	localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8 ; \
+	apt install -y  --no-install-recommends python3 python3-pip rsync; \
+	python3 -m pip install --trusted-host mirrors.aliyun.com --no-cache-dir \
+			setuptools==45.2.0 boto3 awscli \
+			-i http://mirrors.aliyun.com/pypi/simple/; \
+	python3 -m easy_install --no-deps /var/lib/postgresql/barman/lib/*; \
+	apt-get purge -y python3-pip; \
 	apt-get clean; \
 	rm -rf /var/lib/apt/lists/*; \
+	rm -rf /var/lib/postgresql/barman; \
 	apt-get purge -y --auto-remove ; \
 	echo "* soft    nofile  1024000" >> /etc/security/limits.conf; \
 	echo "* hard    nofile  1024000" >> /etc/security/limits.conf; \
