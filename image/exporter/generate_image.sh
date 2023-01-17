@@ -35,7 +35,7 @@ build_image()
 
 		build_cmd="$build_cmd --push --platform linux/amd64,linux/arm64"
 	else
-		build_cmd="$build_cmd --platform linux/${platform}"
+		build_cmd="$build_cmd -o type=docker --platform linux/${platform}"
 	fi
 
 	build_cmd="$build_cmd -t $image ."
