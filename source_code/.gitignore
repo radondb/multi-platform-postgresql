@@ -3,3 +3,4 @@ postgresql
 pg_dirtyread
 citus
 postgis
+barman

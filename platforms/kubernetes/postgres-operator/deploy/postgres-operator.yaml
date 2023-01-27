@@ -83,6 +83,21 @@ spec:
       name: ROmemory
       type: string
       priority: 1           # show in wide view
+    - jsonPath: .status.cron_next_run_time
+      description: The postgresql cluster cron backup net run time
+      name: CronNextRunTime
+      type: string
+      priority: 1           # show in wide view
+    - jsonPath: .status.backups_wal_archive
+      description: The postgresql cluster backup status
+      name: BackupsWALArchive
+      type: string
+      priority: 1           # show in wide view
+    - jsonPath: .status.backups_list
+      description: The postgresql cluster backup status
+      name: BackupStatus
+      type: string
+      priority: 1           # show in wide view
     schema:
       openAPIV3Schema:
         type: object
@@ -131,6 +146,20 @@ spec:
                     - 'autofailover-readwrite'
                     - 'autofailover-readwrite-readonly'
                   topologyKey:
+                    type: string
+              S3:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  ACCESS_KEY:
+                    type: string
+                  SECRET_KEY:
+                    type: string
+                  ENDPOINT:
+                    type: string
+                  BUCKET:
+                    type: string
+                  PATH:
                     type: string
               services:
                 type: array
@@ -323,7 +352,48 @@ spec:
                           type: object
                           x-kubernetes-preserve-unknown-fields: true
               backup:
-                type: string
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  manual:
+                    type: object
+                    properties:
+                      trigger-id:
+                        type: integer
+                  cron:
+                    type: object
+                    properties:
+                      enable:
+                        type: boolean
+                      schedule:
+                        type: string
+                  policy:
+                    type: object
+                    properties:
+                      archive:
+                        type: string
+                        enum:
+                        - 'on'
+                        - 'off'
+                        default: 'off'
+                      compression:
+                        type: string
+                        enum:
+                        - 'gzip'
+                        - 'bzip2'
+                        - 'snappy'
+                        - 'none'
+                        default: 'none'
+                      encryption:
+                        type: string
+                        enum:
+                        - 'AES256'
+                        - 'aws:kms'
+                        - 'none'
+                        default: 'none'
+                      retention:
+                        type: string
+                        default: 'none'
               restore:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
@@ -334,6 +404,11 @@ spec:
                       path:
                         type: string
                       address:
+                        type: string
+                  froms3:
+                    type: object
+                    properties:
+                      recovery:
                         type: string
 
 ---
@@ -478,7 +553,7 @@ spec:
       serviceAccountName: radondb-postgres-operator-account
       containers:
       - name: radondb-postgres-operator
-        image: radondb/radondb-postgres-operator:v1.1.1
+        image: radondb/radondb-postgres-operator:v1.2.0
         imagePullPolicy: IfNotPresent
         livenessProbe:
           timeoutSeconds: 10
