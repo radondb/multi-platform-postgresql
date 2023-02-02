@@ -117,6 +117,9 @@ ADD barman /usr/src/barman
 RUN python3 -m pip install --trusted-host mirrors.aliyun.com psycopg2-binary -i http://mirrors.aliyun.com/pypi/simple/; \
 	cd /usr/src/barman; \
 	git checkout {{ .barman }}; \
+	echo '' >> setup.cfg; \
+	echo '[easy_install]' >> setup.cfg; \
+	echo 'index_url = http://mirrors.aliyun.com/pypi/simple/' >> setup.cfg; \
 	python3 setup.py build; \
 	python3 setup.py install --home=/var/lib/postgresql/barman --install-lib=/var/lib/postgresql/barman/lib;
 
