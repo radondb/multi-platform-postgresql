@@ -158,11 +158,6 @@ spec:
             resources:
               requests:
                 storage: 1Gi
-#  backup: TODO later. cronbackup, manual backup by kubectl patch
-  #restore:
-  #  fromssh:
-  #    path: /home/lzzhang/xx
-  #    address: root:password:192.168.0.8:22 # or local 'local' restore from the first postgresql node
   S3:
     ACCESS_KEY: "xxxxxxxxxxxxxxxxxxx"
     SECRET_KEY: "xxxxxxxxxxxxxxxxxxx"
