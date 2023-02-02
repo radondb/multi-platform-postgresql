@@ -18,6 +18,11 @@ export pgversion=all# make pgversion=12 only build postgresql 12 that in version
 export forcebuildimage=0# make forcebuildimage=1 even though the image exists, it also compiles.
 export namespace=radondb# used when make platform=all and no repositry namespace
 
+### make log
+# nohup make postgres-image &
+# log file is nohup.out
+### end
+
 k8s: download postgres-image operator-yaml operator-image exporter-image
 all: k8s
 
