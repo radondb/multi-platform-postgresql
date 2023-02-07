@@ -339,6 +339,7 @@ function add_s3_param() {
 function init_and_include_conf() {
 	DATA_DIR=$1
 	CONF_FILE=$2
+	NEED_INIT=$3
 
 	# include CONF_FILE
 	grep -E "include '$CONF_FILE'" $DATA_DIR/postgresql.conf
@@ -347,7 +348,9 @@ function init_and_include_conf() {
 	fi
 
 	# init CONF_FILE
-	echo "" > $DATA_DIR/$CONF_FILE
+	if [ "$NEED_INIT" ]; then
+		echo "" > $DATA_DIR/$CONF_FILE
+	fi
 }
 
 function s3_backup() {
@@ -481,7 +484,7 @@ function s3_restore() {
 if [ "${do_config}" = 1 ]; then
 	user_conf="postgresql_user.conf"
 
-	init_and_include_conf $PGDATA $user_conf
+	init_and_include_conf $PGDATA $user_conf "yes"
 
 	env | grep "^$PG_CONFIG" | while read item
 	do
