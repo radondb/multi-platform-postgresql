@@ -189,7 +189,12 @@ main() {
 			# pg_autoctl config set replication.password
 			# alter user pgautofailover_replicator password 'h4ckm3m0r3';
 			if [ ! -s "$PGDATA/PG_VERSION" ]; then
-				primary_information_num=$(psql -p $run_port -t -A -d "postgres://autoctl_node:$AUTOCTL_NODE_PASSWORD@$MONITOR_HOSTNAME:$monitor_port/pg_auto_failover?sslmode=prefer" -c "select count(*) from pgautofailover.node where formationid='primary' ")
+				alone_node=$(psql -t -A -d "postgres://autoctl_node:$AUTOCTL_NODE_PASSWORD@$MONITOR_HOSTNAME:$monitor_port/pg_auto_failover?sslmode=prefer" -c "select count(*) from pgautofailover.node where nodehost='$EXTERNAL_HOSTNAME' ")
+				if [ "$alone_node" = 1 ]; then
+					psql -t -A -d "postgres://autoctl_node:$AUTOCTL_NODE_PASSWORD@$MONITOR_HOSTNAME:$monitor_port/pg_auto_failover?sslmode=prefer" -c "delete from pgautofailover.node where nodehost='$EXTERNAL_HOSTNAME' "
+				fi
+
+				primary_information_num=$(psql -t -A -d "postgres://autoctl_node:$AUTOCTL_NODE_PASSWORD@$MONITOR_HOSTNAME:$monitor_port/pg_auto_failover?sslmode=prefer" -c "select count(*) from pgautofailover.node where formationid='primary' ")
 				if [ "$PG_MODE" = readwrite -a "$primary_information_num" = 0 ]; then
 					temp_start_auto_failover "$cmd" 300
 
