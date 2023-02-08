@@ -161,6 +161,10 @@ spec:
                     type: string
                   PATH:
                     type: string
+                  BACKUP_NAME:
+                    type: string
+                  RESTORE_NAME:
+                    type: string
               services:
                 type: array
                 items:

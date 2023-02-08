@@ -152,6 +152,8 @@ from constants import (
     SPEC_S3_ENDPOINT,
     SPEC_S3_BUCKET,
     SPEC_S3_PATH,
+    SPEC_S3_BACKUP_NAME,
+    SPEC_S3_RESTORE_NAME,
     SPEC_BACKUP,
     SPEC_BACKUP_MANUAL,
     SPEC_BACKUP_TRIGGER_ID,
@@ -295,6 +297,7 @@ BARMAN_BACKUP_LISTS = "backups_list"
 BARMAN_BACKUP_END = "end_time"
 BARMAN_BACKUP_ID = "backup_id"
 BARMAN_BACKUP_SIZE = "size"
+BARMAN_BACKUP_NAME = "BARMAN_BACKUPNAME"
 BARMAN_STATUS_DEFAULT_NEED_FIELD = ["backup_id", "begin_time", "end_time", "begin_xlog", "end_xlog"]
 BARMAN_TIME_FORMAT = "%a %b %d %H:%M:%S %Y"
 ### end
@@ -1610,8 +1613,16 @@ def get_oldest_backupid(backup_info: TypedDict) -> str:
     return backupid
 
 
-def get_s3_env(s3: TypedDict) -> List:
+def get_s3_env(meta: kopf.Meta, s3: TypedDict) -> List:
     res = list()
+
+    name = meta["name"]
+    if SPEC_S3_BACKUP_NAME in s3:
+        name = s3.pop(SPEC_S3_BACKUP_NAME)
+    if SPEC_S3_RESTORE_NAME in s3:
+        name = s3.pop(SPEC_S3_RESTORE_NAME)
+    res.append("-e")
+    res.append(BARMAN_BACKUP_NAME + '="' + name + '"')
 
     # use SPEC_S3 prefix replace S3 key (must use S3_ prefix)
     for k in list(s3.keys()):
@@ -1668,7 +1679,8 @@ def restore_postgresql_froms3(
 
     # add s3 env by pgtools -e
     s3 = spec[SPEC_S3].copy()
-    s3_info = get_s3_env(s3)
+    s3.pop(SPEC_S3_BACKUP_NAME, None)
+    s3_info = get_s3_env(meta, s3)
 
     tmpconns: InstanceConnections = InstanceConnections()
     tmpconns.add(conn)
@@ -1901,7 +1913,8 @@ def backup_postgresql_to_s3(
 
     # add s3 env by pgtools
     s3 = spec[SPEC_S3].copy()
-    s3_list = get_s3_env(s3)
+    s3.pop(SPEC_S3_RESTORE_NAME, None)
+    s3_list = get_s3_env(meta, s3)
 
     backup_policy = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_POLICY, {})
     policy_list = get_policy_env(backup_policy)
@@ -3579,7 +3592,7 @@ def correct_s3_profile(
 ) -> None:
     if is_s3_manual_backup_mode(meta, spec, patch, status, logger) or is_s3_cron_backup_mode(meta, spec, patch, status, logger):
         s3 = spec[SPEC_S3].copy()
-        s3_info = get_s3_env(s3)
+        s3_info = get_s3_env(meta, s3)
         readwrite_conns = connections(spec, meta, patch,
                                       get_field(POSTGRESQL, READWRITEINSTANCE),
                                       False, None, logger, None, status, False)

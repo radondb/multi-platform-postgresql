@@ -164,6 +164,8 @@ spec:
     ENDPOINT: "http://s3.pek3.qingstor.com/"
     BUCKET: "postgresql"
     PATH: "test/backup"
+#    BACKUP_NAME: "postgresql-backup"
+#    RESTORE_NAME: "postgresql-backup"
 #  backupCluster:
 #    manual:
 #      trigger-id: 2
