@@ -164,7 +164,7 @@ spec:
     ENDPOINT: "http://s3.pek3.qingstor.com/"
     BUCKET: "postgresql"
     PATH: "test/backup"
-#  backup:
+#  backupCluster:
 #    manual:
 #      trigger-id: 2
 #    cron:

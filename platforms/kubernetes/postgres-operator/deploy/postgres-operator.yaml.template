@@ -352,6 +352,8 @@ spec:
                           type: object
                           x-kubernetes-preserve-unknown-fields: true
               backup:
+                type: string
+              backupCluster:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
                 properties:
