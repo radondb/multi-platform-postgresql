@@ -153,7 +153,7 @@ main() {
 				pg_autoctl create formation --pgdata "$PGDATA"  --formation "$formation" --kind pgsql --enable-secondary
 				check_error $? "create formation failed"
 
-				pgtools -q "alter user autoctl_node password '$AUTOCTL_NODE_PASSWORD'"
+				pgtools -q "alter user autoctl_node superuser password '$AUTOCTL_NODE_PASSWORD'"
 				check_error $? "set autoctl_node password failed"
 
 				temp_stop_auto_failover
