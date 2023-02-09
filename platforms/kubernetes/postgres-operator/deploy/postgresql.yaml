@@ -165,8 +165,8 @@ spec:
     BUCKET: "postgresql"
     PATH: "test/backup"
 #  backupCluster:
-#    backups3:
-#      name: postgresql-backup
+##    backups3:
+##      name: postgresql-backup
 #    manual:
 #      trigger-id: 2
 #    cron:
