@@ -161,10 +161,6 @@ spec:
                     type: string
                   PATH:
                     type: string
-                  BACKUP_NAME:
-                    type: string
-                  RESTORE_NAME:
-                    type: string
               services:
                 type: array
                 items:
@@ -361,6 +357,11 @@ spec:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
                 properties:
+                  backups3:
+                    type: object
+                    properties:
+                      name:
+                        type: string
                   manual:
                     type: object
                     properties:
@@ -414,6 +415,8 @@ spec:
                   froms3:
                     type: object
                     properties:
+                      name:
+                        type: string
                       recovery:
                         type: string
 
