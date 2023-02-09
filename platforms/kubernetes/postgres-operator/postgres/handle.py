@@ -153,6 +153,8 @@ from constants import (
     SPEC_S3_BUCKET,
     SPEC_S3_PATH,
     SPEC_BACKUP,
+    SPEC_BACKUP_BACKUPS3,
+    SPEC_BACKUP_BACKUPS3_NAME,
     SPEC_BACKUP_MANUAL,
     SPEC_BACKUP_TRIGGER_ID,
     SPEC_BACKUP_CRON,
@@ -168,6 +170,7 @@ from constants import (
     SPEC_BACKUP_POLICY_RETENTION,
     SPEC_BACKUP_POLICY_RETENTION_DEFAULT_VALUE,
     RESTORE_FROMS3,
+    RESTORE_FROMS3_NAME,
     RESTORE_FROMS3_RECOVERY,
     CLUSTER_STATUS_BACKUP,
     CLUSTER_STATUS_ARCHIVE,
@@ -295,6 +298,7 @@ BARMAN_BACKUP_LISTS = "backups_list"
 BARMAN_BACKUP_END = "end_time"
 BARMAN_BACKUP_ID = "backup_id"
 BARMAN_BACKUP_SIZE = "size"
+BARMAN_BACKUP_NAME = "BARMAN_BACKUPNAME"
 BARMAN_STATUS_DEFAULT_NEED_FIELD = ["backup_id", "begin_time", "end_time", "begin_xlog", "end_xlog"]
 BARMAN_TIME_FORMAT = "%a %b %d %H:%M:%S %Y"
 ### end
@@ -1610,6 +1614,19 @@ def get_oldest_backupid(backup_info: TypedDict) -> str:
     return backupid
 
 
+def get_backup_name_env(meta: kopf.Meta, name: str = None) -> List:
+    res = list()
+
+    if name is None:
+        name = meta['name']
+
+    env = BARMAN_BACKUP_NAME + '="' + name + '"'
+    res.append('-e')
+    res.append(env)
+
+    return res
+
+
 def get_s3_env(s3: TypedDict) -> List:
     res = list()
 
@@ -1665,10 +1682,13 @@ def restore_postgresql_froms3(
     recovery_time = None
 
     recovery = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_RECOVERY, None)
+    name = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_NAME, None)
 
     # add s3 env by pgtools -e
     s3 = spec[SPEC_S3].copy()
-    s3_info = get_s3_env(s3)
+    s3_list = get_s3_env(s3)
+    name_list = get_backup_name_env(meta, name)
+    s3_info = [*s3_list, *name_list]
 
     tmpconns: InstanceConnections = InstanceConnections()
     tmpconns.add(conn)
@@ -1906,7 +1926,10 @@ def backup_postgresql_to_s3(
     backup_policy = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_POLICY, {})
     policy_list = get_policy_env(backup_policy)
 
-    s3_info = [*s3_list, *policy_list]
+    name = spec[SPEC_BACKUP].get(SPEC_BACKUP_BACKUPS3, {}).get(SPEC_BACKUP_BACKUPS3_NAME, None)
+    name_list = get_backup_name_env(meta, name)
+
+    s3_info = [*s3_list, *policy_list, *name_list]
 
     cmd = ["pgtools", "-b"] + s3_info
     logging.warning(f"backup_postgresql_to_s3 execute {cmd} to backup cluster on readwrite node")

@@ -357,6 +357,11 @@ spec:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
                 properties:
+                  backups3:
+                    type: object
+                    properties:
+                      name:
+                        type: string
                   manual:
                     type: object
                     properties:
@@ -410,6 +415,8 @@ spec:
                   froms3:
                     type: object
                     properties:
+                      name:
+                        type: string
                       recovery:
                         type: string
 
