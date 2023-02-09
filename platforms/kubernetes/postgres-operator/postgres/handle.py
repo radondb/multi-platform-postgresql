@@ -305,6 +305,11 @@ BARMAN_TIME_FORMAT = "%a %b %d %H:%M:%S %Y"
 DEFAULT_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 SUPPORTED_DATE_FORMAT = [BARMAN_TIME_FORMAT, DEFAULT_TIME_FORMAT]
 
+## backup
+BACKUP_MODE_NONE = "none"
+BACKUP_MODE_S3_MANUAL = "manual"
+BACKUP_MODE_S3_CRON = "cron"
+
 
 def set_cluster_status(meta: kopf.Meta, statefield: str, state: str,
                        logger: logging.Logger) -> None:
@@ -1836,6 +1841,20 @@ def restore_postgresql(
     if is_restore_s3_mode(meta, spec, patch, status, logger):
         restore_postgresql_froms3(meta, spec, patch, status, logger, conn)
 
+def get_backup_mode(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> str:
+    if is_s3_manual_backup_mode(meta, spec, patch, status, logger):
+        return BACKUP_MODE_S3_MANUAL
+
+    if is_s3_cron_backup_mode(meta, spec, patch, status, logger):
+        return BACKUP_MODE_S3_CRON
+
+    return BACKUP_MODE_NONE
 
 def is_backup_mode(
     meta: kopf.Meta,
@@ -1996,7 +2015,8 @@ def backup_postgresql(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
-    backup_postgresql_to_s3(meta, spec, patch, status, logger)
+    if get_backup_mode(meta, spec, patch, status, logger) == BACKUP_MODE_S3_MANUAL or get_backup_mode(meta, spec, patch, status, logger) == BACKUP_MODE_S3_CRON:
+        backup_postgresql_to_s3(meta, spec, patch, status, logger)
     logger.info(f"backup_postgresql cluster success.")
 
 
@@ -3576,7 +3596,7 @@ def correct_backup_status(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
-    if is_s3_manual_backup_mode(meta, spec, patch, status, logger) or is_s3_cron_backup_mode(meta, spec, patch, status, logger):
+    if get_backup_mode(meta, spec, patch, status, logger) == BACKUP_MODE_S3_MANUAL or get_backup_mode(meta, spec, patch, status, logger) == BACKUP_MODE_S3_CRON:
         if spec[SPEC_BACKUPCLUSTER][SPEC_BACKUPTOS3].get(SPEC_BACKUPTOS3_POLICY, {}).get(SPEC_BACKUPTOS3_POLICY_ARCHIVE, "") == "on":
             readwrite_conns = connections(spec, meta, patch,
                                           get_field(POSTGRESQL, READWRITEINSTANCE),
@@ -3602,7 +3622,7 @@ def correct_s3_profile(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
-    if is_s3_manual_backup_mode(meta, spec, patch, status, logger) or is_s3_cron_backup_mode(meta, spec, patch, status, logger):
+    if get_backup_mode(meta, spec, patch, status, logger) == BACKUP_MODE_S3_MANUAL or get_backup_mode(meta, spec, patch, status, logger) == BACKUP_MODE_S3_CRON:
         s3 = spec[SPEC_S3].copy()
         s3_info = get_s3_env(s3)
         readwrite_conns = connections(spec, meta, patch,
@@ -3727,8 +3747,8 @@ def trigger_backup_to_s3_manual(
                    )] == DIFF_FIELD_SPEC_BACKUPS3_MANUAL or (
             FIELD[0:len(DIFF_FIELD_SPEC_BACKUPCLUSTER)]
             == DIFF_FIELD_SPEC_BACKUPCLUSTER and AC == "add"
-            and OLD is None and fuzzy_matching(NEW, DIFF_FIELD_SPEC_BACKUPS3_MANUAL[len(DIFF_FIELD_SPEC_BACKUPCLUSTER):len(DIFF_FIELD_SPEC_BACKUPS3_MANUAL)] == True)):
-        if is_s3_manual_backup_mode(meta, spec, patch, status, logger):
+            and OLD is None and fuzzy_matching(NEW, DIFF_FIELD_SPEC_BACKUPS3_MANUAL[len(DIFF_FIELD_SPEC_BACKUPCLUSTER):len(DIFF_FIELD_SPEC_BACKUPS3_MANUAL)]) == True):
+        if get_backup_mode(meta, spec, patch, status, logger) == BACKUP_MODE_S3_MANUAL:
             backup_postgresql(meta, spec, patch, status, logger)
 
 
@@ -4926,7 +4946,7 @@ def cron_backup(
     cron_expression: str,
 ) -> None:
     try:
-        if is_s3_cron_backup_mode(meta, spec, patch, status, logger):
+        if get_backup_mode(meta, spec, patch, status, logger) == BACKUP_MODE_S3_CRON:
             backup_postgresql(meta, spec, patch, status, logger)
     except kopf.PermanentError:
         logger.error(f"cron_backup failed.")
