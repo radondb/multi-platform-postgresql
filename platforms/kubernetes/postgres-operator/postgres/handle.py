@@ -3703,6 +3703,25 @@ def update_number_sync_standbys(
                     f"set number-sync-standbys failed {cmd}  {output}")
         autofailover_conns.free_conns()
 
+def trigger_backup_to_s3_manual(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    AC: str,
+    FIELD: Tuple,
+    OLD: Any,
+    NEW: Any,
+) -> bool:
+    if FIELD[0:len(DIFF_FIELD_SPEC_BACKUPS3_MANUAL
+                   )] == DIFF_FIELD_SPEC_BACKUPS3_MANUAL or (
+            FIELD[0:len(DIFF_FIELD_SPEC_BACKUPS3)]
+            == DIFF_FIELD_SPEC_BACKUPS3 and AC == "add"
+            and OLD is None and SPEC_BACKUPTOS3_MANUAL in NEW):
+        if is_s3_manual_backup_mode(meta, spec, patch, status, logger):
+            backup_postgresql(meta, spec, patch, status, logger)
+
 
 def update_streaming(
     meta: kopf.Meta,
@@ -4859,23 +4878,13 @@ def update_cluster(
             update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
 
-            if FIELD[0:len(DIFF_FIELD_SPEC_BACKUPS3_MANUAL
-                           )] == DIFF_FIELD_SPEC_BACKUPS3_MANUAL or (
-                    FIELD[0:len(DIFF_FIELD_SPEC_BACKUPS3)]
-                    == DIFF_FIELD_SPEC_BACKUPS3 and AC == "add"
-                    and OLD is None and SPEC_BACKUPTOS3_MANUAL in NEW):
-                need_backup_cluster = True
+            trigger_backup_to_s3_manual(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
 
 
         # waiting
         if spec[ACTION] == ACTION_START:
             logger.info("waiting for update_cluster success")
             waiting_cluster_final_status(meta, spec, patch, status, logger)
-
-        # s3 backup
-        if need_backup_cluster:
-            if is_s3_manual_backup_mode(meta, spec, patch, status, logger):
-                backup_postgresql(meta, spec, patch, status, logger)
 
         # after waiting_cluster_final_status. update number_sync
         if need_update_number_sync_standbys:
