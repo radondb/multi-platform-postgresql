@@ -116,10 +116,12 @@ class Config:
         self.TESTING = testing.lower() == "true"
 
         # IMAGE_REGISTRY
-        self.IMAGE_REGISTRY = self.env("IMAGE_REGISTRY", default=self.IMAGE_REGISTRY)
+        self.IMAGE_REGISTRY = self.env("IMAGE_REGISTRY",
+                                       default=self.IMAGE_REGISTRY)
 
         # NAMESPACE_OVERRIDE
-        self.NAMESPACE_OVERRIDE = self.env("NAMESPACE_OVERRIDE", default=self.NAMESPACE_OVERRIDE)
+        self.NAMESPACE_OVERRIDE = self.env("NAMESPACE_OVERRIDE",
+                                           default=self.NAMESPACE_OVERRIDE)
 
     def env(self, name: str, *, default=UNDEFINED) -> str:
         full_name = f"{self._prefix}{name}"
