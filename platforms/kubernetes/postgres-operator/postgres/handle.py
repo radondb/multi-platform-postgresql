@@ -3727,7 +3727,7 @@ def trigger_backup_to_s3_manual(
                    )] == DIFF_FIELD_SPEC_BACKUPS3_MANUAL or (
             FIELD[0:len(DIFF_FIELD_SPEC_BACKUPCLUSTER)]
             == DIFF_FIELD_SPEC_BACKUPCLUSTER and AC == "add"
-            and OLD is None and fuzzy_matching(NEW, DIFF_FIELD_SPEC_BACKUPS3_MANUAL[len(DIFF_FIELD_SPEC_BACKUPCLUSTER):len(DIFF_FIELD_SPEC_BACKUPS3_MANUAL)] == True):
+            and OLD is None and fuzzy_matching(NEW, DIFF_FIELD_SPEC_BACKUPS3_MANUAL[len(DIFF_FIELD_SPEC_BACKUPCLUSTER):len(DIFF_FIELD_SPEC_BACKUPS3_MANUAL)] == True)):
         if is_s3_manual_backup_mode(meta, spec, patch, status, logger):
             backup_postgresql(meta, spec, patch, status, logger)
 
