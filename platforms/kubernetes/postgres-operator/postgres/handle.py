@@ -152,23 +152,23 @@ from constants import (
     SPEC_S3_ENDPOINT,
     SPEC_S3_BUCKET,
     SPEC_S3_PATH,
-    SPEC_BACKUP,
-    SPEC_BACKUP_BACKUPS3,
-    SPEC_BACKUP_BACKUPS3_NAME,
-    SPEC_BACKUP_MANUAL,
-    SPEC_BACKUP_TRIGGER_ID,
-    SPEC_BACKUP_CRON,
-    SPEC_BACKUP_CRON_ENABLE,
-    SPEC_BACKUP_CRON_SCHEDULE,
-    SPEC_BACKUP_POLICY,
-    SPEC_BACKUP_POLICY_ARCHIVE,
-    SPEC_BACKUP_POLICY_ARCHIVE_DEFAULT_VALUE,
-    SPEC_BACKUP_POLICY_COMPRESSION,
-    SPEC_BACKUP_POLICY_COMPRESSION_DEFAULT_VALUE,
-    SPEC_BACKUP_POLICY_ENCRYPTION,
-    SPEC_BACKUP_POLICY_ENCRYPTION_DEFAULT_VALUE,
-    SPEC_BACKUP_POLICY_RETENTION,
-    SPEC_BACKUP_POLICY_RETENTION_DEFAULT_VALUE,
+    SPEC_BACKUPCLUSTER,
+    SPEC_BACKUPTOS3,
+    SPEC_BACKUPTOS3_NAME,
+    SPEC_BACKUPTOS3_MANUAL,
+    SPEC_BACKUPTOS3_MANUAL_TRIGGER_ID,
+    SPEC_BACKUPTOS3_CRON,
+    SPEC_BACKUPTOS3_CRON_ENABLE,
+    SPEC_BACKUPTOS3_CRON_SCHEDULE,
+    SPEC_BACKUPTOS3_POLICY,
+    SPEC_BACKUPTOS3_POLICY_ARCHIVE,
+    SPEC_BACKUPTOS3_POLICY_ARCHIVE_DEFAULT_VALUE,
+    SPEC_BACKUPTOS3_POLICY_COMPRESSION,
+    SPEC_BACKUPTOS3_POLICY_COMPRESSION_DEFAULT_VALUE,
+    SPEC_BACKUPTOS3_POLICY_ENCRYPTION,
+    SPEC_BACKUPTOS3_POLICY_ENCRYPTION_DEFAULT_VALUE,
+    SPEC_BACKUPTOS3_POLICY_RETENTION,
+    SPEC_BACKUPTOS3_POLICY_RETENTION_DEFAULT_VALUE,
     RESTORE_FROMS3,
     RESTORE_FROMS3_NAME,
     RESTORE_FROMS3_RECOVERY,
@@ -224,8 +224,8 @@ DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
 DIFF_FIELD_SPEC_ANTIAFFINITY = (SPEC, SPEC_ANTIAFFINITY)
 DIFF_FIELD_SPEC_S3 = (SPEC, SPEC_S3)
-DIFF_FIELD_SPEC_BACKUP = (SPEC, SPEC_BACKUP)
-DIFF_FIELD_SPEC_BACKUP_MANUAL = (SPEC, SPEC_BACKUP, SPEC_BACKUP_MANUAL)
+DIFF_FIELD_SPEC_BACKUPS3 = (SPEC, SPEC_BACKUPCLUSTER, SPEC_BACKUPTOS3)
+DIFF_FIELD_SPEC_BACKUPS3_MANUAL = (SPEC, SPEC_BACKUPCLUSTER, SPEC_BACKUPTOS3, SPEC_BACKUPTOS3_MANUAL)
 STATEFULSET_REPLICAS = 1
 PG_CONFIG_MASTER_LARGE_THAN_SLAVE = ("max_connections", "max_worker_processes", "max_wal_senders", "max_prepared_transactions", "max_locks_per_transaction")
 PG_CONFIG_IGNORE = ("block_size", "data_checksums", "data_directory_mode",
@@ -1648,10 +1648,10 @@ def get_policy_env(policy: TypedDict) -> List:
     res = list()
 
     default_policy = {
-        SPEC_BACKUP_POLICY_ARCHIVE: SPEC_BACKUP_POLICY_ARCHIVE_DEFAULT_VALUE,
-        SPEC_BACKUP_POLICY_COMPRESSION: SPEC_BACKUP_POLICY_COMPRESSION_DEFAULT_VALUE,
-        SPEC_BACKUP_POLICY_ENCRYPTION: SPEC_BACKUP_POLICY_ENCRYPTION_DEFAULT_VALUE,
-        SPEC_BACKUP_POLICY_RETENTION: SPEC_BACKUP_POLICY_RETENTION_DEFAULT_VALUE
+        SPEC_BACKUPTOS3_POLICY_ARCHIVE: SPEC_BACKUPTOS3_POLICY_ARCHIVE_DEFAULT_VALUE,
+        SPEC_BACKUPTOS3_POLICY_COMPRESSION: SPEC_BACKUPTOS3_POLICY_COMPRESSION_DEFAULT_VALUE,
+        SPEC_BACKUPTOS3_POLICY_ENCRYPTION: SPEC_BACKUPTOS3_POLICY_ENCRYPTION_DEFAULT_VALUE,
+        SPEC_BACKUPTOS3_POLICY_RETENTION: SPEC_BACKUPTOS3_POLICY_RETENTION_DEFAULT_VALUE
     }
 
     for k, v in policy.items():
@@ -1845,7 +1845,10 @@ def is_backup_mode(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> bool:
-    if spec.get(SPEC_BACKUP) == None:
+    if spec.get(SPEC_BACKUPCLUSTER) == None:
+        return False
+
+    if spec[SPEC_BACKUPCLUSTER].get(SPEC_BACKUPTOS3) == None:
         return False
 
     return True
@@ -1865,7 +1868,7 @@ def is_s3_manual_backup_mode(
         logger.warning("s3 related information is not set.")
         return False
 
-    if spec[SPEC_BACKUP].get(SPEC_BACKUP_MANUAL) != None:
+    if spec[SPEC_BACKUPCLUSTER].get(SPEC_BACKUPTOS3, {}).get(SPEC_BACKUPTOS3_MANUAL) != None:
         return True
 
     return False
@@ -1885,7 +1888,7 @@ def is_s3_cron_backup_mode(
         logger.warning("s3 related information is not set.")
         return False
 
-    if spec[SPEC_BACKUP].get(SPEC_BACKUP_CRON) != None:
+    if spec[SPEC_BACKUPCLUSTER].get(SPEC_BACKUPTOS3, {}).get(SPEC_BACKUPTOS3_CRON) != None:
         return True
 
     return False
@@ -1923,10 +1926,10 @@ def backup_postgresql_to_s3(
     s3 = spec[SPEC_S3].copy()
     s3_list = get_s3_env(s3)
 
-    backup_policy = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_POLICY, {})
+    backup_policy = spec[SPEC_BACKUPCLUSTER][SPEC_BACKUPTOS3].get(SPEC_BACKUPTOS3_POLICY, {})
     policy_list = get_policy_env(backup_policy)
 
-    name = spec[SPEC_BACKUP].get(SPEC_BACKUP_BACKUPS3, {}).get(SPEC_BACKUP_BACKUPS3_NAME, None)
+    name = spec[SPEC_BACKUPCLUSTER][SPEC_BACKUPTOS3].get(SPEC_BACKUPTOS3_NAME, None)
     name_list = get_backup_name_env(meta, name)
 
     s3_info = [*s3_list, *policy_list, *name_list]
@@ -3575,7 +3578,7 @@ def correct_backup_status(
     logger: logging.Logger,
 ) -> None:
     if is_s3_manual_backup_mode(meta, spec, patch, status, logger) or is_s3_cron_backup_mode(meta, spec, patch, status, logger):
-        if spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_POLICY, {}).get(SPEC_BACKUP_POLICY_ARCHIVE, "") == "on":
+        if spec[SPEC_BACKUPCLUSTER][SPEC_BACKUPTOS3].get(SPEC_BACKUPTOS3_POLICY, {}).get(SPEC_BACKUPTOS3_POLICY_ARCHIVE, "") == "on":
             readwrite_conns = connections(spec, meta, patch,
                                           get_field(POSTGRESQL, READWRITEINSTANCE),
                                           False, None, logger, None, status, False)
@@ -4856,11 +4859,11 @@ def update_cluster(
             update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
 
-            if FIELD[0:len(DIFF_FIELD_SPEC_BACKUP_MANUAL
-                           )] == DIFF_FIELD_SPEC_BACKUP_MANUAL or (
-                               FIELD[0:len(DIFF_FIELD_SPEC_BACKUP)]
-                               == DIFF_FIELD_SPEC_BACKUP and AC == "add"
-                               and OLD is None and SPEC_BACKUP_MANUAL in NEW):
+            if FIELD[0:len(DIFF_FIELD_SPEC_BACKUPS3_MANUAL
+                           )] == DIFF_FIELD_SPEC_BACKUPS3_MANUAL or (
+                    FIELD[0:len(DIFF_FIELD_SPEC_BACKUPS3)]
+                    == DIFF_FIELD_SPEC_BACKUPS3 and AC == "add"
+                    and OLD is None and SPEC_BACKUPTOS3_MANUAL in NEW):
                 need_backup_cluster = True
 
 
@@ -4922,8 +4925,9 @@ def cron_cluster(
     scheduler: BackgroundScheduler,
 ) -> None:
 
-    new_cron_expression = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_SCHEDULE, None)
-    cron_enable = spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_ENABLE, None)
+    cron = spec.get(SPEC_BACKUPCLUSTER, {}).get(SPEC_BACKUPTOS3, {}).get(SPEC_BACKUPTOS3_CRON, {})
+    new_cron_expression = cron.get(SPEC_BACKUPTOS3_CRON_SCHEDULE, None)
+    cron_enable = cron.get(SPEC_BACKUPTOS3_CRON_ENABLE, None)
     jobs = scheduler.get_jobs()
 
     if cron_enable:
