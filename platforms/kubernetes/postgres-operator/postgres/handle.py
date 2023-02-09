@@ -223,8 +223,7 @@ DIFF_FIELD_READWRITE_VOLUME = (SPEC, POSTGRESQL, READWRITEINSTANCE,
 DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
 DIFF_FIELD_SPEC_ANTIAFFINITY = (SPEC, SPEC_ANTIAFFINITY)
-DIFF_FIELD_SPEC_S3 = (SPEC, SPEC_S3)
-DIFF_FIELD_SPEC_BACKUPS3 = (SPEC, SPEC_BACKUPCLUSTER, SPEC_BACKUPTOS3)
+DIFF_FIELD_SPEC_BACKUPCLUSTER = (SPEC, SPEC_BACKUPCLUSTER)
 DIFF_FIELD_SPEC_BACKUPS3_MANUAL = (SPEC, SPEC_BACKUPCLUSTER, SPEC_BACKUPTOS3, SPEC_BACKUPTOS3_MANUAL)
 STATEFULSET_REPLICAS = 1
 PG_CONFIG_MASTER_LARGE_THAN_SLAVE = ("max_connections", "max_worker_processes", "max_wal_senders", "max_prepared_transactions", "max_locks_per_transaction")
@@ -3703,6 +3702,16 @@ def update_number_sync_standbys(
                     f"set number-sync-standbys failed {cmd}  {output}")
         autofailover_conns.free_conns()
 
+def fuzzy_matching(data: Any, match_data: Tuple) -> bool:
+    ldata=str(data)
+
+    for md in match_data:
+        if ldata.find(str(md)) == -1:
+            return False
+
+    return True
+
+
 def trigger_backup_to_s3_manual(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -3716,9 +3725,9 @@ def trigger_backup_to_s3_manual(
 ) -> bool:
     if FIELD[0:len(DIFF_FIELD_SPEC_BACKUPS3_MANUAL
                    )] == DIFF_FIELD_SPEC_BACKUPS3_MANUAL or (
-            FIELD[0:len(DIFF_FIELD_SPEC_BACKUPS3)]
-            == DIFF_FIELD_SPEC_BACKUPS3 and AC == "add"
-            and OLD is None and SPEC_BACKUPTOS3_MANUAL in NEW):
+            FIELD[0:len(DIFF_FIELD_SPEC_BACKUPCLUSTER)]
+            == DIFF_FIELD_SPEC_BACKUPCLUSTER and AC == "add"
+            and OLD is None and fuzzy_matching(NEW, DIFF_FIELD_SPEC_BACKUPS3_MANUAL[len(DIFF_FIELD_SPEC_BACKUPCLUSTER):len(DIFF_FIELD_SPEC_BACKUPS3_MANUAL)] == True):
         if is_s3_manual_backup_mode(meta, spec, patch, status, logger):
             backup_postgresql(meta, spec, patch, status, logger)
 
