@@ -13,9 +13,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from kubernetes import client, config
 
 from constants import (
-    SPEC_BACKUP,
-    SPEC_BACKUP_CRON,
-    SPEC_BACKUP_CRON_ENABLE,
+    SPEC_BACKUPCLUSTER,
+    SPEC_BACKUPTOS3,
+    SPEC_BACKUPTOS3_CRON,
+    SPEC_BACKUPTOS3_CRON_ENABLE,
 )
 
 
@@ -126,7 +127,7 @@ def cluster_timer(
     RESOURCE_POSTGRESQL,
     backoff=operator_config.BOOTSTRAP_RETRY_DELAY,
     initial_delay=30,
-    when=lambda spec, **_: spec.get(SPEC_BACKUP, {}).get(SPEC_BACKUP_CRON, {}).get(SPEC_BACKUP_CRON_ENABLE, False) is True,
+    when=lambda spec, **_: spec.get(SPEC_BACKUPCLUSTER, {}).get(SPEC_BACKUPTOS3, {}).get(SPEC_BACKUPTOS3_CRON, {}).get(SPEC_BACKUPTOS3_CRON_ENABLE, False) is True,
 )
 def cluster_daemon(
     meta: kopf.Meta,
