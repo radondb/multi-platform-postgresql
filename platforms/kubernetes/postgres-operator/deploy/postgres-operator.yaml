@@ -352,48 +352,56 @@ spec:
                           type: object
                           x-kubernetes-preserve-unknown-fields: true
               backup:
+                type: string
+              backupCluster:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
                 properties:
-                  manual:
+                  backupToS3:
                     type: object
+                    x-kubernetes-preserve-unknown-fields: true
                     properties:
-                      trigger-id:
-                        type: integer
-                  cron:
-                    type: object
-                    properties:
-                      enable:
-                        type: boolean
-                      schedule:
+                      name:
                         type: string
-                  policy:
-                    type: object
-                    properties:
-                      archive:
-                        type: string
-                        enum:
-                        - 'on'
-                        - 'off'
-                        default: 'off'
-                      compression:
-                        type: string
-                        enum:
-                        - 'gzip'
-                        - 'bzip2'
-                        - 'snappy'
-                        - 'none'
-                        default: 'none'
-                      encryption:
-                        type: string
-                        enum:
-                        - 'AES256'
-                        - 'aws:kms'
-                        - 'none'
-                        default: 'none'
-                      retention:
-                        type: string
-                        default: 'none'
+                      manual:
+                        type: object
+                        properties:
+                          trigger-id:
+                            type: integer
+                      cron:
+                        type: object
+                        properties:
+                          enable:
+                            type: boolean
+                          schedule:
+                            type: string
+                      policy:
+                        type: object
+                        properties:
+                          archive:
+                            type: string
+                            enum:
+                            - 'on'
+                            - 'off'
+                            default: 'off'
+                          compression:
+                            type: string
+                            enum:
+                            - 'gzip'
+                            - 'bzip2'
+                            - 'snappy'
+                            - 'none'
+                            default: 'none'
+                          encryption:
+                            type: string
+                            enum:
+                            - 'AES256'
+                            - 'aws:kms'
+                            - 'none'
+                            default: 'none'
+                          retention:
+                            type: string
+                            default: 'none'
               restore:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
@@ -408,6 +416,8 @@ spec:
                   froms3:
                     type: object
                     properties:
+                      name:
+                        type: string
                       recovery:
                         type: string
 

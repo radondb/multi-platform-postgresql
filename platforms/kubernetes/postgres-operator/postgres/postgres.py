@@ -127,7 +127,9 @@ def cluster_timer(
     RESOURCE_POSTGRESQL,
     backoff=operator_config.BOOTSTRAP_RETRY_DELAY,
     initial_delay=30,
-    when=lambda spec, **_: spec.get(SPEC_BACKUPCLUSTER, {}).get(SPEC_BACKUPTOS3, {}).get(SPEC_BACKUPTOS3_CRON, {}).get(SPEC_BACKUPTOS3_CRON_ENABLE, False) is True,
+    when=lambda spec, **_: spec.get(SPEC_BACKUPCLUSTER, {}).get(
+        SPEC_BACKUPTOS3, {}).get(SPEC_BACKUPTOS3_CRON, {}).get(
+            SPEC_BACKUPTOS3_CRON_ENABLE, False) is True,
 )
 def cluster_daemon(
     meta: kopf.Meta,
@@ -141,10 +143,7 @@ def cluster_daemon(
 
     # init and start BackgroundScheduler
     scheduler = BackgroundScheduler()
-    job_defaults = {
-        'coalesce': False,
-        'max_instances': 1
-    }
+    job_defaults = {'coalesce': False, 'max_instances': 1}
     scheduler.configure(job_defaults)
     scheduler.start()
 
@@ -157,7 +156,8 @@ def cluster_daemon(
         traceback.format_exc()
     finally:
         logger.warning(
-            f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done. remove all jobs and shutdown scheduler.")
+            f"cluster_daemon with name: {meta['name']}, namespace: {meta['namespace']}, spec: {spec} are done. remove all jobs and shutdown scheduler."
+        )
         scheduler.remove_all_jobs()
         scheduler.shutdown()
         raise Exception("cluster_daemon completed.")
