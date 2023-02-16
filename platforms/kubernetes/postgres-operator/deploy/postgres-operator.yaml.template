@@ -161,6 +161,12 @@ spec:
                     type: string
                   PATH:
                     type: string
+              rebuild:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  nodeName:
+                    type: string
               services:
                 type: array
                 items:

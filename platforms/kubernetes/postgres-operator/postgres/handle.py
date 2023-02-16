@@ -180,6 +180,8 @@ from constants import (
     RESTORE_FROMS3_RECOVERY_OLDEST_FULL,
     RECOVERY_FINISH,
     PG_LOG_FILENAME,
+    SPEC_REBUILD,
+    SPCE_REBUILD_NODENAMES,
 )
 
 PGLOG_DIR = "log"
@@ -188,6 +190,7 @@ FIELD_DELIMITER = "-"
 WAITING_POSTGRESQL_READY_COMMAND = ["pgtools", "-a"]
 INIT_FINISH_MESSAGE = "init postgresql finish"
 STOP_FAILED_MESSAGE = "stop auto_failover failed"
+POSTGRESQL_NOT_RUNNING_MESSAGE = "can't connect database."
 SWITCHOVER_FAILED_MESSAGE = "switchover failed"
 AUTO_FAILOVER_PORT = 55555
 EXPORTER_PORT = 9187
@@ -225,6 +228,8 @@ DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
 DIFF_FIELD_SPEC_ANTIAFFINITY = (SPEC, SPEC_ANTIAFFINITY)
 DIFF_FIELD_SPEC_BACKUPCLUSTER = (SPEC, SPEC_BACKUPCLUSTER)
 DIFF_FIELD_SPEC_BACKUPS3_MANUAL = (SPEC, SPEC_BACKUPCLUSTER, SPEC_BACKUPTOS3, SPEC_BACKUPTOS3_MANUAL)
+DIFF_FIELD_SPEC_REBUILD = (SPEC, SPEC_REBUILD)
+DIFF_FIELD_SPEC_REBUILD_NODENAMES = (SPEC, SPEC_REBUILD, SPCE_REBUILD_NODENAMES)
 STATEFULSET_REPLICAS = 1
 PG_CONFIG_MASTER_LARGE_THAN_SLAVE = ("max_connections", "max_worker_processes", "max_wal_senders", "max_prepared_transactions", "max_locks_per_transaction")
 PG_CONFIG_IGNORE = ("block_size", "data_checksums", "data_directory_mode",
@@ -309,6 +314,8 @@ SUPPORTED_DATE_FORMAT = [BARMAN_TIME_FORMAT, DEFAULT_TIME_FORMAT]
 BACKUP_MODE_NONE = "none"
 BACKUP_MODE_S3_MANUAL = "manual"
 BACKUP_MODE_S3_CRON = "cron"
+
+SPECIAL_CHARACTERS = "/##/"
 
 
 def set_cluster_status(meta: kopf.Meta, statefield: str, state: str,
@@ -657,7 +664,7 @@ def waiting_postgresql_ready(
                 i += 1
                 time.sleep(1)
                 logger.error(
-                    f"postgresql is not ready. try {i} times. {output}")
+                    f"postgresql {get_connhost(conn)} is not ready. try {i} times. {output}")
                 if i >= maxtry:
                     logger.warning(f"postgresql is not ready. skip waitting.")
                     return False
@@ -2263,6 +2270,18 @@ def machine_sftp_get(sftp: paramiko.SFTPClient, localpath: str,
             f"can't get file from remote {remotepath} : {e}")
 
 
+def multi_exec_command(
+    conns: InstanceConnections,
+    cmds: List,
+    logger: logging.Logger,
+    interrupt: bool = True,
+    user: str = "root",
+) -> None:
+    for conn in conns.get_conns():
+        for cmd in cmds:
+            exec_command(conn, cmd, logger, interrupt=interrupt, user=user)
+
+
 def exec_command(conn: InstanceConnection,
                  cmd: [str],
                  logger: logging.Logger,
@@ -2501,15 +2520,18 @@ def delete_postgresql(
     delete_disk: bool,
     conn: InstanceConnection,
 ) -> None:
+    grace_period_seconds = 70
+
     if delete_disk == True:
         logger.info("delete postgresql instance from autofailover")
         if get_primary_host(meta, spec, patch, status,
                             logger) == get_connhost(conn):
             autofailover_switchover(meta, spec, patch, status, logger, primary_host=get_connhost(conn))
-        cmd = ["pgtools", "-D"]
-        output = exec_command(conn, cmd, logger, interrupt=False)
-        if output.find("drop auto_failover failed") != -1:
-            logger.error("can't delete postgresql instance " + output)
+        if get_conn_role(conn) == POSTGRESQL:
+            cmd = ["pgtools", "-D"]
+            output = exec_command(conn, cmd, logger, interrupt=False)
+            if output.find("drop auto_failover failed") != -1:
+                logger.error("can't delete postgresql instance " + output)
     else:
         cmd = ["pgtools", "-R"]
         logger.info(f"stop postgresql with cmd {cmd} ")
@@ -2527,17 +2549,31 @@ def delete_postgresql(
                 pod_name_get_statefulset_name(conn.get_k8s().get_podname()))
             api_response = apps_v1_api.delete_namespaced_stateful_set(
                 pod_name_get_statefulset_name(conn.get_k8s().get_podname()),
-                conn.get_k8s().get_namespace())
+                conn.get_k8s().get_namespace(), grace_period_seconds=grace_period_seconds)
         except Exception as e:
             logger.error(
                 f"Exception when calling AppsV1Api->delete_namespaced_stateful_set: {e} "
             )
+        # if Node is shutdown, delete statefulset cannot delete pod, the pod will be in the Terminating state for a long time. so need delete pod.
+        # More infomation please visit: https://kubernetes.io/zh-cn/docs/tasks/run-application/force-delete-stateful-set-pod/
         try:
+            core_v1_api = client.CoreV1Api()
+            # delete_pod override grace_period_seconds param
+            delete_pod_grace_period_seconds = 0
+            logger.info(
+                "delete postgresql pod from k8s: " +
+                conn.get_k8s().get_podname())
+            core_v1_api.delete_namespaced_pod(conn.get_k8s().get_podname(),
+                                              conn.get_k8s().get_namespace(),
+                                              grace_period_seconds=delete_pod_grace_period_seconds)
+        except Exception as e:
+            logger.warning("Exception when calling CoreV1Api->delete_namespaced_pod: %s\n" % e)
+        try:
+            core_v1_api = client.CoreV1Api()
             logger.info("delete postgresql instance service from k8s " +
                         statefulset_name_get_service_name(
                             pod_name_get_statefulset_name(
                                 conn.get_k8s().get_podname())))
-            core_v1_api = client.CoreV1Api()
             delete_response = core_v1_api.delete_namespaced_service(
                 statefulset_name_get_service_name(
                     pod_name_get_statefulset_name(
@@ -3263,10 +3299,11 @@ def delete_cluster(
 
 def delete_pvc(logger: logging.Logger, name: str, namespace: str) -> None:
     core_v1_api = client.CoreV1Api()
+    grace_period_seconds = 0
 
     logger.info(f"delete pvc {name}")
     try:
-        core_v1_api.delete_namespaced_persistent_volume_claim(name, namespace)
+        core_v1_api.delete_namespaced_persistent_volume_claim(name, namespace, grace_period_seconds=grace_period_seconds)
     except Exception as e:
         logger.error("Exception when calling CoreV1Api->delete_namespaced_persistent_volume_claim: %s\n" % e)
 
@@ -3750,6 +3787,24 @@ def trigger_backup_to_s3_manual(
             and OLD is None and fuzzy_matching(NEW, DIFF_FIELD_SPEC_BACKUPS3_MANUAL[len(DIFF_FIELD_SPEC_BACKUPCLUSTER):len(DIFF_FIELD_SPEC_BACKUPS3_MANUAL)]) == True):
         if get_backup_mode(meta, spec, patch, status, logger) == BACKUP_MODE_S3_MANUAL:
             backup_postgresql(meta, spec, patch, status, logger)
+
+
+def trigger_rebuild_postgresql(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    AC: str,
+    FIELD: Tuple,
+    OLD: Any,
+    NEW: Any,
+):
+    if FIELD[0:len(DIFF_FIELD_SPEC_REBUILD_NODENAMES)] == DIFF_FIELD_SPEC_REBUILD_NODENAMES or (
+            FIELD[0:len(DIFF_FIELD_SPEC_REBUILD)] == DIFF_FIELD_SPEC_REBUILD
+            and AC == "add" and OLD is None
+            and fuzzy_matching(NEW, (SPCE_REBUILD_NODENAMES,)) == True):
+        rebuild_postgresqls(meta, spec, patch, status, logger, delete_disk=True)
 
 
 def update_streaming(
@@ -4812,6 +4867,296 @@ def get_except_nodes(
     return except_readwrite_nodes + except_readonly_nodes
 
 
+def compare_lsn(
+    local_lsn: str,
+    remote_lsn: str,
+) -> bool:
+    local_lsn = "" if local_lsn is None else local_lsn
+    remote_lsn = "" if remote_lsn is None else remote_lsn
+
+    local_list = local_lsn.split("/")
+    remote_list = remote_lsn.split("/")
+    if len(local_list) == 2 and len(remote_list) == 2:
+        if int(local_list[0], 16) > int(remote_list[0], 16):
+            return True
+        elif int(local_list[0], 16) < int(remote_list[0], 16):
+            return False
+        elif int(local_list[0], 16) == int(remote_list[0], 16):
+            if int(local_list[1], 16) >= int(remote_list[1], 16):
+                return True
+            else:
+                return False
+    return None
+
+
+def get_latest_standby(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> InstanceConnection:
+    readwrite_conns = connections(spec, meta, patch,
+                                  get_field(POSTGRESQL, READWRITEINSTANCE),
+                                  False, None, logger, None, status, False)
+
+    grep_lsn_by_cmd = ["pg_controldata", "-D", PG_DATABASE_DIR, "| grep 'Latest checkpoint location' | awk '{print $4}'"]
+    grep_lsn_by_sql = ["pgtools", "-q", '"select pg_last_wal_receive_lsn();"']
+    
+    max_lsn = "0/0"
+    max_conn = None
+
+    for conn in readwrite_conns.get_conns():
+        output = exec_command(conn, WAITING_POSTGRESQL_READY_COMMAND, logger, interrupt=False)
+        if output.find(FAILED) != -1:
+            continue
+        if output.find(POSTGRESQL_NOT_RUNNING_MESSAGE) != -1:
+            temp_lsn = exec_command(conn, grep_lsn_by_cmd, logger, interrupt=False)
+        else:
+            temp_lsn = exec_command(conn, grep_lsn_by_sql, logger, interrupt=False)
+
+        logger.info(f"conn {get_connhost(conn)} lsn = {temp_lsn}")
+
+        if compare_lsn(temp_lsn, max_lsn):
+            max_lsn = temp_lsn
+            max_conn = conn
+
+    return max_conn
+
+
+def promote_postgresql(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conn: InstanceConnection,
+    interrupt: bool = True,
+    user: str = "postgres"
+) -> None:
+    cmd = ["pg_ctl", "promote", "-D", PG_DATABASE_DIR]
+    output = exec_command(conn, cmd, logger, interrupt=interrupt, user=user)
+    logger.info(f"promote_postgresql: {get_connhost(conn)}, and output: {output}")
+
+
+def rebuild_autofailover(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    field: str,
+    target_machines: List,
+    target_k8s: List,  # [begin:int, end: int]
+    delete_disk: bool = False,
+) -> None:
+    auto_failover_conns = connections(spec, meta, patch,
+                                      get_field(AUTOFAILOVER), False, None,
+                                      logger, None, status, False)
+
+    readwrite_conns = connections(spec, meta, patch,
+                                  get_field(POSTGRESQL, READWRITEINSTANCE),
+                                  False, None, logger, None, status, False)
+
+    readonly_conns = connections(spec, meta, patch,
+                                 get_field(POSTGRESQL, READONLYINSTANCE),
+                                 False, None, logger, None, status, False)
+
+    primary_conns: InstanceConnections = InstanceConnections()
+    standby_conns: InstanceConnections = InstanceConnections()
+
+    pri_conn = get_primary_conn(readwrite_conns, 0, logger, interrupt=False)
+    if pri_conn is None:
+        pri_conn = get_latest_standby(meta, spec, patch, status, logger)
+        if pri_conn is None:
+            logger.error(f"cluster cannot find an available node")
+            raise kopf.PermanentError("cluster cannot find an available node")
+        promote_postgresql(meta, spec, patch, status, logger, pri_conn)
+        primary_conns.add(pri_conn)
+    else:
+        primary_conns.add(pri_conn)
+
+    for conn in (readwrite_conns.get_conns() + readonly_conns.get_conns()):
+        if get_connhost(pri_conn) != get_connhost(conn):
+            standby_conns.add(conn)
+
+    # step1. pause postgresql.
+    #   first, pause standby.
+    #   second, pause primary.
+    cmd_pause = ["pgtools", "-p", "pause"]
+    cmd_restart = ["pgtools", "-R"]
+    cmds = [cmd_pause, cmd_restart]
+
+    waiting_instance_ready(standby_conns, logger, 1 * MINUTES)
+    multi_exec_command(standby_conns, cmds, logger, interrupt=False)
+
+    waiting_instance_ready(primary_conns, logger, 1 * MINUTES)
+    multi_exec_command(primary_conns, cmds, logger, interrupt=False)
+
+    # step2. update autofailover
+    # rolling_update(meta, spec, patch, status, logger,
+    #                [get_field(AUTOFAILOVER)], exit=True, delete_disk=True, timeout=MINUTES * 5, target_k8s=[0, 1])
+
+    if target_machines != None:
+        delete_autofailover(meta, spec, patch, status, logger,
+                            field, target_machines,
+                            None, delete_disk=delete_disk)
+    else:
+        delete_autofailover(meta, spec, patch, status, logger,
+                            field, None, target_k8s, delete_disk=delete_disk)
+    create_autofailover(meta, spec, patch, status, logger,
+                        get_autofailover_labels(meta))
+    waiting_target_postgresql_ready(meta, spec, patch, get_field(AUTOFAILOVER),
+                                    status, logger, timeout = MINUTES * 5)
+
+    # step3. resume postgresql
+    #   first, resume primary.
+    #   second, resume standby.
+    cmd_delete = ["rm", "-rf", os.path.join(DATA_DIR, "auto_failover")]
+    cmd_resume = ["pgtools", "-p", "resume"]
+    cmds = [cmd_delete, cmd_resume]
+
+    waiting_instance_ready(primary_conns, logger, 1 * MINUTES)
+    multi_exec_command(primary_conns, cmds, logger, interrupt=False)
+    waiting_postgresql_ready(primary_conns, logger, 1 * MINUTES)
+
+    waiting_instance_ready(standby_conns, logger, 1 * MINUTES)
+    multi_exec_command(standby_conns, cmds, logger, interrupt=False)
+    waiting_postgresql_ready(standby_conns, logger, 1 * MINUTES)
+
+    auto_failover_conns.free_conns()
+    readwrite_conns.free_conns()
+    readonly_conns.free_conns()
+    # primary_conns maybe set by get_latest_standby. readwrite_conns can't free it, free_conns can call multi times. so it is safety
+    primary_conns.free_conns()
+    standby_conns.free_conns()
+
+
+def rebuild_postgresql(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    field: str,
+    target_machines: List,
+    target_k8s: List, # [begin:int, end: int]
+    delete_disk: bool = False,
+) -> None:
+
+    logger.warning(f"rebuild_postgresql wait autofailover node ready.")
+    waiting_target_postgresql_ready(meta, spec, patch, get_field(AUTOFAILOVER),
+                                    status, logger, exit=True, timeout=MINUTES * 1)
+
+    conns = connections_target(meta, spec, patch, status, logger, field,
+                               target_machines, target_k8s)
+
+    if field == get_field(POSTGRESQL, READWRITEINSTANCE):
+        instance = READWRITEINSTANCE
+    elif field == get_field(POSTGRESQL, READONLYINSTANCE):
+        instance = READONLYINSTANCE
+
+    for conn in conns.get_conns():
+        primary_host = get_primary_host(meta, spec, patch, status, logger)
+        conn_host = get_connhost(conn)
+
+        logger.info(f"rebuild_postgresql start rebuild {conn_host}.")
+        if conn_host == primary_host:
+            logger.warning(f"{conn_host} is primary host, skip rebuild.")
+            continue
+
+        # rolling_update(meta, spec, patch, status, logger,
+        #                [field], exit=True, delete_disk=delete_disk, timeout=MINUTES * 5, target_k8s=[replica, replica + 1])
+        if target_machines != None:
+            for replica in range(0, len(target_machines)):
+                if instance == READWRITEINSTANCE:
+                    delete_postgresql_readwrite(
+                        meta, spec, patch, status, logger,
+                        field,
+                        target_machines[replica:replica + 1], None, delete_disk)
+                    create_postgresql_readwrite(meta, spec, patch, status, logger,
+                                                get_readwrite_labels(meta),
+                                                replica, False, replica + 1)
+                elif instance == READONLYINSTANCE:
+                    delete_postgresql_readonly(
+                        meta, spec, patch, status, logger,
+                        field,
+                        target_machines[replica:replica + 1], None, delete_disk)
+                    create_postgresql_readonly(meta, spec, patch, status, logger,
+                                               get_readonly_labels(meta), replica,
+                                               replica + 1)
+        else:
+            for replica in range(target_k8s[0], target_k8s[1]):
+                if instance == READWRITEINSTANCE:
+                    delete_postgresql_readwrite(
+                        meta, spec, patch, status, logger,
+                        field, None,
+                        [replica, replica + 1], delete_disk)
+                    create_postgresql_readwrite(meta, spec, patch, status, logger,
+                                                get_readwrite_labels(meta),
+                                                replica, False, replica + 1)
+                elif instance == READONLYINSTANCE:
+                    delete_postgresql_readonly(
+                        meta, spec, patch, status, logger,
+                        field, None,
+                        [replica, replica + 1], delete_disk)
+                    create_postgresql_readonly(meta, spec, patch, status, logger,
+                                               get_readonly_labels(meta), replica,
+                                               replica + 1)
+
+    conns.free_conns()
+
+
+def rebuild_postgresqls(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    delete_disk: bool = False,
+) -> None:
+
+    mode, _, _, _ = get_replicas(spec)
+    node_name = spec.get(SPEC_REBUILD, {}).get(SPCE_REBUILD_NODENAMES, "").split(SPECIAL_CHARACTERS)[0].strip()
+    logging.info(f"rebuild_postgresqls with param={node_name} execute.")
+
+    if mode == K8S_MODE:
+        temps = node_name.split(FIELD_DELIMITER)
+        if len(temps) != 3:
+            logger.error(f"rebuild but nodeName {node_name} is not valid.")
+            raise kopf.TemporaryError(f"rebuild but nodeName {node_name} is not valid.")
+
+        name = temps[0]
+        role = temps[1]
+        replica = int(temps[2])
+    
+        field = ""
+        if role == AUTOFAILOVER:
+            field = get_field(AUTOFAILOVER)
+            rebuild_autofailover(meta, spec, patch, status, logger, field, None, [0, 1], delete_disk=True)
+        elif role in [READWRITEINSTANCE, READONLYINSTANCE]:
+            field = get_field(POSTGRESQL, role)
+            rebuild_postgresql(meta, spec, patch, status, logger, field, None, [replica, replica + 1], delete_disk)
+
+    elif mode == MACHINE_MODE:
+        machine = node_name
+        autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
+        readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
+            MACHINES)
+        readonly_machines = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
+            MACHINES)
+
+        if machine in autofailover_machines:
+            rebuild_autofailover(meta, spec, patch, status, logger, get_field(AUTOFAILOVER), [machine],
+                                 None, delete_disk)
+        elif machine in readwrite_machines:
+            rebuild_postgresql(meta, spec, patch, status, logger, get_field(POSTGRESQL, READWRITEINSTANCE), [machine],
+                               None, delete_disk)
+        elif machine in readonly_machines:
+            rebuild_postgresql(meta, spec, patch, status, logger, get_field(POSTGRESQL, READONLYINSTANCE), [machine],
+                               None, delete_disk)
+
+
 # kubectl patch pg lzzhang --patch '{"spec": {"action": "stop"}}' --type=merge
 def update_cluster(
     meta: kopf.Meta,
@@ -4830,7 +5175,6 @@ def update_cluster(
         need_update_number_sync_standbys = False
         update_toleration = spec.get(UPDATE_TOLERATION, False)
         except_nodes = get_except_nodes(meta, spec, patch, status, logger, diffs)
-        need_backup_cluster = False
 
         for diff in diffs:
             AC = diff[0]
@@ -4844,6 +5188,7 @@ def update_cluster(
                           NEW)
             update_service(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
+            trigger_rebuild_postgresql(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
 
         if update_toleration == False and waiting_cluster_final_status(meta, spec, patch, status, logger,
                                                                        except_nodes=except_nodes) == False:
