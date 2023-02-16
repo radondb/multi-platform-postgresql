@@ -158,6 +158,8 @@ spec:
             resources:
               requests:
                 storage: 1Gi
+  rebuild:
+    nodeName: lzzhang-readwriteinstance-1 /##/ test          # statefulset names, characters after /##/ will be ignored
   S3:
     ACCESS_KEY: "xxxxxxxxxxxxxxxxxxx"
     SECRET_KEY: "xxxxxxxxxxxxxxxxxxx"

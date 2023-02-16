@@ -80,6 +80,8 @@ RESTORE_FROMS3_RECOVERY_OLDEST_FULL = "oldest-full"
 SPEC_VOLUME_TYPE = "volume_type"
 SPEC_VOLUME_LOCAL = "local"
 SPEC_VOLUME_CLOUD = "cloud"
+SPEC_REBUILD = "rebuild"
+SPCE_REBUILD_NODENAMES = "nodeName"
 
 # api
 API_GROUP = "postgres.radondb.io"
