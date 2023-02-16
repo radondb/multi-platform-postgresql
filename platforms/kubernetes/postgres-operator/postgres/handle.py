@@ -1736,12 +1736,12 @@ def get_need_s3_env(
     if SPEC_S3 in need_envs:
         # add s3 env by pgtools
         s3 = spec[SPEC_S3].copy()
-        res.append(get_s3_env(s3))
+        res.extend(get_s3_env(s3))
 
     if SPEC_BACKUPTOS3_POLICY in need_envs:
         backup_policy = spec[SPEC_BACKUPCLUSTER][SPEC_BACKUPTOS3].get(
             SPEC_BACKUPTOS3_POLICY, {})
-        res.append(get_policy_env(backup_policy))
+        res.extend(get_policy_env(backup_policy))
 
     if "name" in need_envs:
         if mode == GET_ENV_MODE_BACKUP:
@@ -1749,7 +1749,7 @@ def get_need_s3_env(
                 SPEC_BACKUPTOS3_NAME, None)
         elif mode == GET_ENV_MODE_RESTORE:
             name = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_NAME, None)
-        res.append(get_backup_name_env(meta, name))
+        res.extend(get_backup_name_env(meta, name))
 
     return res
 
@@ -2039,7 +2039,7 @@ def backup_postgresql_to_s3(
     waiting_postgresql_ready(conns, logger)
 
     # add s3 env by pgtools
-    s3_info = get_need_s3_env(meta, spec, patch, status, logger, GET_ENV_MODE_BACKUP, [])
+    s3_info = get_need_s3_env(meta, spec, patch, status, logger, GET_ENV_MODE_BACKUP)
 
     cmd = ["pgtools", "-b"] + s3_info
     logging.warning(
@@ -3459,7 +3459,7 @@ def delete_s3(
                        logger) == BACKUP_MODE_S3_MANUAL or get_backup_mode(
                            meta, spec, patch, status,
                            logger) == BACKUP_MODE_S3_CRON:
-        s3_info = get_need_s3_env(meta, spec, patch, status, logger, GET_ENV_MODE_BACKUP, [])
+        s3_info = get_need_s3_env(meta, spec, patch, status, logger, GET_ENV_MODE_BACKUP)
 
         # override rentention variable
         env = SPEC_BACKUPTOS3_POLICY_RETENTION + '="' + \
