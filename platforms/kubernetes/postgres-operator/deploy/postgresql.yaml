@@ -1,7 +1,7 @@
 apiVersion: postgres.radondb.io/v1
 kind: PostgreSQL
 metadata:
-  name: lzzhang
+  name: pg
   #namespace: radondb-postgres-operator
 spec:
   action: start #stop start
@@ -158,14 +158,14 @@ spec:
             resources:
               requests:
                 storage: 1Gi
-  rebuild:
-    nodeName: lzzhang-readwriteinstance-1 /##/ test          # statefulset names, characters after /##/ will be ignored
-  S3:
-    ACCESS_KEY: "xxxxxxxxxxxxxxxxxxx"
-    SECRET_KEY: "xxxxxxxxxxxxxxxxxxx"
-    ENDPOINT: "http://s3.pek3.qingstor.com/"
-    BUCKET: "postgresql"
-    PATH: "test/backup"
+#  rebuild:
+#    nodeName: lzzhang-readwriteinstance-1 /##/ test          # statefulset names, characters after /##/ will be ignored
+#  S3:
+#    ACCESS_KEY: "xxxxxxxxxxxxxxxxxxx"
+#    SECRET_KEY: "xxxxxxxxxxxxxxxxxxx"
+#    ENDPOINT: "http://s3.pek3.qingstor.com/"
+#    BUCKET: "postgresql"
+#    PATH: "test/backup"
 #  backupCluster:
 #    backupToS3:
 ##      name: postgresql-backup
