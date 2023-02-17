@@ -2103,10 +2103,10 @@ def backup_postgresql_to_s3(
             memory = get_container_resources(container, SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_MEMORY)
     replicas = spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]
 
-    for vct in spec[READWRITEINSTANCE][VOLUMECLAIMTEMPLATES]:
+    for vct in spec[POSTGRESQL][READWRITEINSTANCE][VOLUMECLAIMTEMPLATES]:
         if vct["metadata"]["name"] == POSTGRESQL_PVC_NAME:
             pvc_size = get_vct_size(vct)
-            storage_class_name = vct["spec"][STORAGE_CLASS_NAME]
+            storage_class_name = vct["spec"].get(STORAGE_CLASS_NAME, "")
 
     # Get this backup id
     latest_backupid = get_latest_backupid(backup_info)
