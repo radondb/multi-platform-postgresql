@@ -35,6 +35,8 @@ from constants import (
     CONTAINER_NAME,
     PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER,
     PODSPEC_CONTAINERS_EXPORTER_CONTAINER,
+    SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_MEMORY,
+    SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_CPU,
     PRIME_SERVICE_PORT_NAME,
     EXPORTER_SERVICE_PORT_NAME,
     HBAS,
@@ -184,6 +186,7 @@ from constants import (
     SPEC_REBUILD,
     SPCE_REBUILD_NODENAMES,
     SPEC_DELETE_S3,
+    STORAGE_CLASS_NAME,
 )
 
 PGLOG_DIR = "log"
@@ -307,6 +310,11 @@ BARMAN_BACKUP_LISTS = "backups_list"
 BARMAN_BACKUP_END = "end_time"
 BARMAN_BACKUP_ID = "backup_id"
 BARMAN_BACKUP_SIZE = "size"
+BARMAN_BACKUP_SNAPSHOT_CPU = "cpu"
+BARMAN_BACKUP_SNAPSHOT_MEMORY = "memory"
+BARMAN_BACKUP_SNAPSHOT_REPLICAS = "replicas"
+BARMAN_BACKUP_SNAPSHOT_PVC_SIZE = "pvc_size"
+BARMAN_BACKUP_SNAPSHOT_PVC_CLASS = "pvc_class"
 BARMAN_BACKUP_NAME = "BARMAN_BACKUPNAME"
 BARMAN_STATUS_DEFAULT_NEED_FIELD = [
     "backup_id", "begin_time", "end_time", "begin_xlog", "end_xlog"
@@ -2088,6 +2096,21 @@ def backup_postgresql_to_s3(
     logger.warning(f"old_backup_status = {old_backup_status}")
     logger.warning(f"new_backup_status = {new_backup_status}")
 
+    # get cpu/memory/replicas/pvc_size/pvc_class
+    for container in spec[POSTGRESQL][READWRITEINSTANCE][PODSPEC][CONTAINERS]:
+        if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
+            cpu = get_container_resources(container, SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_CPU)
+            memory = get_container_resources(container, SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_MEMORY)
+    replicas = spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]
+
+    for vct in spec[READWRITEINSTANCE][VOLUMECLAIMTEMPLATES]:
+        if vct["metadata"]["name"] == POSTGRESQL_PVC_NAME:
+            pvc_size = get_vct_size(vct)
+            storage_class_name = vct["spec"][STORAGE_CLASS_NAME]
+
+    # Get this backup id
+    latest_backupid = get_latest_backupid(backup_info)
+
     res = list()
     for new_status in new_backup_status:
         # old backup
@@ -2101,7 +2124,7 @@ def backup_postgresql_to_s3(
                     break
         if is_old_backup:
             continue
-        # new backup add size field
+        # if s3 backup, we can add size field
         backup_id = new_status[BARMAN_BACKUP_ID]
         param = 'BACKUP_ID' + '="' + backup_id + '"'
         cmd = ["pgtools", "-v", "-e", param] + s3_info
@@ -2111,6 +2134,14 @@ def backup_postgresql_to_s3(
                             interrupt=True,
                             user="postgres")
         new_status[BARMAN_BACKUP_SIZE] = size.strip()
+
+        # if latest backup, we can add some snapshot infomation
+        if latest_backupid == backup_id:
+            new_status[BARMAN_BACKUP_SNAPSHOT_CPU] = cpu
+            new_status[BARMAN_BACKUP_SNAPSHOT_MEMORY] = memory
+            new_status[BARMAN_BACKUP_SNAPSHOT_REPLICAS] = replicas
+            new_status[BARMAN_BACKUP_SNAPSHOT_PVC_SIZE] = pvc_size
+            new_status[BARMAN_BACKUP_SNAPSHOT_PVC_CLASS] = storage_class_name
         res.append(new_status)
 
     # set backup status
@@ -4166,6 +4197,13 @@ def update_action(
 
 def get_vct_size(vct: TypedDict) -> str:
     return vct["spec"]["resources"]["requests"]["storage"]
+
+
+def get_container_resources(
+    container: TypedDict,
+    type: str,
+) -> str:
+    return container["resources"]["limits"][type]
 
 
 def rolling_update(
