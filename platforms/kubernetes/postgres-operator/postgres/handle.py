@@ -1825,11 +1825,12 @@ def restore_postgresql_froms3(
     waiting_instance_ready(tmpconns, logger)
 
     # restore param
-    param = "-e BACKUP_ID='" + backupid + "'"
+    param = ["-e", "BACKUP_ID='" + backupid + "'"]
     if recovery_time is not None:
-        param += " -e RECOVERY_TIME='" + recovery_time + "'"
+        param.append("-e")
+        param.append("RECOVERY_TIME='" + recovery_time + "'")
 
-    cmd = ["pgtools", "-E", param] + s3_info
+    cmd = ["pgtools", "-E"] + param + s3_info
     logging.warning(f"restore_postgresql_froms3 execute {cmd} to restore data")
     output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
     if output.find(SUCCESS) == -1:
