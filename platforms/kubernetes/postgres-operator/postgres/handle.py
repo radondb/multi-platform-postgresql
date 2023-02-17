@@ -3481,6 +3481,8 @@ def delete_s3(
                                   user="postgres")
             logger.warning(f"delete all backup execute on {get_connhost(conn)}, and output = {output}")
 
+        readwrite_conns.free_conns()
+
 
 def delete_storages(
     meta: kopf.Meta,
