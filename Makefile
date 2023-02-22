@@ -57,7 +57,7 @@ exporter-image:
 	cd image/exporter; ./generate_image.sh
 
 format:
-	find ./ -path "./platforms/kubernetes/postgres-operator/postgres/*.py" | xargs yapf -i -vv
+	find ./ -path "./platforms/kubernetes/postgres-operator/postgres/*.py" | xargs yapf -i -vv --no-local-style --style pep8
 
 depends:
 	sudo pip install yapf paramiko kubernetes kopf

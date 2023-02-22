@@ -232,9 +232,11 @@ DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
                               VOLUMECLAIMTEMPLATES)
 DIFF_FIELD_SPEC_ANTIAFFINITY = (SPEC, SPEC_ANTIAFFINITY)
 DIFF_FIELD_SPEC_BACKUPCLUSTER = (SPEC, SPEC_BACKUPCLUSTER)
-DIFF_FIELD_SPEC_BACKUPS3_MANUAL = (SPEC, SPEC_BACKUPCLUSTER, SPEC_BACKUPTOS3, SPEC_BACKUPTOS3_MANUAL)
+DIFF_FIELD_SPEC_BACKUPS3_MANUAL = (SPEC, SPEC_BACKUPCLUSTER, SPEC_BACKUPTOS3,
+                                   SPEC_BACKUPTOS3_MANUAL)
 DIFF_FIELD_SPEC_REBUILD = (SPEC, SPEC_REBUILD)
-DIFF_FIELD_SPEC_REBUILD_NODENAMES = (SPEC, SPEC_REBUILD, SPCE_REBUILD_NODENAMES)
+DIFF_FIELD_SPEC_REBUILD_NODENAMES = (SPEC, SPEC_REBUILD,
+                                     SPCE_REBUILD_NODENAMES)
 STATEFULSET_REPLICAS = 1
 PG_CONFIG_MASTER_LARGE_THAN_SLAVE = ("max_connections", "max_worker_processes",
                                      "max_wal_senders",
@@ -685,7 +687,8 @@ def waiting_postgresql_ready(
                 i += 1
                 time.sleep(1)
                 logger.error(
-                    f"postgresql {get_connhost(conn)} is not ready. try {i} times. {output}")
+                    f"postgresql {get_connhost(conn)} is not ready. try {i} times. {output}"
+                )
                 if i >= maxtry:
                     logger.warning(f"postgresql is not ready. skip waitting.")
                     return False
@@ -1779,7 +1782,8 @@ def restore_postgresql_froms3(
     name = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_NAME, None)
 
     # add s3 env by pgtools -e
-    s3_info = get_need_s3_env(meta, spec, patch, status, logger, [SPEC_S3, RESTORE_NAME])
+    s3_info = get_need_s3_env(meta, spec, patch, status, logger,
+                              [SPEC_S3, RESTORE_NAME])
 
     tmpconns: InstanceConnections = InstanceConnections()
     tmpconns.add(conn)
@@ -2048,7 +2052,8 @@ def backup_postgresql_to_s3(
     waiting_postgresql_ready(conns, logger)
 
     # add s3 env by pgtools
-    s3_info = get_need_s3_env(meta, spec, patch, status, logger, [SPEC_S3, SPEC_BACKUPTOS3_POLICY, BACKUP_NAME])
+    s3_info = get_need_s3_env(meta, spec, patch, status, logger,
+                              [SPEC_S3, SPEC_BACKUPTOS3_POLICY, BACKUP_NAME])
 
     cmd = ["pgtools", "-b"] + s3_info
     logging.warning(
@@ -2126,16 +2131,22 @@ def backup_postgresql_to_s3(
         # if latest backup, we can add some snapshot infomation
         if latest_backupid == backup_id:
             # get cpu/memory/replicas/pvc_size/pvc_class
-            for container in spec[POSTGRESQL][READWRITEINSTANCE][PODSPEC][CONTAINERS]:
-                if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
-                    cpu = container["resources"]["limits"][SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_CPU]
-                    memory = container["resources"]["limits"][SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_MEMORY]
+            for container in spec[POSTGRESQL][READWRITEINSTANCE][PODSPEC][
+                    CONTAINERS]:
+                if container[
+                        CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
+                    cpu = container["resources"]["limits"][
+                        SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_CPU]
+                    memory = container["resources"]["limits"][
+                        SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_MEMORY]
             replicas = spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]
-    
-            for vct in spec[POSTGRESQL][READWRITEINSTANCE][VOLUMECLAIMTEMPLATES]:
+
+            for vct in spec[POSTGRESQL][READWRITEINSTANCE][
+                    VOLUMECLAIMTEMPLATES]:
                 if vct["metadata"]["name"] == POSTGRESQL_PVC_NAME:
                     pvc_size = get_vct_size(vct)
-                    storage_class_name = vct["spec"].get(STORAGE_CLASS_NAME, "")
+                    storage_class_name = vct["spec"].get(
+                        STORAGE_CLASS_NAME, "")
 
             new_status[BARMAN_BACKUP_SNAPSHOT_CPU] = cpu
             new_status[BARMAN_BACKUP_SNAPSHOT_MEMORY] = memory
@@ -2665,7 +2676,12 @@ def delete_postgresql(
         logger.info("delete postgresql instance from autofailover")
         if get_primary_host(meta, spec, patch, status,
                             logger) == get_connhost(conn):
-            autofailover_switchover(meta, spec, patch, status, logger, primary_host=get_connhost(conn))
+            autofailover_switchover(meta,
+                                    spec,
+                                    patch,
+                                    status,
+                                    logger,
+                                    primary_host=get_connhost(conn))
         if get_conn_role(conn) == POSTGRESQL:
             cmd = ["pgtools", "-D"]
             output = exec_command(conn, cmd, logger, interrupt=False)
@@ -2688,7 +2704,8 @@ def delete_postgresql(
                 pod_name_get_statefulset_name(conn.get_k8s().get_podname()))
             api_response = apps_v1_api.delete_namespaced_stateful_set(
                 pod_name_get_statefulset_name(conn.get_k8s().get_podname()),
-                conn.get_k8s().get_namespace(), grace_period_seconds=grace_period_seconds)
+                conn.get_k8s().get_namespace(),
+                grace_period_seconds=grace_period_seconds)
         except Exception as e:
             logger.error(
                 f"Exception when calling AppsV1Api->delete_namespaced_stateful_set: {e} "
@@ -2699,14 +2716,16 @@ def delete_postgresql(
             core_v1_api = client.CoreV1Api()
             # delete_pod override grace_period_seconds param
             delete_pod_grace_period_seconds = 0
-            logger.info(
-                "delete postgresql pod from k8s: " +
-                conn.get_k8s().get_podname())
-            core_v1_api.delete_namespaced_pod(conn.get_k8s().get_podname(),
-                                              conn.get_k8s().get_namespace(),
-                                              grace_period_seconds=delete_pod_grace_period_seconds)
+            logger.info("delete postgresql pod from k8s: " +
+                        conn.get_k8s().get_podname())
+            core_v1_api.delete_namespaced_pod(
+                conn.get_k8s().get_podname(),
+                conn.get_k8s().get_namespace(),
+                grace_period_seconds=delete_pod_grace_period_seconds)
         except Exception as e:
-            logger.warning("Exception when calling CoreV1Api->delete_namespaced_pod: %s\n" % e)
+            logger.warning(
+                "Exception when calling CoreV1Api->delete_namespaced_pod: %s\n"
+                % e)
         try:
             core_v1_api = client.CoreV1Api()
             logger.info("delete postgresql instance service from k8s " +
@@ -3449,7 +3468,8 @@ def delete_pvc(logger: logging.Logger, name: str, namespace: str) -> None:
 
     logger.info(f"delete pvc {name}")
     try:
-        core_v1_api.delete_namespaced_persistent_volume_claim(name, namespace, grace_period_seconds=grace_period_seconds)
+        core_v1_api.delete_namespaced_persistent_volume_claim(
+            name, namespace, grace_period_seconds=grace_period_seconds)
     except Exception as e:
         logger.error(
             "Exception when calling CoreV1Api->delete_namespaced_persistent_volume_claim: %s\n"
@@ -3491,7 +3511,9 @@ def delete_s3(
                        logger) == BACKUP_MODE_S3_MANUAL or get_backup_mode(
                            meta, spec, patch, status,
                            logger) == BACKUP_MODE_S3_CRON:
-        s3_info = get_need_s3_env(meta, spec, patch, status, logger, [SPEC_S3, SPEC_BACKUPTOS3_POLICY, BACKUP_NAME])
+        s3_info = get_need_s3_env(
+            meta, spec, patch, status, logger,
+            [SPEC_S3, SPEC_BACKUPTOS3_POLICY, BACKUP_NAME])
 
         # override rentention variable
         env = SPEC_BACKUPTOS3_POLICY_RETENTION + '="' + \
@@ -3511,7 +3533,9 @@ def delete_s3(
                                   logger,
                                   interrupt=True,
                                   user="postgres")
-            logger.warning(f"delete all backup execute on {get_connhost(conn)}, and output = {output}")
+            logger.warning(
+                f"delete all backup execute on {get_connhost(conn)}, and output = {output}"
+            )
 
         readwrite_conns.free_conns()
 
@@ -4029,11 +4053,19 @@ def trigger_rebuild_postgresql(
     OLD: Any,
     NEW: Any,
 ):
-    if FIELD[0:len(DIFF_FIELD_SPEC_REBUILD_NODENAMES)] == DIFF_FIELD_SPEC_REBUILD_NODENAMES or (
-            FIELD[0:len(DIFF_FIELD_SPEC_REBUILD)] == DIFF_FIELD_SPEC_REBUILD
-            and AC == "add" and OLD is None
-            and fuzzy_matching(NEW, (SPCE_REBUILD_NODENAMES,)) == True):
-        rebuild_postgresqls(meta, spec, patch, status, logger, delete_disk=True)
+    if FIELD[0:len(DIFF_FIELD_SPEC_REBUILD_NODENAMES
+                   )] == DIFF_FIELD_SPEC_REBUILD_NODENAMES or (
+                       FIELD[0:len(DIFF_FIELD_SPEC_REBUILD)]
+                       == DIFF_FIELD_SPEC_REBUILD and AC == "add"
+                       and OLD is None
+                       and fuzzy_matching(NEW,
+                                          (SPCE_REBUILD_NODENAMES, )) == True):
+        rebuild_postgresqls(meta,
+                            spec,
+                            patch,
+                            status,
+                            logger,
+                            delete_disk=True)
 
 
 def update_streaming(
@@ -5170,20 +5202,32 @@ def get_latest_standby(
                                   get_field(POSTGRESQL, READWRITEINSTANCE),
                                   False, None, logger, None, status, False)
 
-    grep_lsn_by_cmd = ["pg_controldata", "-D", PG_DATABASE_DIR, "| grep 'Latest checkpoint location' | awk '{print $4}'"]
+    grep_lsn_by_cmd = [
+        "pg_controldata", "-D", PG_DATABASE_DIR,
+        "| grep 'Latest checkpoint location' | awk '{print $4}'"
+    ]
     grep_lsn_by_sql = ["pgtools", "-q", '"select pg_last_wal_receive_lsn();"']
-    
+
     max_lsn = "0/0"
     max_conn = None
 
     for conn in readwrite_conns.get_conns():
-        output = exec_command(conn, WAITING_POSTGRESQL_READY_COMMAND, logger, interrupt=False)
+        output = exec_command(conn,
+                              WAITING_POSTGRESQL_READY_COMMAND,
+                              logger,
+                              interrupt=False)
         if output.find(FAILED) != -1:
             continue
         if output.find(POSTGRESQL_NOT_RUNNING_MESSAGE) != -1:
-            temp_lsn = exec_command(conn, grep_lsn_by_cmd, logger, interrupt=False)
+            temp_lsn = exec_command(conn,
+                                    grep_lsn_by_cmd,
+                                    logger,
+                                    interrupt=False)
         else:
-            temp_lsn = exec_command(conn, grep_lsn_by_sql, logger, interrupt=False)
+            temp_lsn = exec_command(conn,
+                                    grep_lsn_by_sql,
+                                    logger,
+                                    interrupt=False)
 
         logger.info(f"conn {get_connhost(conn)} lsn = {temp_lsn}")
 
@@ -5194,19 +5238,18 @@ def get_latest_standby(
     return max_conn
 
 
-def promote_postgresql(
-    meta: kopf.Meta,
-    spec: kopf.Spec,
-    patch: kopf.Patch,
-    status: kopf.Status,
-    logger: logging.Logger,
-    conn: InstanceConnection,
-    interrupt: bool = True,
-    user: str = "postgres"
-) -> None:
+def promote_postgresql(meta: kopf.Meta,
+                       spec: kopf.Spec,
+                       patch: kopf.Patch,
+                       status: kopf.Status,
+                       logger: logging.Logger,
+                       conn: InstanceConnection,
+                       interrupt: bool = True,
+                       user: str = "postgres") -> None:
     cmd = ["pg_ctl", "promote", "-D", PG_DATABASE_DIR]
     output = exec_command(conn, cmd, logger, interrupt=interrupt, user=user)
-    logger.info(f"promote_postgresql: {get_connhost(conn)}, and output: {output}")
+    logger.info(
+        f"promote_postgresql: {get_connhost(conn)}, and output: {output}")
 
 
 def rebuild_autofailover(
@@ -5268,16 +5311,34 @@ def rebuild_autofailover(
     #                [get_field(AUTOFAILOVER)], exit=True, delete_disk=True, timeout=MINUTES * 5, target_k8s=[0, 1])
 
     if target_machines != None:
-        delete_autofailover(meta, spec, patch, status, logger,
-                            field, target_machines,
-                            None, delete_disk=delete_disk)
+        delete_autofailover(meta,
+                            spec,
+                            patch,
+                            status,
+                            logger,
+                            field,
+                            target_machines,
+                            None,
+                            delete_disk=delete_disk)
     else:
-        delete_autofailover(meta, spec, patch, status, logger,
-                            field, None, target_k8s, delete_disk=delete_disk)
+        delete_autofailover(meta,
+                            spec,
+                            patch,
+                            status,
+                            logger,
+                            field,
+                            None,
+                            target_k8s,
+                            delete_disk=delete_disk)
     create_autofailover(meta, spec, patch, status, logger,
                         get_autofailover_labels(meta))
-    waiting_target_postgresql_ready(meta, spec, patch, get_field(AUTOFAILOVER),
-                                    status, logger, timeout = MINUTES * 5)
+    waiting_target_postgresql_ready(meta,
+                                    spec,
+                                    patch,
+                                    get_field(AUTOFAILOVER),
+                                    status,
+                                    logger,
+                                    timeout=MINUTES * 5)
 
     # step3. resume postgresql
     #   first, resume primary.
@@ -5310,13 +5371,19 @@ def rebuild_postgresql(
     logger: logging.Logger,
     field: str,
     target_machines: List,
-    target_k8s: List, # [begin:int, end: int]
+    target_k8s: List,  # [begin:int, end: int]
     delete_disk: bool = False,
 ) -> None:
 
     logger.warning(f"rebuild_postgresql wait autofailover node ready.")
-    waiting_target_postgresql_ready(meta, spec, patch, get_field(AUTOFAILOVER),
-                                    status, logger, exit=True, timeout=MINUTES * 1)
+    waiting_target_postgresql_ready(meta,
+                                    spec,
+                                    patch,
+                                    get_field(AUTOFAILOVER),
+                                    status,
+                                    logger,
+                                    exit=True,
+                                    timeout=MINUTES * 1)
 
     conns = connections_target(meta, spec, patch, status, logger, field,
                                target_machines, target_k8s)
@@ -5341,38 +5408,42 @@ def rebuild_postgresql(
             for replica in range(0, len(target_machines)):
                 if instance == READWRITEINSTANCE:
                     delete_postgresql_readwrite(
-                        meta, spec, patch, status, logger,
-                        field,
-                        target_machines[replica:replica + 1], None, delete_disk)
-                    create_postgresql_readwrite(meta, spec, patch, status, logger,
+                        meta, spec, patch, status, logger, field,
+                        target_machines[replica:replica + 1], None,
+                        delete_disk)
+                    create_postgresql_readwrite(meta, spec, patch, status,
+                                                logger,
                                                 get_readwrite_labels(meta),
                                                 replica, False, replica + 1)
                 elif instance == READONLYINSTANCE:
                     delete_postgresql_readonly(
-                        meta, spec, patch, status, logger,
-                        field,
-                        target_machines[replica:replica + 1], None, delete_disk)
-                    create_postgresql_readonly(meta, spec, patch, status, logger,
-                                               get_readonly_labels(meta), replica,
-                                               replica + 1)
+                        meta, spec, patch, status, logger, field,
+                        target_machines[replica:replica + 1], None,
+                        delete_disk)
+                    create_postgresql_readonly(meta, spec, patch,
+                                               status, logger,
+                                               get_readonly_labels(meta),
+                                               replica, replica + 1)
         else:
             for replica in range(target_k8s[0], target_k8s[1]):
                 if instance == READWRITEINSTANCE:
-                    delete_postgresql_readwrite(
-                        meta, spec, patch, status, logger,
-                        field, None,
-                        [replica, replica + 1], delete_disk)
-                    create_postgresql_readwrite(meta, spec, patch, status, logger,
+                    delete_postgresql_readwrite(meta, spec, patch, status,
+                                                logger, field, None,
+                                                [replica, replica + 1],
+                                                delete_disk)
+                    create_postgresql_readwrite(meta, spec, patch, status,
+                                                logger,
                                                 get_readwrite_labels(meta),
                                                 replica, False, replica + 1)
                 elif instance == READONLYINSTANCE:
-                    delete_postgresql_readonly(
-                        meta, spec, patch, status, logger,
-                        field, None,
-                        [replica, replica + 1], delete_disk)
-                    create_postgresql_readonly(meta, spec, patch, status, logger,
-                                               get_readonly_labels(meta), replica,
-                                               replica + 1)
+                    delete_postgresql_readonly(meta, spec, patch, status,
+                                               logger, field, None,
+                                               [replica, replica + 1],
+                                               delete_disk)
+                    create_postgresql_readonly(meta, spec, patch,
+                                               status, logger,
+                                               get_readonly_labels(meta),
+                                               replica, replica + 1)
 
     conns.free_conns()
 
@@ -5387,26 +5458,37 @@ def rebuild_postgresqls(
 ) -> None:
 
     mode, _, _, _ = get_replicas(spec)
-    node_name = spec.get(SPEC_REBUILD, {}).get(SPCE_REBUILD_NODENAMES, "").split(SPECIAL_CHARACTERS)[0].strip()
+    node_name = spec.get(SPEC_REBUILD,
+                         {}).get(SPCE_REBUILD_NODENAMES,
+                                 "").split(SPECIAL_CHARACTERS)[0].strip()
     logging.info(f"rebuild_postgresqls with param={node_name} execute.")
 
     if mode == K8S_MODE:
         temps = node_name.split(FIELD_DELIMITER)
         if len(temps) != 3:
             logger.error(f"rebuild but nodeName {node_name} is not valid.")
-            raise kopf.TemporaryError(f"rebuild but nodeName {node_name} is not valid.")
+            raise kopf.TemporaryError(
+                f"rebuild but nodeName {node_name} is not valid.")
 
         name = temps[0]
         role = temps[1]
         replica = int(temps[2])
-    
+
         field = ""
         if role == AUTOFAILOVER:
             field = get_field(AUTOFAILOVER)
-            rebuild_autofailover(meta, spec, patch, status, logger, field, None, [0, 1], delete_disk=True)
+            rebuild_autofailover(meta,
+                                 spec,
+                                 patch,
+                                 status,
+                                 logger,
+                                 field,
+                                 None, [0, 1],
+                                 delete_disk=True)
         elif role in [READWRITEINSTANCE, READONLYINSTANCE]:
             field = get_field(POSTGRESQL, role)
-            rebuild_postgresql(meta, spec, patch, status, logger, field, None, [replica, replica + 1], delete_disk)
+            rebuild_postgresql(meta, spec, patch, status, logger, field, None,
+                               [replica, replica + 1], delete_disk)
 
     elif mode == MACHINE_MODE:
         machine = node_name
@@ -5417,14 +5499,17 @@ def rebuild_postgresqls(
             MACHINES)
 
         if machine in autofailover_machines:
-            rebuild_autofailover(meta, spec, patch, status, logger, get_field(AUTOFAILOVER), [machine],
-                                 None, delete_disk)
+            rebuild_autofailover(meta, spec, patch, status, logger,
+                                 get_field(AUTOFAILOVER), [machine], None,
+                                 delete_disk)
         elif machine in readwrite_machines:
-            rebuild_postgresql(meta, spec, patch, status, logger, get_field(POSTGRESQL, READWRITEINSTANCE), [machine],
-                               None, delete_disk)
+            rebuild_postgresql(meta, spec, patch, status, logger,
+                               get_field(POSTGRESQL, READWRITEINSTANCE),
+                               [machine], None, delete_disk)
         elif machine in readonly_machines:
-            rebuild_postgresql(meta, spec, patch, status, logger, get_field(POSTGRESQL, READONLYINSTANCE), [machine],
-                               None, delete_disk)
+            rebuild_postgresql(meta, spec, patch, status, logger,
+                               get_field(POSTGRESQL, READONLYINSTANCE),
+                               [machine], None, delete_disk)
 
 
 # kubectl patch pg lzzhang --patch '{"spec": {"action": "stop"}}' --type=merge
@@ -5458,7 +5543,8 @@ def update_cluster(
                           NEW)
             update_service(meta, spec, patch, status, logger, AC, FIELD, OLD,
                            NEW)
-            trigger_rebuild_postgresql(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
+            trigger_rebuild_postgresql(meta, spec, patch, status, logger, AC,
+                                       FIELD, OLD, NEW)
 
         if update_toleration == False and waiting_cluster_final_status(
                 meta, spec, patch, status, logger,
