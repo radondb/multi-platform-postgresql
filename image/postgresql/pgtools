@@ -75,6 +75,9 @@ ROLE_MASTER="master"
 ROLE_SLAVE="slave"
 ROLE_UNKNOWN="unknown"
 BARMAN_S3_PARAM='echo --cloud-provider aws-s3 -P default --endpoint-url $S3_ENDPOINT s3://$S3_BUCKET/$S3_PATH $BARMAN_BACKUPNAME'
+BARMAN_BASE_DIR="base"
+BARMAN_WALS_DIR="wals"
+BARMAN_RENTION_DELETE_ALL="delete_all"
 
 BACKUP_RESTORE_CONF="postgresql_backup_restore.conf"
 ###########
@@ -376,19 +379,24 @@ function s3_backup() {
 	fi
 }
 
+function get_aws_param() {
+	if [ "${S3_PATH: 0: 1}" == "/"  ]; then
+		S3_PATH=${S3_PATH: 1}
+	fi
+	if [ "$S3_PATH" ]; then
+		param="s3://$S3_BUCKET/$S3_PATH/$BARMAN_BACKUPNAME/"
+	else
+		param="s3://$S3_BUCKET/$BARMAN_BACKUPNAME/"
+	fi
+	echo $param
+}
+
 function get_backup_info_or_backup_size() {
 	check_and_generate_s3_profile
 	if [ $BACKUP_ID ]; then
 		check_backup_exists
-		if [ "${S3_PATH: 0: 1}" == "/"  ]; then
-			S3_PATH=${S3_PATH: 1}
-		fi
-		if [ "$S3_PATH" ]; then
-			param="s3://$S3_BUCKET/$S3_PATH/$BARMAN_BACKUPNAME/base/$BACKUP_ID/"
-		else
-			param="s3://$S3_BUCKET/$BARMAN_BACKUPNAME/base/$BACKUP_ID/"
-		fi
-		aws s3 --profile default --endpoint-url $S3_ENDPOINT ls $param --human-readable --summarize | grep 'Total Size:' | awk -F ':' '{print $2}'
+		param=$(get_aws_param)
+		aws s3 --profile default --endpoint-url $S3_ENDPOINT ls "${param}${BARMAN_BASE_DIR}/${BACKUP_ID}/" --human-readable --summarize | grep 'Total Size:' | awk -F ':' '{print $2}'
 	else
 		barman-cloud-backup-list $(eval $BARMAN_S3_PARAM) --format json
 	fi
@@ -407,9 +415,19 @@ function delete_backup() {
 	check_and_generate_s3_profile
 	if [ ! "$retention" -o "$retention" == "none" ]; then
 		check_error 1 "delete_backup but retention env is not set or retention is none."
+	elif [ "$retention" == "$BARMAN_RENTION_DELETE_ALL" ]; then
+		param=$(get_aws_param)
+		output1=$(aws s3 --profile default --endpoint-url $S3_ENDPOINT ls $param | wc -l)
+		output2=$(aws s3 --profile default --endpoint-url $S3_ENDPOINT ls $param | grep -w "${BARMAN_BASE_DIR}\|${BARMAN_WALS_DIR}" | wc -l)
+		# check dir is valid
+		if [ "$output1" == "2" -a "$output2" == "2" ]; then
+			aws s3 --profile default --endpoint-url $S3_ENDPOINT rm $param --recursive
+			check_error $? "delete_backup failed, please check error log"
+		fi
+	else
+		delete_backup_by_policy
+		check_error $? "delete_backup failed, please check error log"
 	fi
-	delete_backup_by_policy
-	check_error $? "delete_backup failed, please check error log"
 }
 
 function check_backup_exists() {
@@ -571,7 +589,7 @@ if [ "${do_query}" = 1 ]; then
 	if [ $? != 0 ]; then
 		check_error 1 "failed."
 	fi
-		
+
 	max_querys=`expr ${#querys[@]} - 1`
 	for i in `seq 0 "$max_querys"`
 	do

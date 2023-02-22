@@ -7,7 +7,7 @@ from constants import (
     RESOURCE_POSTGRESQL,
 )
 from config import operator_config
-from handle import create_cluster, delete_cluster, timer_cluster, update_cluster, daemon_cluster
+from handle import create_cluster, delete_cluster, timer_cluster, update_cluster, daemon_cluster, set_cluster_status
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from kubernetes import client, config
@@ -17,6 +17,7 @@ from constants import (
     SPEC_BACKUPTOS3,
     SPEC_BACKUPTOS3_CRON,
     SPEC_BACKUPTOS3_CRON_ENABLE,
+    CLUSTER_STATUS_CRON_NEXT_RUN,
 )
 
 
@@ -160,4 +161,5 @@ def cluster_daemon(
         )
         scheduler.remove_all_jobs()
         scheduler.shutdown()
+        set_cluster_status(meta, CLUSTER_STATUS_CRON_NEXT_RUN, "", logger)
         raise Exception("cluster_daemon completed.")

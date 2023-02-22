@@ -35,6 +35,8 @@ from constants import (
     CONTAINER_NAME,
     PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER,
     PODSPEC_CONTAINERS_EXPORTER_CONTAINER,
+    SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_MEMORY,
+    SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_CPU,
     PRIME_SERVICE_PORT_NAME,
     EXPORTER_SERVICE_PORT_NAME,
     HBAS,
@@ -169,6 +171,7 @@ from constants import (
     SPEC_BACKUPTOS3_POLICY_ENCRYPTION_DEFAULT_VALUE,
     SPEC_BACKUPTOS3_POLICY_RETENTION,
     SPEC_BACKUPTOS3_POLICY_RETENTION_DEFAULT_VALUE,
+    SPEC_BACKUPTOS3_POLICY_RETENTION_DELETE_ALL_VALUE,
     RESTORE_FROMS3,
     RESTORE_FROMS3_NAME,
     RESTORE_FROMS3_RECOVERY,
@@ -182,6 +185,8 @@ from constants import (
     PG_LOG_FILENAME,
     SPEC_REBUILD,
     SPCE_REBUILD_NODENAMES,
+    SPEC_DELETE_S3,
+    STORAGE_CLASS_NAME,
 )
 
 PGLOG_DIR = "log"
@@ -305,6 +310,11 @@ BARMAN_BACKUP_LISTS = "backups_list"
 BARMAN_BACKUP_END = "end_time"
 BARMAN_BACKUP_ID = "backup_id"
 BARMAN_BACKUP_SIZE = "size"
+BARMAN_BACKUP_SNAPSHOT_CPU = "cpu"
+BARMAN_BACKUP_SNAPSHOT_MEMORY = "memory"
+BARMAN_BACKUP_SNAPSHOT_REPLICAS = "replicas"
+BARMAN_BACKUP_SNAPSHOT_PVC_SIZE = "pvc_size"
+BARMAN_BACKUP_SNAPSHOT_PVC_CLASS = "pvc_class"
 BARMAN_BACKUP_NAME = "BARMAN_BACKUPNAME"
 BARMAN_STATUS_DEFAULT_NEED_FIELD = [
     "backup_id", "begin_time", "end_time", "begin_xlog", "end_xlog"
@@ -319,6 +329,8 @@ SUPPORTED_DATE_FORMAT = [BARMAN_TIME_FORMAT, DEFAULT_TIME_FORMAT]
 BACKUP_MODE_NONE = "none"
 BACKUP_MODE_S3_MANUAL = "manual"
 BACKUP_MODE_S3_CRON = "cron"
+BACKUP_NAME = "BACKUP_NAME"
+RESTORE_NAME = "RESTORE_NAME"
 
 SPECIAL_CHARACTERS = "/##/"
 
@@ -1715,6 +1727,41 @@ def get_policy_env(policy: TypedDict) -> List:
     return res
 
 
+def get_need_s3_env(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    need_envs: List = None,
+) -> List:
+    res = list()
+    name = None
+
+    if need_envs is None:
+        need_envs = [SPEC_S3, SPEC_BACKUPTOS3_POLICY]
+
+    if SPEC_S3 in need_envs:
+        # add s3 env by pgtools
+        s3 = spec[SPEC_S3].copy()
+        res.extend(get_s3_env(s3))
+
+    if SPEC_BACKUPTOS3_POLICY in need_envs:
+        backup_policy = spec[SPEC_BACKUPCLUSTER][SPEC_BACKUPTOS3].get(
+            SPEC_BACKUPTOS3_POLICY, {})
+        res.extend(get_policy_env(backup_policy))
+
+    if BACKUP_NAME in need_envs:
+        name = spec[SPEC_BACKUPCLUSTER][SPEC_BACKUPTOS3].get(
+            SPEC_BACKUPTOS3_NAME, None)
+    elif RESTORE_NAME in need_envs:
+        name = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_NAME, None)
+    if name is not None:
+        res.extend(get_backup_name_env(meta, name))
+
+    return res
+
+
 def restore_postgresql_froms3(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -1732,10 +1779,7 @@ def restore_postgresql_froms3(
     name = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_NAME, None)
 
     # add s3 env by pgtools -e
-    s3 = spec[SPEC_S3].copy()
-    s3_list = get_s3_env(s3)
-    name_list = get_backup_name_env(meta, name)
-    s3_info = [*s3_list, *name_list]
+    s3_info = get_need_s3_env(meta, spec, patch, status, logger, [SPEC_S3, RESTORE_NAME])
 
     tmpconns: InstanceConnections = InstanceConnections()
     tmpconns.add(conn)
@@ -1789,11 +1833,12 @@ def restore_postgresql_froms3(
     waiting_instance_ready(tmpconns, logger)
 
     # restore param
-    param = "-e BACKUP_ID='" + backupid + "'"
+    param = ["-e", "BACKUP_ID='" + backupid + "'"]
     if recovery_time is not None:
-        param += " -e RECOVERY_TIME='" + recovery_time + "'"
+        param.append("-e")
+        param.append("RECOVERY_TIME='" + recovery_time + "'")
 
-    cmd = ["pgtools", "-E", param] + s3_info
+    cmd = ["pgtools", "-E"] + param + s3_info
     logging.warning(f"restore_postgresql_froms3 execute {cmd} to restore data")
     output = exec_command(conn, cmd, logger, interrupt=True, user="postgres")
     if output.find(SUCCESS) == -1:
@@ -2003,18 +2048,7 @@ def backup_postgresql_to_s3(
     waiting_postgresql_ready(conns, logger)
 
     # add s3 env by pgtools
-    s3 = spec[SPEC_S3].copy()
-    s3_list = get_s3_env(s3)
-
-    backup_policy = spec[SPEC_BACKUPCLUSTER][SPEC_BACKUPTOS3].get(
-        SPEC_BACKUPTOS3_POLICY, {})
-    policy_list = get_policy_env(backup_policy)
-
-    name = spec[SPEC_BACKUPCLUSTER][SPEC_BACKUPTOS3].get(
-        SPEC_BACKUPTOS3_NAME, None)
-    name_list = get_backup_name_env(meta, name)
-
-    s3_info = [*s3_list, *policy_list, *name_list]
+    s3_info = get_need_s3_env(meta, spec, patch, status, logger, [SPEC_S3, SPEC_BACKUPTOS3_POLICY, BACKUP_NAME])
 
     cmd = ["pgtools", "-b"] + s3_info
     logging.warning(
@@ -2062,7 +2096,10 @@ def backup_postgresql_to_s3(
     logger.warning(f"old_backup_status = {old_backup_status}")
     logger.warning(f"new_backup_status = {new_backup_status}")
 
-    res = list()
+    # Get this backup id
+    latest_backupid = get_latest_backupid(backup_info)
+
+    backup_list_status = list()
     for new_status in new_backup_status:
         # old backup
         is_old_backup = False
@@ -2070,12 +2107,12 @@ def backup_postgresql_to_s3(
             for old_status in old_backup_status:
                 if new_status[BARMAN_BACKUP_ID] == old_status[
                         BARMAN_BACKUP_ID]:
-                    res.append(old_status)
+                    backup_list_status.append(old_status)
                     is_old_backup = True
                     break
         if is_old_backup:
             continue
-        # new backup add size field
+        # if s3 backup, we can add size field
         backup_id = new_status[BARMAN_BACKUP_ID]
         param = 'BACKUP_ID' + '="' + backup_id + '"'
         cmd = ["pgtools", "-v", "-e", param] + s3_info
@@ -2085,10 +2122,30 @@ def backup_postgresql_to_s3(
                             interrupt=True,
                             user="postgres")
         new_status[BARMAN_BACKUP_SIZE] = size.strip()
-        res.append(new_status)
+
+        # if latest backup, we can add some snapshot infomation
+        if latest_backupid == backup_id:
+            # get cpu/memory/replicas/pvc_size/pvc_class
+            for container in spec[POSTGRESQL][READWRITEINSTANCE][PODSPEC][CONTAINERS]:
+                if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
+                    cpu = container["resources"]["limits"][SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_CPU]
+                    memory = container["resources"]["limits"][SPEC_POSTGRESQL_READWRITE_RESOURCES_LIMITS_MEMORY]
+            replicas = spec[POSTGRESQL][READWRITEINSTANCE][REPLICAS]
+    
+            for vct in spec[POSTGRESQL][READWRITEINSTANCE][VOLUMECLAIMTEMPLATES]:
+                if vct["metadata"]["name"] == POSTGRESQL_PVC_NAME:
+                    pvc_size = get_vct_size(vct)
+                    storage_class_name = vct["spec"].get(STORAGE_CLASS_NAME, "")
+
+            new_status[BARMAN_BACKUP_SNAPSHOT_CPU] = cpu
+            new_status[BARMAN_BACKUP_SNAPSHOT_MEMORY] = memory
+            new_status[BARMAN_BACKUP_SNAPSHOT_REPLICAS] = replicas
+            new_status[BARMAN_BACKUP_SNAPSHOT_PVC_SIZE] = pvc_size
+            new_status[BARMAN_BACKUP_SNAPSHOT_PVC_CLASS] = storage_class_name
+        backup_list_status.append(new_status)
 
     # set backup status
-    set_cluster_status(meta, CLUSTER_STATUS_BACKUP, res, logger)
+    set_cluster_status(meta, CLUSTER_STATUS_BACKUP, backup_list_status, logger)
 
     # free conns
     conns.free_conns()
@@ -3423,6 +3480,42 @@ def delete_storage(
                              "rm -rf " + machine_data_path)
 
 
+def delete_s3(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    if get_backup_mode(meta, spec, patch, status,
+                       logger) == BACKUP_MODE_S3_MANUAL or get_backup_mode(
+                           meta, spec, patch, status,
+                           logger) == BACKUP_MODE_S3_CRON:
+        s3_info = get_need_s3_env(meta, spec, patch, status, logger, [SPEC_S3, SPEC_BACKUPTOS3_POLICY, BACKUP_NAME])
+
+        # override rentention variable
+        env = SPEC_BACKUPTOS3_POLICY_RETENTION + '="' + \
+              SPEC_BACKUPTOS3_POLICY_RETENTION_DELETE_ALL_VALUE + '"'
+        s3_info.append('-e')
+        s3_info.append(env)
+
+        readwrite_conns = connections(spec, meta, patch,
+                                      get_field(POSTGRESQL, READWRITEINSTANCE),
+                                      False, None, logger, None, status, False)
+        waiting_instance_ready(readwrite_conns, logger, timeout=1 * MINUTES)
+        for conn in readwrite_conns.get_conns():
+            # delete all backup
+            cmd = ["pgtools", "-B"] + s3_info
+            output = exec_command(conn,
+                                  cmd,
+                                  logger,
+                                  interrupt=True,
+                                  user="postgres")
+            logger.warning(f"delete all backup execute on {get_connhost(conn)}, and output = {output}")
+
+        readwrite_conns.free_conns()
+
+
 def delete_storages(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -3459,6 +3552,8 @@ def delete_postgresql_cluster(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
+    if spec[SPEC_DELETE_S3]:
+        delete_s3(meta, spec, patch, status, logger)
     if spec[DELETE_PVC]:
         delete_storages(meta, spec, patch, status, logger)
 
@@ -3777,8 +3872,7 @@ def correct_s3_profile(
                        logger) == BACKUP_MODE_S3_MANUAL or get_backup_mode(
                            meta, spec, patch, status,
                            logger) == BACKUP_MODE_S3_CRON:
-        s3 = spec[SPEC_S3].copy()
-        s3_info = get_s3_env(s3)
+        s3_info = get_need_s3_env(meta, spec, patch, status, logger, [SPEC_S3])
         readwrite_conns = connections(spec, meta, patch,
                                       get_field(POSTGRESQL, READWRITEINSTANCE),
                                       False, None, logger, None, status, False)
