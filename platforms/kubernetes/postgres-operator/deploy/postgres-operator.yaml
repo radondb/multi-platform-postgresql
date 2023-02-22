@@ -118,6 +118,12 @@ spec:
                 enum:
                 - true
                 - false
+              deletes3:
+                type: boolean
+                enum:
+                - true
+                - false
+                default: false
               updatetoleration:
                 type: boolean
                 enum:

@@ -6,6 +6,7 @@ metadata:
 spec:
   action: start #stop start
   deletepvc: true
+  #deletes3: false # delete the backup in s3 at delete cluster
   antiaffinity:
     policy: preferred                             # preferred/required
     podAntiAffinityTerm: autofailover-readwrite   # none/autofailover-readwrite/autofailover-readwrite-readonly
