@@ -45,6 +45,7 @@ build_image()
 	cp -r ../../source_code/citus "$dir/"
 	cp -r ../../source_code/postgis "$dir/"
 	cp -r ../../source_code/barman "$dir/"
+	cp -r ../../source_code/pgaudit "$dir/"
 
 	echo "copy config ..."
 	cp -r ./config/ "$dir/"

@@ -1142,7 +1142,7 @@ def create_postgresql(
                 CONTAINER_ENV_VALUE: value
             })
     if mode == MACHINE_MODE:
-        machine_env += PG_CONFIG_PREFIX + "shared_preload_libraries='citus,pgautofailover,pg_stat_statements'" + "\n"
+        machine_env += PG_CONFIG_PREFIX + "shared_preload_libraries='citus,pgautofailover,pg_stat_statements,pgaudit'" + "\n"
         machine_env += PG_CONFIG_PREFIX + 'log_truncate_on_rotation=true' + "\n"
         machine_env += PG_CONFIG_PREFIX + 'logging_collector=on' + "\n"
         machine_env += PG_CONFIG_PREFIX + "log_directory='" + PGLOG_DIR + "'" + "\n"
@@ -1163,7 +1163,7 @@ def create_postgresql(
             CONTAINER_ENV_NAME:
             PG_CONFIG_PREFIX + "shared_preload_libraries",
             CONTAINER_ENV_VALUE:
-            "'citus,pgautofailover,pg_stat_statements'"
+            "'citus,pgautofailover,pg_stat_statements,pgaudit'"
         })
         k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_truncate_on_rotation",
