@@ -573,6 +573,7 @@ spec:
         operator-name: radondb-postgres-operator
     spec:
       serviceAccountName: {{ .account }}
+      priorityClassName: system-cluster-critical
       containers:
       - name: radondb-postgres-operator
         image: {{ .image }}
