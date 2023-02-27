@@ -2,6 +2,7 @@ import logging
 import kopf
 import paramiko
 import os
+import copy
 import string
 import traceback
 import time
@@ -819,11 +820,11 @@ def create_statefulset(
     statefulset_body["spec"]["replicas"] = STATEFULSET_REPLICAS
     statefulset_body["spec"][
         "serviceName"] = statefulset_name_get_service_name(name)
-    podspec = podspec_need_copy.copy()
+    podspec = copy.deepcopy(podspec_need_copy)
     podspec["restartPolicy"] = "Always"
     podspec.setdefault(SPEC_POD_PRIORITY_CLASS,
                        SPEC_POD_PRIORITY_CLASS_SCOPE_CLUSTER)
-    antiaffinity = antiaffinity_need_copy.copy()
+    antiaffinity = copy.deepcopy(antiaffinity_need_copy)
     is_required = antiaffinity[
         SPEC_ANTIAFFINITY_POLICY] == SPEC_ANTIAFFINITY_REQUIRED
     antiaffinity = get_antiaffinity(meta, labels, antiaffinity)
@@ -994,7 +995,7 @@ def get_exporter_env(
     field: str,
     container_exporter_need_copy: TypedDict,
 ) -> (str, List):
-    container_exporter = container_exporter_need_copy.copy()
+    container_exporter = copy.deepcopy(container_exporter_need_copy)
     if field == get_field(AUTOFAILOVER):
         port = AUTO_FAILOVER_PORT
         dbname = 'pg_auto_failover'
@@ -1049,7 +1050,7 @@ def get_machine_exporter_env(
     (machine_exporter_env,
      k8s_exporter_env) = get_exporter_env(meta, spec, patch, status, logger,
                                           field,
-                                          container_exporter_need_copy.copy())
+                                          copy.deepcopy(container_exporter_need_copy))
     return machine_exporter_env
 
 
@@ -1065,7 +1066,7 @@ def get_k8s_exporter_env(
     (machine_exporter_env,
      k8s_exporter_env) = get_exporter_env(meta, spec, patch, status, logger,
                                           field,
-                                          container_exporter_need_copy.copy())
+                                          copy.deepcopy(container_exporter_need_copy))
     return k8s_exporter_env
 
 
@@ -1746,7 +1747,7 @@ def get_need_s3_env(
 
     if SPEC_S3 in need_envs:
         # add s3 env by pgtools
-        s3 = spec[SPEC_S3].copy()
+        s3 = copy.deepcopy(spec[SPEC_S3])
         res.extend(get_s3_env(s3))
 
     if SPEC_BACKUPTOS3_POLICY in need_envs:
@@ -3230,8 +3231,8 @@ def create_services(
                 read_vip = service[VIP]
                 READ_SERVER = LVS_REAL_READ_SERVER
             elif service[SELECTOR] == SERVICE_STANDBY_READONLY:
-                machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
-                    MACHINES).copy()
+                machines = copy.deepcopy(spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
+                    MACHINES))
                 machines += spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
                     MACHINES)
                 read_vip = service[VIP]
@@ -4800,17 +4801,17 @@ def update_configs(
         if port_change == False and restart_postgresql == False and special_change == False:
             update_configs_utile(meta, spec, patch, status, logger,
                                  conns, readwrite_conns, readonly_conns,
-                                 cmd.copy(), autofailover, False)
+                                 copy.deepcopy(cmd), autofailover, False)
         if port_change == False and restart_postgresql == False and special_change == True:
             pass
         if port_change == False and restart_postgresql == True and special_change == False:
             update_configs_utile(meta, spec, patch, status, logger,
                                  conns, readwrite_conns, readonly_conns,
-                                 cmd.copy(), autofailover, True)
+                                 copy.deepcopy(cmd), autofailover, True)
         if port_change == False and restart_postgresql == True and special_change == True:
             update_configs_utile(meta, spec, patch, status, logger,
                                  conns, readwrite_conns, readonly_conns,
-                                 cmd.copy(), autofailover, True)
+                                 copy.deepcopy(cmd), autofailover, True)
         if port_change == True and restart_postgresql == False and special_change == False:
             pass
         if port_change == True and restart_postgresql == False and special_change == True:
@@ -4818,21 +4819,21 @@ def update_configs(
         if port_change == True and restart_postgresql == True and special_change == False:
             update_configs_port(meta, spec, patch, status, logger,
                                 conns, readwrite_conns, readonly_conns,
-                                cmd.copy(), autofailover)
+                                copy.deepcopy(cmd), autofailover)
         if port_change == True and restart_postgresql == True and special_change == True:
             # don't update port
             config = "port" + '="' + old_port + '"'
-            tmpcmd = cmd.copy()
+            tmpcmd = copy.deepcopy(cmd)
             tmpcmd.append('-e')
             tmpcmd.append(PG_CONFIG_PREFIX + config)
             update_configs_utile(meta, spec, patch, status, logger,
                                  conns, readwrite_conns, readonly_conns,
-                                 cmd.copy(), autofailover, True)
+                                 copy.deepcopy(cmd), autofailover, True)
             # update port
-            tmpcmd = cmd.copy()
+            tmpcmd = copy.deepcopy(cmd)
             update_configs_port(meta, spec, patch, status, logger,
                                 conns, readwrite_conns, readonly_conns,
-                                tmpcmd.copy(), autofailover)
+                                copy.deepcopy(tmpcmd), autofailover)
 
         if port_change == True:
             delete_services(meta, spec, patch, status, logger)
