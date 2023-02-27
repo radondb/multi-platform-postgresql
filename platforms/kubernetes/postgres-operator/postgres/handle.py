@@ -1759,8 +1759,7 @@ def get_need_s3_env(
             SPEC_BACKUPTOS3_NAME, None)
     elif RESTORE_NAME in need_envs:
         name = spec[RESTORE][RESTORE_FROMS3].get(RESTORE_FROMS3_NAME, None)
-    if name is not None:
-        res.extend(get_backup_name_env(meta, name))
+    res.extend(get_backup_name_env(meta, name))
 
     return res
 
