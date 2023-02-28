@@ -338,34 +338,52 @@ RESTORE_NAME = "RESTORE_NAME"
 SPECIAL_CHARACTERS = "/##/"
 
 
-def set_cluster_status(meta: kopf.Meta, statefield: str, state: str,
-                       logger: logging.Logger) -> None:
+def set_cluster_status(meta: kopf.Meta,
+                       statefield: str,
+                       state: str,
+                       logger: logging.Logger,
+                       timeout: int = MINUTES) -> None:
     customer_obj_api = client.CustomObjectsApi()
     name = meta['name']
     namespace = meta['namespace']
 
-    # get customer definition
-    body = customer_obj_api.get_namespaced_custom_object(
-        group=API_GROUP,
-        version=API_VERSION_V1,
-        namespace=namespace,
-        plural=RESOURCE_POSTGRESQL,
-        name=name)
-    if CLUSTER_STATUS not in body:
-        cluster_create = {CLUSTER_STATUS: {statefield: state}}
-        body = {**body, **cluster_create}
-    else:
-        body[CLUSTER_STATUS][statefield] = state
+    # If only try to update once, you may get the object has been modified; please apply your changes to the latest version and try again error
+    # see https://stackoverflow.com/questions/51297136/kubectl-error-the-object-has-been-modified-please-apply-your-changes-to-the-la get more infomations
+    i = 0
+    maxtry = timeout
+    while True:
+        i += 1
+        time.sleep(SECONDS)
+        if i >= maxtry:
+            logger.error(f"set_cluster_status failed, skip.")
+            break
+        try:
+            # get customer definition
+            body = customer_obj_api.get_namespaced_custom_object(
+                group=API_GROUP,
+                version=API_VERSION_V1,
+                namespace=namespace,
+                plural=RESOURCE_POSTGRESQL,
+                name=name)
+            if CLUSTER_STATUS not in body:
+                cluster_create = {CLUSTER_STATUS: {statefield: state}}
+                body = {**body, **cluster_create}
+            else:
+                body[CLUSTER_STATUS][statefield] = state
 
-    logger.info(
-        f"update {API_GROUP + API_VERSION_V1} crd {name} field .status.{statefield} = {state}, set_cluster_status body = {body}"
-    )
-    customer_obj_api.patch_namespaced_custom_object(group=API_GROUP,
-                                                    version=API_VERSION_V1,
-                                                    namespace=namespace,
-                                                    plural=RESOURCE_POSTGRESQL,
-                                                    name=name,
-                                                    body=body)
+            customer_obj_api.patch_namespaced_custom_object(
+                group=API_GROUP,
+                version=API_VERSION_V1,
+                namespace=namespace,
+                plural=RESOURCE_POSTGRESQL,
+                name=name,
+                body=body)
+            logger.info(
+                f"update {API_GROUP + API_VERSION_V1} crd {name} field .status.{statefield} = {state}, set_cluster_status body = {body}"
+            )
+            break
+        except Exception:
+            logger.warning(f"set_cluster_status failed, try {i} times.")
 
 
 def set_password(patch: kopf.Patch, status: kopf.Status) -> None:
