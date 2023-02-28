@@ -5043,7 +5043,7 @@ def update_users(
             drop_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME], logger)
 
         for user in maintenance_users:
-            drop_one_user(autofailover_conn,
+            drop_one_user(auto_failover_conn,
                           user[SPEC_POSTGRESQL_USERS_USER_NAME], logger)
 
     if AC == DIFF_CHANGE:
@@ -5062,7 +5062,7 @@ def update_users(
                                 n[SPEC_POSTGRESQL_USERS_USER_PASSWORD], logger)
                             if maintenance_user:
                                 change_user_password(
-                                    autofailover_conn,
+                                    auto_failover_conn,
                                     n[SPEC_POSTGRESQL_USERS_USER_NAME],
                                     n[SPEC_POSTGRESQL_USERS_USER_PASSWORD],
                                     logger)
@@ -5080,7 +5080,7 @@ def update_users(
                     drop_one_user(conn, o[SPEC_POSTGRESQL_USERS_USER_NAME],
                                   logger)
                     if maintenance_user:
-                        drop_one_user(autofailover_conn,
+                        drop_one_user(auto_failover_conn,
                                       o[SPEC_POSTGRESQL_USERS_USER_NAME],
                                       logger)
 
