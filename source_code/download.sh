@@ -49,4 +49,7 @@ download_source_code "postgis" "https://github.com/postgis/postgis.git"
 # barman
 download_source_code "barman" "https://github.com/EnterpriseDB/barman.git"
 
+# pgaudit
+download_source_code "pgaudit" "https://github.com/pgaudit/pgaudit.git"
+
 exit 0
