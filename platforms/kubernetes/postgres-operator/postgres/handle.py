@@ -1971,11 +1971,17 @@ def get_backup_mode(
     patch: kopf.Patch,
     status: kopf.Status,
     logger: logging.Logger,
+    except_backup_mode: List = None,
 ) -> str:
-    if is_s3_manual_backup_mode(meta, spec, patch, status, logger):
+    if except_backup_mode is None:
+        except_backup_mode = [BACKUP_MODE_S3_MANUAL, BACKUP_MODE_S3_CRON]
+
+    if BACKUP_MODE_S3_MANUAL in except_backup_mode and is_s3_manual_backup_mode(
+            meta, spec, patch, status, logger):
         return BACKUP_MODE_S3_MANUAL
 
-    if is_s3_cron_backup_mode(meta, spec, patch, status, logger):
+    if BACKUP_MODE_S3_CRON in except_backup_mode and is_s3_cron_backup_mode(
+            meta, spec, patch, status, logger):
         return BACKUP_MODE_S3_CRON
 
     return BACKUP_MODE_NONE
@@ -4055,8 +4061,8 @@ def trigger_backup_to_s3_manual(
                            NEW, DIFF_FIELD_SPEC_BACKUPS3_MANUAL[len(
                                DIFF_FIELD_SPEC_BACKUPCLUSTER
                            ):len(DIFF_FIELD_SPEC_BACKUPS3_MANUAL)]) == True):
-        if get_backup_mode(meta, spec, patch, status,
-                           logger) == BACKUP_MODE_S3_MANUAL:
+        if get_backup_mode(meta, spec, patch, status, logger,
+                           [BACKUP_MODE_S3_MANUAL]) == BACKUP_MODE_S3_MANUAL:
             backup_postgresql(meta, spec, patch, status, logger)
 
 
@@ -5679,8 +5685,8 @@ def cron_backup(
     cron_expression: str,
 ) -> None:
     try:
-        if get_backup_mode(meta, spec, patch, status,
-                           logger) == BACKUP_MODE_S3_CRON:
+        if get_backup_mode(meta, spec, patch, status, logger,
+                           [BACKUP_MODE_S3_CRON]) == BACKUP_MODE_S3_CRON:
             backup_postgresql(meta, spec, patch, status, logger)
     except kopf.PermanentError:
         logger.error(f"cron_backup failed.")
