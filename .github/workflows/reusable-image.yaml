@@ -1,0 +1,33 @@
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: false
+        type: string
+        description: "Postgres Kernel Major Version"
+        default: "12"
+      target:
+        required: true
+        type: string
+        description: "Make Target"
+    secrets:
+      DOCKER_USERNAME:
+        required: true
+      DOCKER_PASSWORD:
+        required: true
+
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2880
+    steps:
+      - name: Get Repo Directory
+        uses: actions/checkout@v3
+
+      - name: Docker Login
+        run: |
+          docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Image
+        run: |
+          make pgversion=${{ inputs.version }} platform=all ${{ inputs.target }}

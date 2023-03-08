@@ -11,7 +11,7 @@
     "barman": "release/3.3.0",
     "pgaudit": "1.4.3",
     "name": "radondb-postgresql",
-    "version": "v1.2.0",
+    "version": "dev",
     "arches": [
       "aarch64",
       "x86_64"
@@ -29,7 +29,7 @@
     "barman": "release/3.3.0",
     "pgaudit": "1.5.2",
     "name": "radondb-postgresql",
-    "version": "v1.2.0",
+    "version": "dev",
     "arches": [
       "aarch64",
       "x86_64"
@@ -47,7 +47,7 @@
     "barman": "release/3.3.0",
     "pgaudit": "1.6.2",
     "name": "radondb-postgresql",
-    "version": "v1.2.0",
+    "version": "dev",
     "arches": [
       "aarch64",
       "x86_64"
@@ -65,7 +65,7 @@
     "barman": "release/3.3.0",
     "pgaudit": "1.7.0",
     "name": "radondb-postgresql",
-    "version": "v1.2.0",
+    "version": "dev",
     "arches": [
       "aarch64",
       "x86_64"

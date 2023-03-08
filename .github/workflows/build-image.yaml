@@ -1,0 +1,56 @@
+name: Build Image
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-postgres-image:
+    strategy:
+      matrix:
+        # LABEL: MULTI_PG_VERSIONS
+        version: [12, 13, 14, 15]
+    uses: ./.github/workflows/reusable-image.yaml
+    with:
+      version: ${{ matrix.version }}
+      target: "postgres-image"
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+  build-operator-image:
+    uses: ./.github/workflows/reusable-image.yaml
+    with:
+      target: "operator-image"
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+  build-exporter-image:
+    uses: ./.github/workflows/reusable-image.yaml
+    with:
+      target: "exporter-image"
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+  # because create release on tag. so the release code can't include the package.
+#  build-helm-package:
+#    runs-on: ubuntu-latest
+#    permissions:
+#      contents: write
+#    steps:
+#      - name: Get Repo Directory
+#        uses: actions/checkout@v3
+#        with:
+#          ref: ${{ github.head_ref }}
+#
+#      - name: Build
+#        run: |
+#          make helm-package
+#
+#      - name: Sync Change
+#        uses: stefanzweifel/git-auto-commit-action@v4
+#        with:
+#          branch: main
+#          commit_message: "generate helm repo"

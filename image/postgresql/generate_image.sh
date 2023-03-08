@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeo pipefail
 
+source ../common/common.sh
 #if [ "$#" -eq 0 ]; then
 #	versions="$(jq -r 'keys | map(@sh) | join(" ")' versions.json)"
 #else
@@ -23,14 +24,10 @@ build_image()
 	mkdir -p "$dir"
 	echo "processing $dir ..."
 
-	image_exists=$( docker image ls --format "{{.Repository}}:{{.Tag}}" | awk -v aaa=$image '{print $0} END{print aaa}' | grep -c $image )
-	if [ "$image_exists" -ne 1 ]; then
-		if [ "$forcebuildimage" = 1 ]; then
-			echo "docker image $image exists, rebuilding the image ..."
-		else
-			echo "docker image $image exists, skiping ..."
-			return
-		fi
+	# image check
+	pre_build_image "$image" || error=true
+	if [ "$error" ]; then
+		return
 	fi
 
 	echo "generate Dockerfile ..."
@@ -52,34 +49,11 @@ build_image()
 
 	cd "$dir"
 	echo "build docker image $image ..."
-	build_cmd="docker buildx build --no-cache"
+	echo "notice: build all image need docker login. "
 
-	if [ $platform == "all" ]; then
-		echo "build all image need docker login. "
-		builder_exists=$(docker buildx ls | awk '{if ($1=="multi-platform") print $1}')
-		if [ "$builder_exists" ]; then
-			docker buildx rm multi-platform
-		fi
-		# create a new builder instance
-		docker buildx create --use --name multi-platform --platform=linux/amd64,linux/arm64
-
-		temp=($(echo $image | tr "/" " "))
-		if [ ${#temp[@]} == 1 ]; then
-			image="$namespace/$image"
-		fi
-
-		build_cmd="$build_cmd --push --platform linux/amd64,linux/arm64"
-	else
-		build_cmd="$build_cmd -o type=docker --platform linux/${platform}"
-	fi
-
-	build_cmd="$build_cmd -t $image ."
+	build_cmd=$(get_build_cmd "$image" "$platform")
 	$build_cmd
 
-	# remove builder instance
-#	if [ $platform == "all" ]; then
-#		docker buildx rm multi-platform
-#	fi
 	cd -
 }
 

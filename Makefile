@@ -15,8 +15,9 @@ FILEDESC = "multi platform for computer/kubernetes postgresql"
 #docker_version ?= ""
 export platform=amd64# make platform=arm64 build arm, make platform=all build and push arm64/amd64 image
 export pgversion=all# make pgversion=12 only build postgresql 12 that in versions.json field. make pgversion="'13' '14' '15'" build postgresql 13 14 15.
-export forcebuildimage=0# make forcebuildimage=1 even though the image exists, it also compiles.
+export forcebuildimage=# local/remote
 export namespace=radondb# used when make platform=all and no repositry namespace
+export forcebuildhelm=0# 1 is force build helm package
 
 ### make log
 # nohup make postgres-image &
@@ -40,6 +41,7 @@ operator-yaml: operator-image
 	cp jq-template.awk platforms/kubernetes/postgres-operator/deploy/jq-template.awk
 	cd platforms/kubernetes/postgres-operator/deploy/; awk -f jq-template.awk postgres-operator.yaml.template > postgres-operator.yaml
 helm-package:
+	if [ -s "./docs/postgres-operator-`jq -r '.version' helmversions.json`.tgz" -a "${forcebuildhelm}" != "1" ]; then echo "helm package exists, skiping ..." && exit 255; fi
 	cp helmversions.json platforms/kubernetes/postgres-operator/deploy/versions.json
 	cp jq-template.awk platforms/kubernetes/postgres-operator/deploy/jq-template.awk
 	cd platforms/kubernetes/postgres-operator/deploy/; \
@@ -62,4 +64,5 @@ format:
 depends:
 	sudo pip install yapf paramiko kubernetes kopf
 	docker run --privileged --rm tonistiigi/binfmt --install all
-	echo "TODO ubuntu: apt install jq"
+	@echo "TODO ubuntu: apt install jq curl"
+	@echo "build helm-package need helm environment."

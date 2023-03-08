@@ -1065,10 +1065,9 @@ def get_machine_exporter_env(
     container_exporter_need_copy: TypedDict,
 ) -> str:
 
-    (machine_exporter_env,
-     k8s_exporter_env) = get_exporter_env(meta, spec, patch, status, logger,
-                                          field,
-                                          copy.deepcopy(container_exporter_need_copy))
+    (machine_exporter_env, k8s_exporter_env) = get_exporter_env(
+        meta, spec, patch, status, logger, field,
+        copy.deepcopy(container_exporter_need_copy))
     return machine_exporter_env
 
 
@@ -1081,10 +1080,9 @@ def get_k8s_exporter_env(
     field: str,
     container_exporter_need_copy: TypedDict,
 ) -> List:
-    (machine_exporter_env,
-     k8s_exporter_env) = get_exporter_env(meta, spec, patch, status, logger,
-                                          field,
-                                          copy.deepcopy(container_exporter_need_copy))
+    (machine_exporter_env, k8s_exporter_env) = get_exporter_env(
+        meta, spec, patch, status, logger, field,
+        copy.deepcopy(container_exporter_need_copy))
     return k8s_exporter_env
 
 
@@ -3255,8 +3253,8 @@ def create_services(
                 read_vip = service[VIP]
                 READ_SERVER = LVS_REAL_READ_SERVER
             elif service[SELECTOR] == SERVICE_STANDBY_READONLY:
-                machines = copy.deepcopy(spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
-                    MACHINES))
+                machines = copy.deepcopy(
+                    spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(MACHINES))
                 machines += spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
                     MACHINES)
                 read_vip = service[VIP]
@@ -4823,26 +4821,26 @@ def update_configs(
         # if port_change is 1, restart_postgresql must be 1 can't be 0.
         # if special_change is 1, restart_postgresql must be 1 can't be 0.
         if port_change == False and restart_postgresql == False and special_change == False:
-            update_configs_utile(meta, spec, patch, status, logger,
-                                 conns, readwrite_conns, readonly_conns,
+            update_configs_utile(meta, spec, patch, status, logger, conns,
+                                 readwrite_conns, readonly_conns,
                                  copy.deepcopy(cmd), autofailover, False)
         if port_change == False and restart_postgresql == False and special_change == True:
             pass
         if port_change == False and restart_postgresql == True and special_change == False:
-            update_configs_utile(meta, spec, patch, status, logger,
-                                 conns, readwrite_conns, readonly_conns,
+            update_configs_utile(meta, spec, patch, status, logger, conns,
+                                 readwrite_conns, readonly_conns,
                                  copy.deepcopy(cmd), autofailover, True)
         if port_change == False and restart_postgresql == True and special_change == True:
-            update_configs_utile(meta, spec, patch, status, logger,
-                                 conns, readwrite_conns, readonly_conns,
+            update_configs_utile(meta, spec, patch, status, logger, conns,
+                                 readwrite_conns, readonly_conns,
                                  copy.deepcopy(cmd), autofailover, True)
         if port_change == True and restart_postgresql == False and special_change == False:
             pass
         if port_change == True and restart_postgresql == False and special_change == True:
             pass
         if port_change == True and restart_postgresql == True and special_change == False:
-            update_configs_port(meta, spec, patch, status, logger,
-                                conns, readwrite_conns, readonly_conns,
+            update_configs_port(meta, spec, patch, status, logger, conns,
+                                readwrite_conns, readonly_conns,
                                 copy.deepcopy(cmd), autofailover)
         if port_change == True and restart_postgresql == True and special_change == True:
             # don't update port
@@ -4850,13 +4848,13 @@ def update_configs(
             tmpcmd = copy.deepcopy(cmd)
             tmpcmd.append('-e')
             tmpcmd.append(PG_CONFIG_PREFIX + config)
-            update_configs_utile(meta, spec, patch, status, logger,
-                                 conns, readwrite_conns, readonly_conns,
+            update_configs_utile(meta, spec, patch, status, logger, conns,
+                                 readwrite_conns, readonly_conns,
                                  copy.deepcopy(cmd), autofailover, True)
             # update port
             tmpcmd = copy.deepcopy(cmd)
-            update_configs_port(meta, spec, patch, status, logger,
-                                conns, readwrite_conns, readonly_conns,
+            update_configs_port(meta, spec, patch, status, logger, conns,
+                                readwrite_conns, readonly_conns,
                                 copy.deepcopy(tmpcmd), autofailover)
 
         if port_change == True:
