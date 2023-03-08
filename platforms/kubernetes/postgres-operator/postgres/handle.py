@@ -16,6 +16,8 @@ from config import operator_config
 from typed import LabelType, InstanceConnection, InstanceConnections, TypedDict, InstanceConnectionMachine, InstanceConnectionK8S, Tuple, Any, List
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from tqdm import tqdm
+import sys
 
 from constants import (
     VIP,
@@ -336,6 +338,9 @@ BACKUP_NAME = "BACKUP_NAME"
 RESTORE_NAME = "RESTORE_NAME"
 
 SPECIAL_CHARACTERS = "/##/"
+
+# tqdm
+TQDM_MININTERVAL = 3
 
 
 def set_cluster_status(meta: kopf.Meta,
@@ -695,24 +700,39 @@ def waiting_postgresql_ready(
     conns = conns.get_conns()[connect_start:connect_end]
 
     for conn in conns:
-        i = 0
-        maxtry = timeout
-        while True:
-            output = exec_command(conn,
-                                  WAITING_POSTGRESQL_READY_COMMAND,
-                                  logger,
-                                  interrupt=False)
-            if output != INIT_FINISH_MESSAGE:
-                i += 1
+        logger.info(
+            f"waiting for postgresql {get_connhost(conn)} ready and timeout minutes is {timeout}."
+        )
+        ready = False
+
+        with tqdm(total=timeout, mininterval=TQDM_MININTERVAL) as process_bar:
+            process_bar.set_description(
+                "Processing waiting_postgresql_ready")
+            for i in range(timeout):
                 time.sleep(1)
-                logger.error(
-                    f"postgresql {get_connhost(conn)} is not ready. try {i} times. {output}"
-                )
-                if i >= maxtry:
-                    logger.warning(f"postgresql is not ready. skip waitting.")
-                    return False
-            else:
-                break
+                # tqdm process new line
+                if i % process_bar.mininterval == 0:
+                    sys.stderr.write("\n")
+
+                output = exec_command(conn,
+                                      WAITING_POSTGRESQL_READY_COMMAND,
+                                      logger,
+                                      interrupt=False,
+                                      exception_info=False)
+                if output == INIT_FINISH_MESSAGE:
+                    ready = True
+                    process_bar.update(timeout - i)
+                    break
+                else:
+                    process_bar.update(1)
+        if ready:
+            logger.warning(f"postgresql {get_connhost(conn)} ready.")
+        else:
+            logger.error(
+                f"postgresql {get_connhost(conn)} is not ready. skip waitting."
+            )
+            return False
+
     return True
 
 
@@ -752,19 +772,35 @@ def waiting_instance_ready(conns: InstanceConnections,
     success_message = 'running success'
     cmd = ['echo', "'%s'" % success_message]
     for conn in conns:
-        i = 0
-        maxtry = timeout
-        while True:
-            output = exec_command(conn, cmd, logger, interrupt=False)
-            if output != success_message:
-                i += 1
+        logger.info(
+            f"waiting for instance {get_connhost(conn)} start and timeout minutes is {timeout}."
+        )
+        ready = False
+
+        with tqdm(total=timeout, mininterval=TQDM_MININTERVAL) as process_bar:
+            process_bar.set_description("Processing waiting_instance_ready")
+            for i in range(timeout):
                 time.sleep(1)
-                logger.warning(f"instance not start. try {i} times. {output}")
-                if i >= maxtry:
-                    logger.warning(f"instance not start. skip waitting.")
+                # tqdm process new line
+                if i % process_bar.mininterval == 0:
+                    sys.stderr.write("\n")
+
+                output = exec_command(conn,
+                                      cmd,
+                                      logger,
+                                      interrupt=False,
+                                      exception_info=False)
+                if output == success_message:
+                    process_bar.update(timeout - i)
+                    ready = True
                     break
-            else:
-                break
+                else:
+                    process_bar.update(1)
+        if ready:
+            logger.warning(f"instance {get_connhost(conn)} start.")
+        else:
+            logger.error(
+                f"instance {get_connhost(conn)} is not start. skip waitting.")
 
 
 def waiting_postgresql_recovery_completed(conns: InstanceConnections,
@@ -780,35 +816,47 @@ def waiting_postgresql_recovery_completed(conns: InstanceConnections,
     ]
 
     for conn in conns.get_conns():
-        i = 0
-        maxtry = timeout
-        while True:
-            i += 1
-            time.sleep(1)
-            output = exec_command(conn,
-                                  recover_completed_cmd,
-                                  logger,
-                                  interrupt=False)
-            if output.find("No such file or directory") != -1:
-                logger.warning(
-                    f"recovery not completed. try {i} times. {output}")
-            else:
-                recovery_is_success = True
-                break
+        logger.info(
+            f"waiting target postgresql {get_connhost(conn)} recovery completed."
+        )
+        ready = False
+        pg_running = True
 
-            output = exec_command(conn,
-                                  pg_running_cmd,
-                                  logger,
-                                  interrupt=False)
-            if output.strip() != "":
-                logger.warning(
-                    f"waiting recovery but PostgreSQL is not running. maybe recovery not completed, please check PostgreSQL log. {output}"
-                )
-                break
+        with tqdm(total=timeout, mininterval=TQDM_MININTERVAL) as process_bar:
+            process_bar.set_description(
+                "Processing waiting_postgresql_recovery_completed")
+            for i in range(timeout):
+                time.sleep(1)
+                if i % process_bar.mininterval == 0:
+                    sys.stderr.write("\n")
 
-            if i >= maxtry:
-                logger.warning(f"recovery not completed. skip waitting.")
-                break
+                # check recovery complete
+                output = exec_command(conn,
+                                      recover_completed_cmd,
+                                      logger,
+                                      interrupt=False)
+                if output.find("No such file or directory") == -1:
+                    recovery_is_success = True
+                    ready = True
+                    break
+
+                # check postgresql running
+                output = exec_command(conn,
+                                      pg_running_cmd,
+                                      logger,
+                                      interrupt=False)
+                if output.strip() != "":
+                    pg_running = False
+                    break
+        if ready:
+            logger.warning(
+                f"postgresql {get_connhost(conn)} recovery completed.")
+        elif pg_running == False:
+            logger.error(
+                f"waiting recovery but PostgreSQL is not running. maybe recovery not completed, please check PostgreSQL log."
+            )
+        else:
+            logger.error(f"recovery not completed. skip waitting.")
 
     return recovery_is_success
 
@@ -2460,15 +2508,16 @@ def exec_command(conn: InstanceConnection,
                  cmd: [str],
                  logger: logging.Logger,
                  interrupt: bool = True,
+                 exception_info: bool = True,
                  user: str = "root"):
     if conn.get_k8s() != None:
         return pod_exec_command(conn.get_k8s().get_podname(),
                                 conn.get_k8s().get_namespace(), cmd, logger,
-                                interrupt, user)
+                                interrupt, exception_info, user)
     if conn.get_machine() != None:
         return docker_exec_command(conn.get_machine().get_role(),
                                    conn.get_machine().get_ssh(), cmd, logger,
-                                   interrupt, user,
+                                   interrupt, exception_info, user,
                                    conn.get_machine().get_host())
 
 
@@ -2477,6 +2526,7 @@ def pod_exec_command(name: str,
                      cmd: [str],
                      logger: logging.Logger,
                      interrupt: bool = True,
+                     exception_info: bool = True,
                      user: str = "root") -> str:
     try:
         core_v1_api = client.CoreV1Api()
@@ -2496,9 +2546,9 @@ def pod_exec_command(name: str,
         if interrupt:
             raise kopf.PermanentError(
                 f"pod {name} exec command({cmd}) failed {e}")
-        else:
+        elif exception_info:
             logger.error(f"pod {name} exec command({cmd}) failed {e}")
-            return FAILED
+        return FAILED
 
     return resp.replace('\n', '')
 
@@ -2508,6 +2558,7 @@ def docker_exec_command(role: str,
                         cmd: [str],
                         logger: logging.Logger,
                         interrupt: bool = True,
+                        exception_info: bool = True,
                         user: str = "root",
                         host: str = None) -> str:
     if role == AUTOFAILOVER:
@@ -2523,9 +2574,9 @@ def docker_exec_command(role: str,
     except Exception as e:
         if interrupt:
             raise kopf.PermanentError(f"can't run command: {cmd} , {e}")
-        else:
+        elif exception_info:
             logger.error(f"can't run command: {cmd} , {e}")
-            return FAILED
+        return FAILED
 
     # see pod_exec_command, don't check ret_code
     std_output = ssh_stdout.read().decode().strip()
