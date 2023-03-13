@@ -6,7 +6,7 @@
   "clusterrolebinding": "radondb-postgres-operator-rolebinding-cluster",
   "rolebinding": "radondb-postgres-operator-rolebinding-role",
   "name": "radondb-postgres-operator",
-  "image": "radondb/radondb-postgres-operator:v1.2.0",
+  "image": "radondb/radondb-postgres-operator:dev",
   "datapath": "/data",
   "imageRegistry": "",
   "namespaceOverride": ""

@@ -1,0 +1,29 @@
+name: Format Code
+
+on: [push]
+
+jobs:
+  format-code:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Get Repo Directory
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Build
+        run: |
+          pip install yapf
+          make format
+
+      - name: Sync Change
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "reformat code"
