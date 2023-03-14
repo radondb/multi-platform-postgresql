@@ -36,13 +36,7 @@ build_image()
 	cp -a pgtools "$dir/"
 
 	echo "copy code ..."
-	cp -r ../../source_code/postgresql "$dir/"
-	cp -r ../../source_code/pg_auto_failover "$dir/"
-	cp -r ../../source_code/pg_dirtyread "$dir/"
-	cp -r ../../source_code/citus "$dir/"
-	cp -r ../../source_code/postgis "$dir/"
-	cp -r ../../source_code/barman "$dir/"
-	cp -r ../../source_code/pgaudit "$dir/"
+	cp -r ../../source_code/*/ "$dir/"
 
 	echo "copy config ..."
 	cp -r ./config/ "$dir/"

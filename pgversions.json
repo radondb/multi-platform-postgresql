@@ -10,6 +10,7 @@
     "postgis": "3.3.1",
     "barman": "release/3.3.0",
     "pgaudit": "1.4.3",
+    "postgres_aws_s3": "main",
     "name": "radondb-postgresql",
     "version": "dev",
     "arches": [
@@ -28,6 +29,7 @@
     "postgis": "3.3.1",
     "barman": "release/3.3.0",
     "pgaudit": "1.5.2",
+    "postgres_aws_s3": "main",
     "name": "radondb-postgresql",
     "version": "dev",
     "arches": [
@@ -46,6 +48,7 @@
     "postgis": "3.3.1",
     "barman": "release/3.3.0",
     "pgaudit": "1.6.2",
+    "postgres_aws_s3": "main",
     "name": "radondb-postgresql",
     "version": "dev",
     "arches": [
@@ -64,6 +67,7 @@
     "postgis": "3.3.1",
     "barman": "release/3.3.0",
     "pgaudit": "1.7.0",
+    "postgres_aws_s3": "main",
     "name": "radondb-postgresql",
     "version": "dev",
     "arches": [
