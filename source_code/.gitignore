@@ -5,3 +5,4 @@ citus
 postgis
 barman
 pgaudit
+postgres-aws-s3
