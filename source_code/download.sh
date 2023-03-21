@@ -53,6 +53,6 @@ download_source_code "barman" "https://github.com/EnterpriseDB/barman.git"
 download_source_code "pgaudit" "https://github.com/pgaudit/pgaudit.git"
 
 # postgres-aws-s3
-download_source_code "postgres-aws-s3" "https://github.com/chimpler/postgres-aws-s3.git"
+download_source_code "postgres-aws-s3" "https://github.com/radondb/postgres-aws-s3.git"
 
 exit 0
