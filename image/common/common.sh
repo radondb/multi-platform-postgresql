@@ -8,6 +8,8 @@ function pre_build_image()
 	tempImage=($(echo $image | tr "/" " "))
 	if [ ${#tempImage[@]} == 1 ]; then
 		tempImage="$namespace/$image"
+	else
+		tempImage="$image"
 	fi
 	# get imageName and imageTag
 	temp=($(echo $tempImage | tr ":" " "))
