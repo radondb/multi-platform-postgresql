@@ -365,7 +365,7 @@ function s3_backup() {
 		check_and_set_backup_param
 	fi
 	if [ $role == "$ROLE_MASTER" ]; then
-		backup_cmd="barman-cloud-backup --immediate-checkpoint $(eval $BARMAN_S3_PARAM)"
+		backup_cmd="barman-cloud-backup -h 127.0.0.1 -p $run_port --immediate-checkpoint $(eval $BARMAN_S3_PARAM)"
 		backup_cmd=$(add_s3_param "$backup_cmd")
 		$backup_cmd
 		check_error $? "backup failed, please check error log"
