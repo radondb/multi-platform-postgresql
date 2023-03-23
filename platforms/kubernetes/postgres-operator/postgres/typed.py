@@ -1,5 +1,6 @@
 import paramiko
 from typing import Dict, TypedDict, TypeVar, Optional, List, Optional, Callable, Tuple, Any
+import six
 from constants import (
     AUTOFAILOVER,
     POSTGRESQL,
@@ -114,3 +115,49 @@ class InstanceConnections:
     def free_conns(self):
         for conn in self.conns:
             conn.free_conn()
+
+
+class Conditions:
+
+    def __init__(self, type: str, status: str, lastTransitionTime: str,
+                 message: str):
+        # Type of cluster condition, same as status.state. Running/CreateFailed/UpdateFailed ...
+        self.type = type
+
+        # Status of the condition, one of True/False/Unknown.
+        self.status = status
+
+        # The last time this Condition type changed.
+        self.lastTransitionTime = lastTransitionTime
+
+        #  message is a human readable message indicating details about the transition.
+        self.message = message
+
+    condition_type = {
+        'type': 'str',
+        'status': 'str',
+        'lastTransitionTime': 'str',
+        'message': 'str'
+    }
+
+    def to_dict(self):
+        result = {}
+
+        for attr, _ in six.iteritems(self.condition_type):
+            value = getattr(self, attr)
+            if isinstance(value, list):
+                result[attr] = list(
+                    map(lambda x: x.to_dict()
+                        if hasattr(x, "to_dict") else x, value))
+            elif hasattr(value, "to_dict"):
+                result[attr] = value.to_dict()
+            elif isinstance(value, dict):
+                result[attr] = dict(
+                    map(
+                        lambda item: (item[0], item[1].to_dict())
+                        if hasattr(item[1], "to_dict") else item,
+                        value.items()))
+            else:
+                result[attr] = value
+
+        return result
