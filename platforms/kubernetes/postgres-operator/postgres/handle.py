@@ -1124,7 +1124,8 @@ def create_postgresql(
         if container[
                 CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
             postgresql_image = container[IMAGE]
-            postgresql_image_version = postgresql_image.split(':')[1].split('-')[1]
+            postgresql_image_version = postgresql_image.split(':')[1].split(
+                '-')[1]
         if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_EXPORTER_CONTAINER:
             exporter_image = container[IMAGE]
 
