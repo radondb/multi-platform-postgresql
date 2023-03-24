@@ -307,6 +307,7 @@ POSTGRESQL_CONTAINER_INDEX = 0
 NODE_PRIORITY_DEFAULT = 50
 NODE_PRIORITY_NEVER = 0
 WAIT_TIMEOUT = MINUTES * 20
+POSTGRESQL_IMAGE_VERSION_v1_1_0 = 'v1.1.0'
 
 ### barman-cloud-backup-list field start
 BARMAN_BACKUP_LISTS = "backups_list"
@@ -1123,6 +1124,7 @@ def create_postgresql(
         if container[
                 CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
             postgresql_image = container[IMAGE]
+            postgresql_image_version = postgresql_image.split(':')[1].split('-')[1]
         if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_EXPORTER_CONTAINER:
             exporter_image = container[IMAGE]
 
@@ -1173,8 +1175,13 @@ def create_postgresql(
                 CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + name,
                 CONTAINER_ENV_VALUE: value
             })
+    if postgresql_image_version == POSTGRESQL_IMAGE_VERSION_v1_1_0:
+        pgaudit = ''
+    else:
+        pgaudit = ',pgaudit'
+
     if mode == MACHINE_MODE:
-        machine_env += PG_CONFIG_PREFIX + "shared_preload_libraries='citus,pgautofailover,pg_stat_statements,pgaudit'" + "\n"
+        machine_env += PG_CONFIG_PREFIX + f"shared_preload_libraries='citus,pgautofailover,pg_stat_statements{pgaudit}'" + "\n"
         machine_env += PG_CONFIG_PREFIX + 'log_truncate_on_rotation=true' + "\n"
         machine_env += PG_CONFIG_PREFIX + 'logging_collector=on' + "\n"
         machine_env += PG_CONFIG_PREFIX + "log_directory='" + PGLOG_DIR + "'" + "\n"
@@ -1195,7 +1202,7 @@ def create_postgresql(
             CONTAINER_ENV_NAME:
             PG_CONFIG_PREFIX + "shared_preload_libraries",
             CONTAINER_ENV_VALUE:
-            "'citus,pgautofailover,pg_stat_statements,pgaudit'"
+            f"'citus,pgautofailover,pg_stat_statements{pgaudit}'"
         })
         k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_truncate_on_rotation",
