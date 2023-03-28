@@ -119,6 +119,12 @@ RUN cd /usr/src/pgaudit; \
 	make PG_CONFIG=/var/lib/postgresql/bin/pg_config -j `expr $(nproc) - 2` >/dev/null; \
 	make install USE_PGXS=1 PG_CONFIG=/var/lib/postgresql/bin/pg_config;
 
+ADD postgres-aws-s3 /usr/src/postgres-aws-s3
+RUN cd /usr/src/postgres-aws-s3; \
+	git checkout {{ .postgres_aws_s3 }}; \
+	make PG_CONFIG=/var/lib/postgresql/bin/pg_config -j `expr $(nproc) - 2` >/dev/null; \
+	make install PG_CONFIG=/var/lib/postgresql/bin/pg_config;
+
 ADD barman /usr/src/barman
 RUN python3 -m pip install --trusted-host mirrors.aliyun.com psycopg2-binary -i http://mirrors.aliyun.com/pypi/simple/; \
 	cd /usr/src/barman; \
