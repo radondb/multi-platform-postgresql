@@ -238,12 +238,14 @@ def patch_cluster_conditions(
     override: bool = False,
 ) -> None:
     condition = Conditions(
-        type, condition_status, time.strftime(DEFAULT_TIME_FORMAT, time.localtime()),
+        type, condition_status,
+        time.strftime(DEFAULT_TIME_FORMAT, time.localtime()),
         str(message)).to_dict()
     conditions = status.get(CONDITIONS, [])
 
     if not isinstance(conditions, list):
-        logger.warning(f"patch_cluster_conditions failed, conditions is not list.")
+        logger.warning(
+            f"patch_cluster_conditions failed, conditions is not list.")
         return
 
     if len(conditions) > 0 and override:
@@ -269,7 +271,8 @@ def set_cluster_status_and_patch_conditions(
     override: bool = False,
 ) -> None:
     set_cluster_status(meta, statefield, state, logger)
-    patch_cluster_conditions(patch, status, logger, state, condition_status, condition_message, override)
+    patch_cluster_conditions(patch, status, logger, state, condition_status,
+                             condition_message, override)
 
 
 def create_statefulset_service(
@@ -3339,18 +3342,30 @@ def create_cluster(
         time.sleep(5)
         # cluster running
         update_number_sync_standbys(meta, spec, patch, status, logger)
-        set_cluster_status_and_patch_conditions(meta, spec, patch, status,
-                                                logger, CLUSTER_STATE,
+        set_cluster_status_and_patch_conditions(meta,
+                                                spec,
+                                                patch,
+                                                status,
+                                                logger,
+                                                CLUSTER_STATE,
                                                 CLUSTER_STATUS_RUN,
-                                                CONDITION_TRUE, '', override=True)
+                                                CONDITION_TRUE,
+                                                '',
+                                                override=True)
     except Exception as e:
         logger.error(f"error occurs, {e}")
         traceback.print_exc()
         err = traceback.format_exc()
-        set_cluster_status_and_patch_conditions(meta, spec, patch, status,
-                                                logger, CLUSTER_STATE,
+        set_cluster_status_and_patch_conditions(meta,
+                                                spec,
+                                                patch,
+                                                status,
+                                                logger,
+                                                CLUSTER_STATE,
                                                 CLUSTER_STATUS_CREATE_FAILED,
-                                                CONDITION_FALSE, err, override=True)
+                                                CONDITION_FALSE,
+                                                err,
+                                                override=True)
 
 
 def delete_cluster(
@@ -5551,18 +5566,30 @@ def update_cluster(
         else:
             cluster_status = CLUSTER_STATUS_RUN
         # set Running
-        set_cluster_status_and_patch_conditions(meta, spec, patch, status,
-                                                logger, CLUSTER_STATE,
-                                                cluster_status, CONDITION_TRUE,
-                                                '', override=True)
+        set_cluster_status_and_patch_conditions(meta,
+                                                spec,
+                                                patch,
+                                                status,
+                                                logger,
+                                                CLUSTER_STATE,
+                                                cluster_status,
+                                                CONDITION_TRUE,
+                                                '',
+                                                override=True)
     except Exception as e:
         logger.error(f"error occurs, {e}")
         traceback.print_exc()
         err = traceback.format_exc()
-        set_cluster_status_and_patch_conditions(meta, spec, patch, status,
-                                                logger, CLUSTER_STATE,
+        set_cluster_status_and_patch_conditions(meta,
+                                                spec,
+                                                patch,
+                                                status,
+                                                logger,
+                                                CLUSTER_STATE,
                                                 CLUSTER_STATUS_UPDATE_FAILED,
-                                                CONDITION_FALSE, err, override=True)
+                                                CONDITION_FALSE,
+                                                err,
+                                                override=True)
 
 
 def cron_backup(
