@@ -230,14 +230,30 @@ def set_password(patch: kopf.Patch, status: kopf.Status) -> None:
 
 def patch_cluster_conditions(
     patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
     type: str,
-    status: str,
+    condition_status: str,
     message: str,
+    override: bool = False,
 ) -> None:
     condition = Conditions(
-        type, status, time.strftime(DEFAULT_TIME_FORMAT, time.localtime()),
-        str(message))
-    patch.status[CONDITIONS] = condition.to_dict()
+        type, condition_status, time.strftime(DEFAULT_TIME_FORMAT, time.localtime()),
+        str(message)).to_dict()
+    conditions = status.get(CONDITIONS, [])
+
+    if not isinstance(conditions, list):
+        logger.warning(f"patch_cluster_conditions failed, conditions is not list.")
+        return
+
+    if len(conditions) > 0 and override:
+        conditions.pop()
+    conditions.append(condition)
+    # check conditions limit
+    if len(conditions) > CONDITIONS_LIMIT:
+        conditions = conditions[-1 * CONDITIONS_LIMIT:]
+
+    patch.status[CONDITIONS] = conditions
 
 
 def set_cluster_status_and_patch_conditions(
@@ -250,9 +266,10 @@ def set_cluster_status_and_patch_conditions(
     state: str,
     condition_status: str,
     condition_message: str,
+    override: bool = False,
 ) -> None:
     set_cluster_status(meta, statefield, state, logger)
-    patch_cluster_conditions(patch, state, condition_status, condition_message)
+    patch_cluster_conditions(patch, status, logger, state, condition_status, condition_message, override)
 
 
 def create_statefulset_service(
@@ -3325,7 +3342,7 @@ def create_cluster(
         set_cluster_status_and_patch_conditions(meta, spec, patch, status,
                                                 logger, CLUSTER_STATE,
                                                 CLUSTER_STATUS_RUN,
-                                                CONDITION_TRUE, '')
+                                                CONDITION_TRUE, '', override=True)
     except Exception as e:
         logger.error(f"error occurs, {e}")
         traceback.print_exc()
@@ -3333,7 +3350,7 @@ def create_cluster(
         set_cluster_status_and_patch_conditions(meta, spec, patch, status,
                                                 logger, CLUSTER_STATE,
                                                 CLUSTER_STATUS_CREATE_FAILED,
-                                                CONDITION_FALSE, err)
+                                                CONDITION_FALSE, err, override=True)
 
 
 def delete_cluster(
@@ -5537,7 +5554,7 @@ def update_cluster(
         set_cluster_status_and_patch_conditions(meta, spec, patch, status,
                                                 logger, CLUSTER_STATE,
                                                 cluster_status, CONDITION_TRUE,
-                                                '')
+                                                '', override=True)
     except Exception as e:
         logger.error(f"error occurs, {e}")
         traceback.print_exc()
@@ -5545,7 +5562,7 @@ def update_cluster(
         set_cluster_status_and_patch_conditions(meta, spec, patch, status,
                                                 logger, CLUSTER_STATE,
                                                 CLUSTER_STATUS_UPDATE_FAILED,
-                                                CONDITION_FALSE, err)
+                                                CONDITION_FALSE, err, override=True)
 
 
 def cron_backup(
