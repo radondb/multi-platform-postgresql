@@ -24,6 +24,9 @@ export forcebuildhelm=0# 1 is force build helm package
 # log file is nohup.out
 ### end
 
+# batch replace version
+# sed -i -e "s/dev/v1.2.0/g" exporterversions.json pgversions.json operatorversions.json
+
 k8s: download postgres-image operator-yaml operator-image exporter-image
 all: k8s
 
