@@ -1,0 +1,76 @@
+version: '3'
+
+networks:
+  bitnet:
+
+services:
+  pg15-auto:
+    image: "radondb/radondb-postgresql:15.0-v1.2.0"
+    container_name: "pg15-auto"
+    command: auto_failover
+    restart: always
+    environment:
+      PG_MODE: monitor
+      AUTOCTL_NODE_PASSWORD: postgres
+      EXTERNAL_HOSTNAME: pg15-auto
+    healthcheck:
+      test: ["CMD", "pgtools", "-a"]
+      interval: 10s
+      timeout: 60s
+      retries: 3
+      start_period: 60s
+    networks:
+      - bitnet
+  pg15-readwrite:
+    image: "radondb/radondb-postgresql:15.0-v1.2.0"
+    container_name: "pg15-readwrite"
+    command: auto_failover
+    restart: always
+    depends_on:
+      pg15-auto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pgtools", "-a"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    ports:
+      - "15433:5432"
+    environment:
+      PG_MODE: readwrite
+      AUTOCTL_NODE_PASSWORD: postgres
+      EXTERNAL_HOSTNAME: pg15-readwrite
+      MONITOR_HOSTNAME: pg15-auto
+      AUTOCTL_REPLICATOR_PASSWORD: postgres
+      PG_CONFIG_port: 5432
+    networks:
+      - bitnet
+  pg15-readonly:
+    image: "radondb/radondb-postgresql:15.0-v1.2.0"
+    container_name: "pg15-readonly"
+    command: auto_failover
+    restart: always
+    depends_on:
+      pg15-auto:
+        condition: service_healthy
+      pg15-readwrite:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pgtools", "-a"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    ports:
+      - "15434:5432"
+    environment:
+      PG_MODE: readonly
+      AUTOCTL_NODE_PASSWORD: postgres
+      EXTERNAL_HOSTNAME: pg15-readonly
+      MONITOR_HOSTNAME: pg15-auto
+      AUTOCTL_REPLICATOR_PASSWORD: postgres
+      PG_CONFIG_port: 5432
+      PG_STREAMING: sync
+    networks:
+      - bitnet
