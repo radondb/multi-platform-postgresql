@@ -1,3 +1,4 @@
+import json
 import logging
 import kopf
 import paramiko
@@ -9,7 +10,6 @@ import time
 import random
 import tempfile
 import re
-import ast
 from kubernetes import client, config
 from kubernetes.stream import stream
 from config import operator_config
@@ -2125,7 +2125,13 @@ def backup_postgresql_to_s3(
             "backup_postgresql_to_s3 get backup info failed.")
     logger.warning(
         f"backup_postgresql_to_s3 get backup verbose info = {output}")
-    backup_info = ast.literal_eval(output)
+
+    # process backup status
+    backup_info = {BARMAN_BACKUP_LISTS: ""}
+    try:
+        backup_info = json.loads(output)
+    except json.JSONDecodeError as e:
+        logger.error(f"decode backup_info with error, {e}")
     new_backup_status = get_backup_status_from_backup_info(backup_info)
 
     logger.warning(f"old_backup_status = {old_backup_status}")
@@ -2186,7 +2192,8 @@ def backup_postgresql_to_s3(
         backup_list_status.append(new_status)
 
     # set backup status
-    set_cluster_status(meta, CLUSTER_STATUS_BACKUP, backup_list_status, logger)
+    if len(backup_list_status) > 0:
+        set_cluster_status(meta, CLUSTER_STATUS_BACKUP, backup_list_status, logger)
 
     # free conns
     conns.free_conns()
@@ -2496,8 +2503,13 @@ def pod_exec_command(name: str,
             container=PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER,
             stdin=False,
             stdout=True,
-            tty=False)
-        return resp.replace('\n', '')
+            tty=False,
+            _preload_content=False
+        )
+        # in order to keep json format.
+        # more information please visit https://github.com/kubernetes-client/python/issues/811#issuecomment-663458763
+        resp.run_forever()
+        return resp.read_stdout().replace('\n', '')
     except Exception as e:
         if interrupt:
             raise kopf.PermanentError(
@@ -2505,8 +2517,6 @@ def pod_exec_command(name: str,
         else:
             logger.error(f"pod {name} exec command({cmd}) failed {e}")
             return FAILED
-
-    return resp.replace('\n', '')
 
 
 def docker_exec_command(role: str,
