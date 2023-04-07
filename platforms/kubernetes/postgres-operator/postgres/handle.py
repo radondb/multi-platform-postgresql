@@ -2193,7 +2193,8 @@ def backup_postgresql_to_s3(
 
     # set backup status
     if len(backup_list_status) > 0:
-        set_cluster_status(meta, CLUSTER_STATUS_BACKUP, backup_list_status, logger)
+        set_cluster_status(meta, CLUSTER_STATUS_BACKUP, backup_list_status,
+                           logger)
 
     # free conns
     conns.free_conns()
@@ -2504,8 +2505,7 @@ def pod_exec_command(name: str,
             stdin=False,
             stdout=True,
             tty=False,
-            _preload_content=False
-        )
+            _preload_content=False)
         # in order to keep json format.
         # more information please visit https://github.com/kubernetes-client/python/issues/811#issuecomment-663458763
         resp.run_forever()
