@@ -2164,8 +2164,9 @@ def backup_postgresql_to_s3(
                             user="postgres")
         new_status[BARMAN_BACKUP_SIZE] = size.strip()
 
-        # if latest backup, we can add some snapshot infomation
-        if latest_backupid == backup_id:
+        # if latest backup, we can add some snapshot infomation in k8s mode
+        mode, _, _, _ = get_replicas(spec)
+        if mode == K8S_MODE and latest_backupid == backup_id:
             # get cpu/memory/replicas/pvc_size/pvc_class
             for container in spec[POSTGRESQL][READWRITEINSTANCE][PODSPEC][
                     CONTAINERS]:
