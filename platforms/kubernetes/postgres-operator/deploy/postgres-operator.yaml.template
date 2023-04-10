@@ -578,6 +578,10 @@ spec:
       - name: radondb-postgres-operator
         image: {{ .image }}
         imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            memory: "500Mi"
+            cpu: "0.5"
         livenessProbe:
           timeoutSeconds: 10
           initialDelaySeconds: 60
