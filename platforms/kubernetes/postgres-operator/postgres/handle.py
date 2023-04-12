@@ -1822,7 +1822,13 @@ def restore_postgresql_froms3(
         logger.error(f"get backup info failed, exit backup")
         raise kopf.PermanentError("get backup info failed.")
     logger.warning(f"backup verbose info = {output}")
-    backup_info = ast.literal_eval(output)
+
+    # process backup info
+    backup_info = {BARMAN_BACKUP_LISTS: ""}
+    try:
+        backup_info = json.loads(output)
+    except json.JSONDecodeError as e:
+        logger.error(f"decode backup_info with error, {e}")
 
     # recovery param processing
     if recovery is None:
