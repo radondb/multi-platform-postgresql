@@ -900,7 +900,8 @@ def get_replica_by_machine(
         if len(field.split(FIELD_DELIMITER)) != 2:
             raise kopf.PermanentError(
                 "error parse field, only support one '.'" + field)
-        machines = spec.get(field.split(FIELD_DELIMITER)[0]).get(field.split(FIELD_DELIMITER)[1]).get(MACHINES)
+        machines = spec.get(field.split(FIELD_DELIMITER)[0]).get(
+            field.split(FIELD_DELIMITER)[1]).get(MACHINES)
 
     for i in range(len(machines)):
         if target_machine.strip() == machines[i].strip():
@@ -5482,21 +5483,25 @@ def rebuild_postgresql(
                         meta, spec, patch, status, logger, field,
                         target_machines[replica:replica + 1], None,
                         delete_disk)
-                    machine_replica = get_replica_by_machine(spec, field, target_machines[replica])
+                    machine_replica = get_replica_by_machine(
+                        spec, field, target_machines[replica])
                     create_postgresql_readwrite(meta, spec, patch, status,
                                                 logger,
                                                 get_readwrite_labels(meta),
-                                                machine_replica, False, machine_replica + 1)
+                                                machine_replica, False,
+                                                machine_replica + 1)
                 elif instance == READONLYINSTANCE:
                     delete_postgresql_readonly(
                         meta, spec, patch, status, logger, field,
                         target_machines[replica:replica + 1], None,
                         delete_disk)
-                    machine_replica = get_replica_by_machine(spec, field, target_machines[replica])
+                    machine_replica = get_replica_by_machine(
+                        spec, field, target_machines[replica])
                     create_postgresql_readonly(meta, spec, patch,
                                                status, logger,
                                                get_readonly_labels(meta),
-                                               machine_replica, machine_replica + 1)
+                                               machine_replica,
+                                               machine_replica + 1)
         else:
             for replica in range(target_k8s[0], target_k8s[1]):
                 if instance == READWRITEINSTANCE:
