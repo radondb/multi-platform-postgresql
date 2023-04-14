@@ -885,6 +885,30 @@ def create_statefulset(
             % e)
 
 
+def get_replica_by_machine(
+    spec: kopf.Spec,
+    field: str,
+    target_machine: str,
+) -> int:
+    mode, _, _, _ = get_replicas(spec)
+    if mode != MACHINE_MODE:
+        return None
+
+    if len(field.split(FIELD_DELIMITER)) == 1:
+        machines = spec.get(field).get(MACHINES)
+    else:
+        if len(field.split(FIELD_DELIMITER)) != 2:
+            raise kopf.PermanentError(
+                "error parse field, only support one '.'" + field)
+        machines = spec.get(field.split(FIELD_DELIMITER)[0]).get(field.split(FIELD_DELIMITER)[1]).get(MACHINES)
+
+    for i in range(len(machines)):
+        if target_machine.strip() == machines[i].strip():
+            return i
+
+    return None
+
+
 def get_realimage_from_env(yaml_image: str) -> str:
     image_list = yaml_image.split("/")
     res = list()
@@ -4961,7 +4985,7 @@ def get_pgpassfile(
     users_kind: str,
 ) -> str:
     pgpassfile = ""
-    if spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(users_kind) != None:
+    if spec[POSTGRESQL].get(SPEC_POSTGRESQL_USERS, {}).get(users_kind) != None:
         users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS][users_kind]
         for user in users:
             pgpassfile += pgpassfile_item(
@@ -5458,19 +5482,21 @@ def rebuild_postgresql(
                         meta, spec, patch, status, logger, field,
                         target_machines[replica:replica + 1], None,
                         delete_disk)
+                    machine_replica = get_replica_by_machine(spec, field, target_machines[replica])
                     create_postgresql_readwrite(meta, spec, patch, status,
                                                 logger,
                                                 get_readwrite_labels(meta),
-                                                replica, False, replica + 1)
+                                                machine_replica, False, machine_replica + 1)
                 elif instance == READONLYINSTANCE:
                     delete_postgresql_readonly(
                         meta, spec, patch, status, logger, field,
                         target_machines[replica:replica + 1], None,
                         delete_disk)
+                    machine_replica = get_replica_by_machine(spec, field, target_machines[replica])
                     create_postgresql_readonly(meta, spec, patch,
                                                status, logger,
                                                get_readonly_labels(meta),
-                                               replica, replica + 1)
+                                               machine_replica, machine_replica + 1)
         else:
             for replica in range(target_k8s[0], target_k8s[1]):
                 if instance == READWRITEINSTANCE:
