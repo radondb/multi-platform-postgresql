@@ -1885,6 +1885,10 @@ def restore_postgresql_froms3(
         f"restore_postgresql_froms3 get backupid = {backupid}, recovery_time = {recovery_time}"
     )
 
+    # set recovery_target_time to latest restore wal log to the end
+    if recovery == RESTORE_FROMS3_RECOVERY_LATEST:
+        recovery_time = RESTORE_FROMS3_RECOVERY_LATEST
+
     # drop from autofailover and pause start postgresql
     cmd = ["pgtools", "-d", "-p", POSTGRESQL_PAUSE]
     exec_command(conn, cmd, logger, interrupt=True)

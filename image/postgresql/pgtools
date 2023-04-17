@@ -464,7 +464,10 @@ function s3_restore_by_id() {
 
 function s3_restore_by_time() {
 	s3_restore_base
-	echo "recovery_target_time = '$RECOVERY_TIME'" >> $PGDATA_RESTORING/$BACKUP_RESTORE_CONF
+	# if recovery_target_time is latest, do not set recovery_target make recovery end of WAL log
+	if [ "$RECOVERY_TIME" != "latest" ]; then
+		echo "recovery_target_time = '$RECOVERY_TIME'" >> $PGDATA_RESTORING/$BACKUP_RESTORE_CONF
+	fi
 }
 
 function s3_restore() {
