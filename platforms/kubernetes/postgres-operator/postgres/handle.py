@@ -5704,15 +5704,15 @@ def update_cluster(
             logger.info("waiting for update_cluster success")
             waiting_cluster_final_status(meta, spec, patch, status, logger)
 
-        # after waiting_cluster_final_status. update number_sync
-        if need_update_number_sync_standbys:
-            waiting_cluster_final_status(meta,
-                                         spec,
-                                         patch,
-                                         status,
-                                         logger,
-                                         timeout=MINUTES * 5)
-            update_number_sync_standbys(meta, spec, patch, status, logger)
+            # after waiting_cluster_final_status. update number_sync
+            if need_update_number_sync_standbys:
+                waiting_cluster_final_status(meta,
+                                             spec,
+                                             patch,
+                                             status,
+                                             logger,
+                                             timeout=MINUTES * 5)
+                update_number_sync_standbys(meta, spec, patch, status, logger)
 
         # wait a few seconds to prevent the pod not running
         time.sleep(5)
