@@ -9,6 +9,7 @@ import traceback
 import time
 import random
 import tempfile
+import base64
 import re
 from kubernetes import client, config
 from kubernetes.stream import stream
@@ -794,6 +795,7 @@ def waiting_postgresql_recovery_completed(conns: InstanceConnections,
                 logger.warning(
                     f"recovery not completed. try {i} times. {output}")
             else:
+                logger.info(f"recovery completed.")
                 recovery_is_success = True
                 break
 
@@ -1938,7 +1940,7 @@ def restore_postgresql_froms3(
     waiting_postgresql_ready(tmpconns, logger)
 
     # waiting recovery completed
-    waiting_postgresql_recovery_completed(tmpconns, logger)
+    waiting_postgresql_recovery_completed(tmpconns, logger, timeout=HOURS)
 
     # sleep a lettle to wait point-in-time recovery(pitr) complete
     time.sleep(MINUTES)
@@ -2555,6 +2557,10 @@ def pod_exec_command(name: str,
             return FAILED
 
 
+def string_to_base64(cmd: str) -> str:
+    return base64.b64encode(cmd.encode("utf-8")).decode()
+
+
 def docker_exec_command(role: str,
                         ssh: paramiko.SSHClient,
                         cmd: [str],
@@ -2569,9 +2575,12 @@ def docker_exec_command(role: str,
     try:
         workdir = os.path.join(machine_data_path, DOCKER_COMPOSE_DIR)
         #cmd = "cd " + workdir + "; docker-compose exec " + role + " " + " ".join(cmd)
-        cmd = "docker exec " + role + " " + " ".join(['gosu', user] + cmd)
+        base64_cmd = [string_to_base64(" ".join(cmd))]
+        user_cmd = "docker exec " + role + " " + " ".join(
+            ['gosu', user, 'pgtools', '-f'] + base64_cmd)
         logger.info(f"docker exec command {cmd} on host {host}")
-        ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(cmd, get_pty=True)
+        ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(user_cmd,
+                                                             get_pty=True)
     except Exception as e:
         if interrupt:
             raise kopf.PermanentError(f"can't run command: {cmd} , {e}")
@@ -5546,15 +5555,18 @@ def rebuild_postgresqls(
     logging.info(f"rebuild_postgresqls with param={node_name} execute.")
 
     if mode == K8S_MODE:
+        if node_name.find(meta['name']) == -1:
+            logger.error(f"rebuild but nodeName {node_name} is not valid.")
+            raise kopf.TemporaryError(
+                f"rebuild but nodeName {node_name} is not valid.")
         temps = node_name.split(FIELD_DELIMITER)
-        if len(temps) != 3:
+        if len(temps) < 3:
             logger.error(f"rebuild but nodeName {node_name} is not valid.")
             raise kopf.TemporaryError(
                 f"rebuild but nodeName {node_name} is not valid.")
 
-        name = temps[0]
-        role = temps[1]
-        replica = int(temps[2])
+        role = temps[-2]
+        replica = int(temps[-1])
 
         field = ""
         if role == AUTOFAILOVER:
