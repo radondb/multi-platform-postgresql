@@ -166,6 +166,13 @@ SPEC_S3_PATH = "PATH"
 # storage
 STORAGE_CLASS_NAME = "storageClassName"
 
+# conditions
+CONDITIONS = "conditions"
+CONDITIONS_LIMIT = 10
+CONDITION_TRUE = "True"
+CONDITION_FALSE = "False"
+CONDITION_UNKNOWN = "Unknown"
+
 # pod PriorityClass
 SPEC_POD_PRIORITY_CLASS = "priorityClassName"
 SPEC_POD_PRIORITY_CLASS_SCOPE_NODE = "system-node-critical"
