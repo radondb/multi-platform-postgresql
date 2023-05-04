@@ -15,4 +15,4 @@ RUN python -m pip install --trusted-host mirrors.aliyun.com --no-cache-dir \
 		-i http://mirrors.aliyun.com/pypi/simple/
 
 ENTRYPOINT ["kopf", "run", "--standalone", "-A", "--liveness=http://0.0.0.0:8080/healthz"]
-CMD ["postgres.py"]
+CMD ["./*/postgres.py"]

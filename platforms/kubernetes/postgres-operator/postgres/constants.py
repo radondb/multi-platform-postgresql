@@ -89,7 +89,7 @@ SPCE_REBUILD_NODENAMES = "nodeName"
 
 # api
 API_GROUP = "postgres.radondb.io"
-API_VERSION_V1 = "v1"
+API_VERSION = "v1"
 RESOURCE_POSTGRESQL = "postgresqls"
 RESOURCE_KIND_POSTGRESQL = "PostgreSQL"
 

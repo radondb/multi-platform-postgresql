@@ -68,7 +68,7 @@ from constants import (
     SPEC_POSTGRESQL_USERS_USER_NAME,
     SPEC_POSTGRESQL_USERS_USER_PASSWORD,
     API_GROUP,
-    API_VERSION_V1,
+    API_VERSION,
     RESOURCE_POSTGRESQL,
     RESOURCE_KIND_POSTGRESQL,
     CLUSTER_STATE,
@@ -363,7 +363,7 @@ def set_cluster_status(meta: kopf.Meta,
             # get customer definition
             body = customer_obj_api.get_namespaced_custom_object(
                 group=API_GROUP,
-                version=API_VERSION_V1,
+                version=API_VERSION,
                 namespace=namespace,
                 plural=RESOURCE_POSTGRESQL,
                 name=name)
@@ -375,13 +375,13 @@ def set_cluster_status(meta: kopf.Meta,
 
             customer_obj_api.patch_namespaced_custom_object(
                 group=API_GROUP,
-                version=API_VERSION_V1,
+                version=API_VERSION,
                 namespace=namespace,
                 plural=RESOURCE_POSTGRESQL,
                 name=name,
                 body=body)
             logger.info(
-                f"update {API_GROUP + API_VERSION_V1} crd {name} field .status.{statefield} = {state}, set_cluster_status body = {body}"
+                f"update {API_GROUP + API_VERSION} crd {name} field .status.{statefield} = {state}, set_cluster_status body = {body}"
             )
             break
         except Exception:

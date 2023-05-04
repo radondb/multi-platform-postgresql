@@ -1,4 +1,8 @@
 {
+  "crdVersions": [
+    "v1-2-0",
+    "dev"
+  ],
   "namespace": "radondb-postgres-operator",
   "account": "radondb-postgres-operator-account",
   "clusterrole": "radondb-postgres-operator-cluster",

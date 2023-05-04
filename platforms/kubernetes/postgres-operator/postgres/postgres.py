@@ -3,7 +3,7 @@ import kopf
 import traceback
 from constants import (
     API_GROUP,
-    API_VERSION_V1,
+    API_VERSION,
     RESOURCE_POSTGRESQL,
 )
 from config import operator_config
@@ -48,12 +48,15 @@ def startup(settings: kopf.OperatorSettings, **_kwargs):
 # timeout: if create function run timeout large than timeout and no error. this is allow.
 #          if create function run timeout large than timeout and error happend, it not retry,
 #          if create function run timeout less than timeout and error happend, it do retry,
-@kopf.on.create(API_GROUP,
-                API_VERSION_V1,
-                RESOURCE_POSTGRESQL,
-                timeout=operator_config.BOOTSTRAP_TIMEOUT,
-                retries=operator_config.BOOTSTRAP_RETRIES,
-                backoff=operator_config.BOOTSTRAP_RETRY_DELAY)
+@kopf.on.create(
+    API_GROUP,
+    API_VERSION,
+    RESOURCE_POSTGRESQL,
+    timeout=operator_config.BOOTSTRAP_TIMEOUT,
+    retries=operator_config.BOOTSTRAP_RETRIES,
+    backoff=operator_config.BOOTSTRAP_RETRY_DELAY,
+    when=lambda resource, **_: resource.version == API_VERSION,
+)
 def cluster_create(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -66,12 +69,15 @@ def cluster_create(
     create_cluster(meta, spec, patch, status, logger)
 
 
-@kopf.on.update(API_GROUP,
-                API_VERSION_V1,
-                RESOURCE_POSTGRESQL,
-                timeout=operator_config.BOOTSTRAP_TIMEOUT,
-                retries=operator_config.BOOTSTRAP_RETRIES,
-                backoff=operator_config.BOOTSTRAP_RETRY_DELAY)
+@kopf.on.update(
+    API_GROUP,
+    API_VERSION,
+    RESOURCE_POSTGRESQL,
+    timeout=operator_config.BOOTSTRAP_TIMEOUT,
+    retries=operator_config.BOOTSTRAP_RETRIES,
+    backoff=operator_config.BOOTSTRAP_RETRY_DELAY,
+    when=lambda resource, **_: resource.version == API_VERSION,
+)
 def cluster_update(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -84,12 +90,15 @@ def cluster_update(
     update_cluster(meta, spec, patch, status, logger, diff)
 
 
-@kopf.on.delete(API_GROUP,
-                API_VERSION_V1,
-                RESOURCE_POSTGRESQL,
-                timeout=operator_config.BOOTSTRAP_TIMEOUT,
-                retries=operator_config.BOOTSTRAP_RETRIES,
-                backoff=operator_config.BOOTSTRAP_RETRY_DELAY)
+@kopf.on.delete(
+    API_GROUP,
+    API_VERSION,
+    RESOURCE_POSTGRESQL,
+    timeout=operator_config.BOOTSTRAP_TIMEOUT,
+    retries=operator_config.BOOTSTRAP_RETRIES,
+    backoff=operator_config.BOOTSTRAP_RETRY_DELAY,
+    when=lambda resource, **_: resource.version == API_VERSION,
+)
 def cluster_delete(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -105,11 +114,12 @@ def cluster_delete(
 # interval only support int digital
 @kopf.timer(
     API_GROUP,
-    API_VERSION_V1,
+    API_VERSION,
     RESOURCE_POSTGRESQL,
     interval=60,
     sharp=True,
     initial_delay=10,
+    when=lambda resource, **_: resource.version == API_VERSION,
 )
 def cluster_timer(
     meta: kopf.Meta,
@@ -124,13 +134,14 @@ def cluster_timer(
 
 @kopf.daemon(
     API_GROUP,
-    API_VERSION_V1,
+    API_VERSION,
     RESOURCE_POSTGRESQL,
     backoff=operator_config.BOOTSTRAP_RETRY_DELAY,
     initial_delay=30,
-    when=lambda spec, **_: spec.get(SPEC_BACKUPCLUSTER, {}).get(
-        SPEC_BACKUPTOS3, {}).get(SPEC_BACKUPTOS3_CRON, {}).get(
-            SPEC_BACKUPTOS3_CRON_ENABLE, False) is True,
+    when=lambda resource, spec, **_: resource.version == API_VERSION and
+    (spec.get(SPEC_BACKUPCLUSTER, {}).get(SPEC_BACKUPTOS3, {}).get(
+        SPEC_BACKUPTOS3_CRON, {}).get(SPEC_BACKUPTOS3_CRON_ENABLE, False) is
+     True),
 )
 def cluster_daemon(
     meta: kopf.Meta,

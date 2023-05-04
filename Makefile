@@ -36,13 +36,16 @@ postgres-image: download
 	cp pgversions.json image/postgresql/versions.json
 	cp jq-template.awk image/postgresql/jq-template.awk
 	cd image/postgresql; ./generate_image.sh
-operator-image:
+operator-release:
+	cp operatorversions.json platforms/kubernetes/postgres-operator/scripts/versions.json
+	cd platforms/kubernetes/postgres-operator/scripts; ./generate_code.sh
+operator-image: operator-release
 	cp operatorversions.json image/postgres-operator/versions.json
 	cd image/postgres-operator; ./generate_image.sh
 operator-yaml: operator-image
-	cp operatorversions.json platforms/kubernetes/postgres-operator/deploy/versions.json
-	cp jq-template.awk platforms/kubernetes/postgres-operator/deploy/jq-template.awk
-	cd platforms/kubernetes/postgres-operator/deploy/; awk -f jq-template.awk postgres-operator.yaml.template > postgres-operator.yaml
+	cp operatorversions.json platforms/kubernetes/postgres-operator/scripts/versions.json
+	cp jq-template.awk platforms/kubernetes/postgres-operator/scripts/jq-template.awk
+	cd platforms/kubernetes/postgres-operator/scripts/; ./generate_yaml.sh
 helm-package:
 	if [ -s "./docs/postgres-operator-`jq -r '.version' helmversions.json`.tgz" -a "${forcebuildhelm}" != "1" ]; then echo "helm package exists, skiping ..." && exit 255; fi
 	cp helmversions.json platforms/kubernetes/postgres-operator/deploy/versions.json
