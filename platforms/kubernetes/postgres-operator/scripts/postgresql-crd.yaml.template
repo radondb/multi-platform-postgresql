@@ -432,3 +432,422 @@ spec:
                         type: string
                       recovery:
                         type: string
+  - name: v1-2-0
+    served: true
+    storage: true
+    additionalPrinterColumns:
+#    - jsonPath: .spec.action
+#      description: The cluster action
+#      name: Action
+#      type: string
+#  priority: 0           # show in standard view
+    - jsonPath: .spec.deletepvc
+      description: delete the pvc when cluster is deleted.
+      name: DeletePvc
+      type: boolean
+      priority: 0           # show in standard view
+    - jsonPath: .status.state
+      description: The postgresql cluster status
+      name: State
+      type: string
+      priority: 0           # show in standard view
+    - jsonPath: .spec.updatetoleration
+      description: update disable when the cluster status is unhealthy
+      name: Updatetoleration
+      type: boolean
+      priority: 1           # show in wide view
+    - jsonPath: .spec.volume_type
+      description: if volume type is local, rebuild pvc during rolling upgrade
+      name: Volumetype
+      type: string
+      priority: 1           # show in wide view
+    - jsonPath: .spec.autofailover.podspec.containers[0].image
+      description: The autofailover image
+      name: FailoverImage
+      type: string
+      priority: 1           # show in wide view
+    - jsonPath: .spec.postgresql.readwriteinstance.podspec.containers[0].image
+      description: The postgresql image
+      name: PostgresqlImage
+      type: string
+      priority: 1           # show in wide view
+    - jsonPath: .spec.postgresql.readwriteinstance.replicas
+      description: The readwriteinstance nodes
+      name: RWnodes
+      type: integer
+      priority: 1           # show in wide view
+    - jsonPath: .spec.postgresql.readwriteinstance.podspec.containers[0].resources.limits.cpu
+      description: The readwriteinstance cpu
+      name: RWcpu
+      type: string
+      priority: 1           # show in wide view
+    - jsonPath: .spec.postgresql.readwriteinstance.podspec.containers[0].resources.limits.memory
+      description: The readwriteinstance memory
+      name: RWmemory
+      type: string
+      priority: 1           # show in wide view
+    - jsonPath: .spec.postgresql.readonlyinstance.replicas
+      description: The readonlyinstance nodes
+      name: ROnodes
+      type: integer
+      priority: 1           # show in wide view
+    - jsonPath: .spec.postgresql.readonlyinstance.podspec.containers[0].resources.limits.cpu
+      description: The readonlyinstance cpu
+      name: ROcpu
+      type: string
+      priority: 1           # show in wide view
+    - jsonPath: .spec.postgresql.readonlyinstance.podspec.containers[0].resources.limits.memory
+      description: The readonlyinstance memory
+      name: ROmemory
+      type: string
+      priority: 1           # show in wide view
+    - jsonPath: .status.cron_next_run_time
+      description: The postgresql cluster cron backup net run time
+      name: CronNextRunTime
+      type: string
+      priority: 1           # show in wide view
+    - jsonPath: .status.backups_wal_archive
+      description: The postgresql cluster backup status
+      name: BackupsWALArchive
+      type: string
+      priority: 1           # show in wide view
+    - jsonPath: .status.backups_list
+      description: The postgresql cluster backup status
+      name: BackupStatus
+      type: string
+      priority: 1           # show in wide view
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+          spec:
+            type: object
+            properties:
+              action:
+                type: string
+                enum:
+                - 'start'
+                - 'stop'
+              deletepvc:
+                type: boolean
+                enum:
+                - true
+                - false
+              deletes3:
+                type: boolean
+                enum:
+                - true
+                - false
+                default: false
+              updatetoleration:
+                type: boolean
+                enum:
+                - true
+                - false
+                default: false
+              volume_type:
+                type: string
+                enum:
+                - 'local'
+                - 'cloud'
+                default: 'local'
+              antiaffinity:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  policy:
+                    type: string
+                    enum:
+                    - 'preferred'
+                    - 'required'
+                  podAntiAffinityTerm:
+                    type: string
+                    enum:
+                    - 'none'
+                    - 'autofailover-readwrite'
+                    - 'autofailover-readwrite-readonly'
+                  topologyKey:
+                    type: string
+              S3:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  ACCESS_KEY:
+                    type: string
+                  SECRET_KEY:
+                    type: string
+                  ENDPOINT:
+                    type: string
+                  BUCKET:
+                    type: string
+                  PATH:
+                    type: string
+              rebuild:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  nodeName:
+                    type: string
+              services:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    selector:
+                      type: string
+                      enum:
+                      - 'autofailover'
+                      - 'primary'
+                      - 'standby'
+                      - 'readonly'
+                      - 'standby-readonly'
+                    vip:
+                      type: string
+                      x-kubernetes-preserve-unknown-fields: true
+                    metadata:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                    spec:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+              autofailover:
+                type: object
+                properties:
+                  machines:
+                    type: array
+                    items:
+                      type: string
+                  hbas:
+                    type: array
+                    items:
+                      type: string
+                  #users:
+                  #  type: array
+                  #  items:
+                  #    type: object
+                  #    x-kubernetes-preserve-unknown-fields: true
+                  #    properties:
+                  #      autoctl_node:
+                  #        type: object
+                  #        properties:
+                  #          password:
+                  #            type: string
+                  configs:
+                    type: array
+                    items:
+                      type: string
+                  podspec:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                    properties:
+                      containers:
+                        type: array
+                        x-kubernetes-preserve-unknown-fields: true
+                        items:
+                          type: object
+                          properties:
+                            image:
+                              type: string
+                            name:
+                              type: string
+                            resources:
+                              type: object
+                              x-kubernetes-preserve-unknown-fields: true
+                              properties:
+                                limits:
+                                  type: object
+                                  properties:
+                                    cpu:
+                                      type: string
+                                    memory:
+                                      type: string
+                  volumeClaimTemplates:
+                    type: array
+                    items:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+              postgresql:
+                type: object
+                properties:
+                  users:
+                    type: object
+                    properties:
+                      admin:
+                        type: array
+                        items:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                      maintenance:
+                        type: array
+                        items:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                      normal:
+                        type: array
+                        items:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                  hbas:
+                    type: array
+                    items:
+                      type: string
+                  configs:
+                    type: array
+                    items:
+                      type: string
+                  readwriteinstance:
+                    type: object
+                    properties:
+                      replicas:
+                        type: integer
+                      machines:
+                        type: array
+                        items:
+                          type: string
+                      podspec:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                        properties:
+                          containers:
+                            type: array
+                            x-kubernetes-preserve-unknown-fields: true
+                            items:
+                              type: object
+                              properties:
+                                image:
+                                  type: string
+                                name:
+                                  type: string
+                                resources:
+                                  type: object
+                                  x-kubernetes-preserve-unknown-fields: true
+                                  properties:
+                                    limits:
+                                      type: object
+                                      properties:
+                                        cpu:
+                                          type: string
+                                        memory:
+                                          type: string
+                      volumeClaimTemplates:
+                        type: array
+                        items:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                  readonlyinstance:
+                    type: object
+                    properties:
+                      machines:
+                        type: array
+                        items:
+                          type: string
+                      replicas:
+                        type: integer
+                      streaming:
+                        type: string
+                        enum:
+                        - 'sync'
+                        - 'async'
+                      podspec:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                        properties:
+                          containers:
+                            type: array
+                            x-kubernetes-preserve-unknown-fields: true
+                            items:
+                              type: object
+                              properties:
+                                image:
+                                  type: string
+                                name:
+                                  type: string
+                                resources:
+                                  type: object
+                                  x-kubernetes-preserve-unknown-fields: true
+                                  properties:
+                                    limits:
+                                      type: object
+                                      properties:
+                                        cpu:
+                                          type: string
+                                        memory:
+                                          type: string
+                      volumeClaimTemplates:
+                        type: array
+                        items:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+              backup:
+                type: string
+              backupCluster:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  backupToS3:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                    properties:
+                      name:
+                        type: string
+                      manual:
+                        type: object
+                        properties:
+                          trigger-id:
+                            type: integer
+                      cron:
+                        type: object
+                        properties:
+                          enable:
+                            type: boolean
+                          schedule:
+                            type: string
+                      policy:
+                        type: object
+                        properties:
+                          archive:
+                            type: string
+                            enum:
+                            - 'on'
+                            - 'off'
+                            default: 'off'
+                          compression:
+                            type: string
+                            enum:
+                            - 'gzip'
+                            - 'bzip2'
+                            - 'snappy'
+                            - 'none'
+                            default: 'none'
+                          encryption:
+                            type: string
+                            enum:
+                            - 'AES256'
+                            - 'aws:kms'
+                            - 'none'
+                            default: 'none'
+                          retention:
+                            type: string
+                            default: 'none'
+              restore:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  fromssh:
+                    type: object
+                    properties:
+                      path:
+                        type: string
+                      address:
+                        type: string
+                  froms3:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      recovery:
+                        type: string
+

@@ -1,7 +1,6 @@
 {
   "crdVersions": [
-    "v1-2-0",
-    "dev"
+    "v1-3-0"
   ],
   "namespace": "radondb-postgres-operator",
   "account": "radondb-postgres-operator-account",
