@@ -381,7 +381,7 @@ def set_cluster_status(meta: kopf.Meta,
                 name=name,
                 body=body)
             logger.info(
-                f"update {API_GROUP + API_VERSION} crd {name} field .status.{statefield} = {state}, set_cluster_status body = {body}"
+                f"update {'%s/%s' % (API_GROUP + API_VERSION)} crd {name} field .status.{statefield} = {state}, set_cluster_status body = {body}"
             )
             break
         except Exception:
