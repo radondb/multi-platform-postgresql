@@ -434,7 +434,7 @@ spec:
                         type: string
   - name: v1-2-0
     served: true
-    storage: true
+    storage: false
     additionalPrinterColumns:
 #    - jsonPath: .spec.action
 #      description: The cluster action
