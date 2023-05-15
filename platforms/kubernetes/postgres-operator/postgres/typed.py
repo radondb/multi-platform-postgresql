@@ -4,6 +4,8 @@ from constants import (
     AUTOFAILOVER,
     POSTGRESQL,
 )
+# import logging
+# logger = logging.getLogger()
 
 LabelType = Dict[str, str]
 
@@ -21,6 +23,10 @@ class InstanceConnectionMachine:
         self.sftp = sftp
         self.trans = trans
         self.role = role
+
+    def __del__(self):
+        # logger.warning("InstanceConnectionMachine free_conn")
+        self.free_conn()
 
     def get_host(self):
         return self.host
@@ -92,7 +98,12 @@ class InstanceConnection:
     def free_conn(self):
         if self.machine != None:
             self.machine.free_conn()
+            self.machine = None
         return None
+
+    def __del__(self):
+        # logger.warning("InstanceConnection free_conn")
+        self.free_conn()
 
 
 class InstanceConnections:
@@ -114,3 +125,7 @@ class InstanceConnections:
     def free_conns(self):
         for conn in self.conns:
             conn.free_conn()
+
+    def __del__(self):
+        # logger.warning("InstanceConnections free_conn")
+        self.free_conns()

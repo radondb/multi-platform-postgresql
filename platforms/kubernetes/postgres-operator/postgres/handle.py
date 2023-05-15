@@ -329,6 +329,7 @@ BARMAN_TIME_FORMAT = "%a %b %d %H:%M:%S %Y"
 
 DEFAULT_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 SUPPORTED_DATE_FORMAT = [BARMAN_TIME_FORMAT, DEFAULT_TIME_FORMAT]
+EXEC_COMMAND_DEFAULT_TIMEOUT = operator_config.BOOTSTRAP_TIMEOUT
 
 ## backup
 BACKUP_MODE_NONE = "none"
@@ -2512,16 +2513,17 @@ def exec_command(conn: InstanceConnection,
                  cmd: [str],
                  logger: logging.Logger,
                  interrupt: bool = True,
-                 user: str = "root"):
+                 user: str = "root",
+                 timeout: int = EXEC_COMMAND_DEFAULT_TIMEOUT):
     if conn.get_k8s() != None:
         return pod_exec_command(conn.get_k8s().get_podname(),
                                 conn.get_k8s().get_namespace(), cmd, logger,
-                                interrupt, user)
+                                interrupt, user, timeout)
     if conn.get_machine() != None:
         return docker_exec_command(conn.get_machine().get_role(),
                                    conn.get_machine().get_ssh(), cmd, logger,
                                    interrupt, user,
-                                   conn.get_machine().get_host())
+                                   conn.get_machine().get_host(), timeout)
 
 
 def pod_exec_command(name: str,
@@ -2529,7 +2531,8 @@ def pod_exec_command(name: str,
                      cmd: [str],
                      logger: logging.Logger,
                      interrupt: bool = True,
-                     user: str = "root") -> str:
+                     user: str = "root",
+                     timeout: int = EXEC_COMMAND_DEFAULT_TIMEOUT) -> str:
     try:
         core_v1_api = client.CoreV1Api()
         # stderr stdout all in resp. don't have return code.
@@ -2546,7 +2549,7 @@ def pod_exec_command(name: str,
             _preload_content=False)
         # in order to keep json format.
         # more information please visit https://github.com/kubernetes-client/python/issues/811#issuecomment-663458763
-        resp.run_forever()
+        resp.run_forever(timeout=timeout)
         return resp.read_stdout().replace('\n', '')
     except Exception as e:
         if interrupt:
@@ -2567,7 +2570,8 @@ def docker_exec_command(role: str,
                         logger: logging.Logger,
                         interrupt: bool = True,
                         user: str = "root",
-                        host: str = None) -> str:
+                        host: str = None,
+                        timeout: int = EXEC_COMMAND_DEFAULT_TIMEOUT) -> str:
     if role == AUTOFAILOVER:
         machine_data_path = operator_config.DATA_PATH_AUTOFAILOVER
     if role == POSTGRESQL:
@@ -2580,6 +2584,7 @@ def docker_exec_command(role: str,
             ['gosu', user, 'pgtools', '-f'] + base64_cmd)
         logger.info(f"docker exec command {cmd} on host {host}")
         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(user_cmd,
+                                                             timeout=timeout,
                                                              get_pty=True)
     except Exception as e:
         if interrupt:
@@ -4012,6 +4017,9 @@ def timer_cluster(
     correct_postgresql_password(meta, spec, patch, status, logger)
     correct_backup_status(meta, spec, patch, status, logger)
     correct_s3_profile(meta, spec, patch, status, logger)
+
+    from test import test
+    test(meta, spec, patch, status, logger)
 
 
 def update_number_sync_standbys(

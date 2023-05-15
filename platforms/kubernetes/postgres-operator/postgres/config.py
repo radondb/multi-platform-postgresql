@@ -11,7 +11,7 @@ UNDEFINED = object()
 
 
 class Config:
-    BOOTSTRAP_TIMEOUT: int = 3600
+    BOOTSTRAP_TIMEOUT: int = 3600 * 12
     BOOTSTRAP_RETRIES: int = 3
     BOOTSTRAP_RETRY_DELAY: int = 60
     TIMER_INTERVAL: int = 10
