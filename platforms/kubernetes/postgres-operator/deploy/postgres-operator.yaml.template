@@ -173,6 +173,12 @@ spec:
                 properties:
                   nodeName:
                     type: string
+              switchover:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  masterNode:
+                    type: string
               services:
                 type: array
                 items:
