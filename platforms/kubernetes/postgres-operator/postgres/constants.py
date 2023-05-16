@@ -86,6 +86,8 @@ SPEC_VOLUME_LOCAL = "local"
 SPEC_VOLUME_CLOUD = "cloud"
 SPEC_REBUILD = "rebuild"
 SPCE_REBUILD_NODENAMES = "nodeName"
+SPEC_SWITCHOVER = "switchover"
+SPEC_SWITCHOVER_MASTERNODE = "masterNode"
 
 # api
 API_GROUP = "postgres.radondb.io"

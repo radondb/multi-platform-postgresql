@@ -187,6 +187,8 @@ from constants import (
     PG_LOG_FILENAME,
     SPEC_REBUILD,
     SPCE_REBUILD_NODENAMES,
+    SPEC_SWITCHOVER,
+    SPEC_SWITCHOVER_MASTERNODE,
     SPEC_DELETE_S3,
     STORAGE_CLASS_NAME,
 )
@@ -239,6 +241,10 @@ DIFF_FIELD_SPEC_BACKUPS3_MANUAL = (SPEC, SPEC_BACKUPCLUSTER, SPEC_BACKUPTOS3,
 DIFF_FIELD_SPEC_REBUILD = (SPEC, SPEC_REBUILD)
 DIFF_FIELD_SPEC_REBUILD_NODENAMES = (SPEC, SPEC_REBUILD,
                                      SPCE_REBUILD_NODENAMES)
+DIFF_FIELD_SPEC_SWITCHOVER = (SPEC, SPEC_SWITCHOVER)
+DIFF_FIELD_SPEC_SWITCHOVER_MASTERNODE = (SPEC, SPEC_SWITCHOVER,
+                                         SPEC_SWITCHOVER_MASTERNODE)
+
 STATEFULSET_REPLICAS = 1
 PG_CONFIG_MASTER_LARGE_THAN_SLAVE = ("max_connections", "max_worker_processes",
                                      "max_wal_senders",
@@ -305,6 +311,7 @@ CONTAINER_ENV_NAME = "name"
 CONTAINER_ENV_VALUE = "value"
 EXPORTER_CONTAINER_INDEX = 1
 POSTGRESQL_CONTAINER_INDEX = 0
+NODE_PRIORITY_HIGH = 100
 NODE_PRIORITY_DEFAULT = 50
 NODE_PRIORITY_NEVER = 0
 WAIT_TIMEOUT = MINUTES * 20
@@ -4161,6 +4168,26 @@ def trigger_rebuild_postgresql(
                             delete_disk=True)
 
 
+def trigger_switchover_postgresql(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    AC: str,
+    FIELD: Tuple,
+    OLD: Any,
+    NEW: Any,
+):
+    if FIELD[0:len(DIFF_FIELD_SPEC_SWITCHOVER_MASTERNODE
+                   )] == DIFF_FIELD_SPEC_SWITCHOVER_MASTERNODE or (
+                       FIELD[0:len(DIFF_FIELD_SPEC_SWITCHOVER)]
+                       == DIFF_FIELD_SPEC_SWITCHOVER and AC == "add"
+                       and OLD is None and fuzzy_matching(
+                           NEW, (SPEC_SWITCHOVER_MASTERNODE, )) == True):
+        switchover_postgresqls(meta, spec, patch, status, logger)
+
+
 def update_streaming(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -4671,7 +4698,9 @@ def update_node_priority(
         primary_host = get_primary_host(meta, spec, patch, status, logger)
 
     for conn in conns:
-        if get_connhost(conn) == primary_host:
+        # cannot set primary priority to 0, but allow set another readwrite to 0(use in adjust postgresql param)
+        if get_connhost(
+                conn) == primary_host and priority == NODE_PRIORITY_NEVER:
             continue
         i = 0
         while True:
@@ -5345,6 +5374,56 @@ def promote_postgresql(meta: kopf.Meta,
         f"promote_postgresql: {get_connhost(conn)}, and output: {output}")
 
 
+def check_and_get_k8s_or_machine_param(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    param: str,
+) -> (str, str, str):
+
+    mode, _, _, _ = get_replicas(spec)
+    node_name = param
+    logging.info(
+        f"check_and_get_k8s_or_machine_param with param={node_name} execute.")
+
+    if mode == K8S_MODE:
+        temps = node_name.split(FIELD_DELIMITER)
+        if node_name.find(meta['name']) == -1 or len(temps) < 3:
+            raise kopf.TemporaryError(
+                f"check_and_get_k8s_or_machine_param but nodeName {node_name} is not valid."
+            )
+
+        role = temps[-2]
+        replica_or_machine = int(temps[-1])
+
+        if role == AUTOFAILOVER:
+            field = get_field(AUTOFAILOVER)
+        elif role == READWRITEINSTANCE:
+            field = get_field(POSTGRESQL, READWRITEINSTANCE)
+        elif role == READONLYINSTANCE:
+            field = get_field(POSTGRESQL, READONLYINSTANCE)
+    elif mode == MACHINE_MODE:
+        machine = node_name
+        autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
+        readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
+            MACHINES)
+        readonly_machines = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
+            MACHINES)
+
+        if machine in autofailover_machines:
+            field = get_field(AUTOFAILOVER)
+        elif machine in readwrite_machines:
+            field = get_field(POSTGRESQL, READWRITEINSTANCE)
+        elif machine in readonly_machines:
+            field = get_field(POSTGRESQL, READONLYINSTANCE)
+
+        replica_or_machine = machine
+
+    return mode, field, replica_or_machine
+
+
 def rebuild_autofailover(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -5556,29 +5635,15 @@ def rebuild_postgresqls(
     delete_disk: bool = False,
 ) -> None:
 
-    mode, _, _, _ = get_replicas(spec)
     node_name = spec.get(SPEC_REBUILD,
                          {}).get(SPCE_REBUILD_NODENAMES,
                                  "").split(SPECIAL_CHARACTERS)[0].strip()
-    logging.info(f"rebuild_postgresqls with param={node_name} execute.")
+
+    mode, field, replica_or_machine = check_and_get_k8s_or_machine_param(
+        meta, spec, patch, status, logger, node_name)
 
     if mode == K8S_MODE:
-        if node_name.find(meta['name']) == -1:
-            logger.error(f"rebuild but nodeName {node_name} is not valid.")
-            raise kopf.TemporaryError(
-                f"rebuild but nodeName {node_name} is not valid.")
-        temps = node_name.split(FIELD_DELIMITER)
-        if len(temps) < 3:
-            logger.error(f"rebuild but nodeName {node_name} is not valid.")
-            raise kopf.TemporaryError(
-                f"rebuild but nodeName {node_name} is not valid.")
-
-        role = temps[-2]
-        replica = int(temps[-1])
-
-        field = ""
-        if role == AUTOFAILOVER:
-            field = get_field(AUTOFAILOVER)
+        if field == get_field(AUTOFAILOVER):
             rebuild_autofailover(meta,
                                  spec,
                                  patch,
@@ -5587,31 +5652,105 @@ def rebuild_postgresqls(
                                  field,
                                  None, [0, 1],
                                  delete_disk=True)
-        elif role in [READWRITEINSTANCE, READONLYINSTANCE]:
-            field = get_field(POSTGRESQL, role)
+        elif field in [
+                get_field(POSTGRESQL, READWRITEINSTANCE),
+                get_field(POSTGRESQL, READONLYINSTANCE)
+        ]:
             rebuild_postgresql(meta, spec, patch, status, logger, field, None,
-                               [replica, replica + 1], delete_disk)
+                               [replica_or_machine, replica_or_machine + 1],
+                               delete_disk)
 
     elif mode == MACHINE_MODE:
-        machine = node_name
-        autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
-        readwrite_machines = spec.get(POSTGRESQL).get(READWRITEINSTANCE).get(
-            MACHINES)
-        readonly_machines = spec.get(POSTGRESQL).get(READONLYINSTANCE).get(
-            MACHINES)
+        if field == get_field(AUTOFAILOVER):
+            rebuild_autofailover(meta, spec, patch, status, logger, field,
+                                 [replica_or_machine], None, delete_disk)
+        elif field in [
+                get_field(POSTGRESQL, READWRITEINSTANCE),
+                get_field(POSTGRESQL, READONLYINSTANCE)
+        ]:
+            rebuild_postgresql(meta, spec, patch, status, logger, field,
+                               [replica_or_machine], None, delete_disk)
 
-        if machine in autofailover_machines:
-            rebuild_autofailover(meta, spec, patch, status, logger,
-                                 get_field(AUTOFAILOVER), [machine], None,
-                                 delete_disk)
-        elif machine in readwrite_machines:
-            rebuild_postgresql(meta, spec, patch, status, logger,
-                               get_field(POSTGRESQL, READWRITEINSTANCE),
-                               [machine], None, delete_disk)
-        elif machine in readonly_machines:
-            rebuild_postgresql(meta, spec, patch, status, logger,
-                               get_field(POSTGRESQL, READONLYINSTANCE),
-                               [machine], None, delete_disk)
+
+def switchover_to_target_readwrite(
+        meta: kopf.Meta,
+        spec: kopf.Spec,
+        patch: kopf.Patch,
+        status: kopf.Status,
+        logger: logging.Logger,
+        field: str,
+        target_machines: List,
+        target_k8s: List,  # [begin:int, end: int]
+) -> None:
+
+    if field in [
+            get_field(AUTOFAILOVER),
+            get_field(POSTGRESQL, READONLYINSTANCE)
+    ]:
+        logger.error(f"cannot switchover to {field}.")
+        raise kopf.PermanentError(f"cannot switchover to {field}.")
+
+    logger.warning(
+        f"switchover_to_target_readwrite wait autofailover node ready.")
+    waiting_target_postgresql_ready(meta,
+                                    spec,
+                                    patch,
+                                    get_field(AUTOFAILOVER),
+                                    status,
+                                    logger,
+                                    exit=True,
+                                    timeout=MINUTES * 1)
+
+    # connect to target k8s or target machine
+    conns = connections_target(meta, spec, patch, status, logger, field,
+                               target_machines, target_k8s)
+
+    for conn in conns.get_conns():
+        primary_host = get_primary_host(meta, spec, patch, status, logger)
+        conn_host = get_connhost(conn)
+
+        if conn_host == primary_host:
+            logger.warning(f"{conn_host} is primary host, skip switchover.")
+            continue
+
+        logger.info(
+            f"switchover_to_target_readwrite start switchover master to {conn_host}."
+        )
+
+        # update target readwrite priority to high
+        update_node_priority(meta, spec, patch, status, logger, [conn],
+                             NODE_PRIORITY_HIGH, primary_host)
+
+        autofailover_switchover(meta, spec, patch, status, logger)
+
+        # update target readwrite priority to normal
+        update_node_priority(meta, spec, patch, status, logger, [conn],
+                             NODE_PRIORITY_DEFAULT)
+
+    conns.free_conns()
+
+
+def switchover_postgresqls(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+
+    masterNode = spec.get(SPEC_SWITCHOVER,
+                          {}).get(SPEC_SWITCHOVER_MASTERNODE,
+                                  "").split(SPECIAL_CHARACTERS)[0].strip()
+    mode, field, replica_or_machine = check_and_get_k8s_or_machine_param(
+        meta, spec, patch, status, logger, masterNode)
+
+    if mode == K8S_MODE:
+        switchover_to_target_readwrite(
+            meta, spec, patch, status, logger, field, None,
+            [replica_or_machine, replica_or_machine + 1])
+    elif mode == MACHINE_MODE:
+        switchover_to_target_readwrite(meta, spec, patch, status, logger,
+                                       field, [replica_or_machine], None)
 
 
 # kubectl patch pg lzzhang --patch '{"spec": {"action": "stop"}}' --type=merge
@@ -5722,6 +5861,8 @@ def update_cluster(
 
             trigger_backup_to_s3_manual(meta, spec, patch, status, logger, AC,
                                         FIELD, OLD, NEW)
+            trigger_switchover_postgresql(meta, spec, patch, status, logger,
+                                          AC, FIELD, OLD, NEW)
 
         # waiting
         if spec[ACTION] == ACTION_START:
