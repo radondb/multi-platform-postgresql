@@ -2261,6 +2261,20 @@ def backup_postgresql(
     logger.info(f"backup_postgresql cluster success.")
 
 
+def create_extension(conn: InstanceConnection,
+                     logger: logging.Logger,
+                     dbname: str = "pg_auto_failover") -> None:
+    logger.info("create postgresql extension")
+    cmd = [
+        "pgtools", "-Q", dbname, "-q",
+        '"create extension if not exists pg_stat_statements"'
+    ]
+    output = exec_command(conn, cmd, logger, interrupt=False)
+    if output.find("CREATE EXTENSION") == -1:
+        logger.error(
+            f"can't create pg_stat_statements extension with {cmd}, {output}")
+
+
 # LABEL: MULTI_PG_VERSIONS
 def create_log_table(logger: logging.Logger, conn: InstanceConnection,
                      postgresql_major_version: int) -> None:
@@ -2705,7 +2719,28 @@ def create_autofailover(
     logger.info("create autofailover")
     conns = connections(spec, meta, patch, get_field(AUTOFAILOVER), True,
                         labels, logger, 0, status, False)
+    after_create_autofailover(meta, spec, patch, status, logger, conns)
     conns.free_conns()
+
+
+def after_create_autofailover(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conns: InstanceConnections,
+) -> None:
+    logger.info("after create autofailover")
+    waiting_target_postgresql_ready(meta,
+                                    spec,
+                                    patch,
+                                    get_field(AUTOFAILOVER),
+                                    status,
+                                    logger,
+                                    timeout=MINUTES * 5)
+
+    create_extension(conns.get_conns()[0], logger)
 
 
 def connections_target(
@@ -3482,13 +3517,6 @@ def create_postgresql_cluster(
     # set_create_cluster(patch, CLUSTER_CREATE_ADD_FAILOVER)
     create_autofailover(meta, spec, patch, status, logger,
                         get_autofailover_labels(meta))
-    waiting_target_postgresql_ready(meta,
-                                    spec,
-                                    patch,
-                                    get_field(AUTOFAILOVER),
-                                    status,
-                                    logger,
-                                    timeout=MINUTES * 5)
 
     # create postgresql & readwrite node
     # set_create_cluster(patch, CLUSTER_CREATE_ADD_READWRITE)
@@ -4384,8 +4412,6 @@ def rolling_update(
         create_autofailover(meta, spec, patch, status, logger,
                             get_autofailover_labels(meta))
         # wait postgresql ready, then wait the right status.
-        waiting_target_postgresql_ready(meta, spec, patch, field, status,
-                                        logger, 0, 1, exit, timeout)
         waiting_cluster_final_status(meta, spec, patch, status, logger)
 
     # rolling update readwrite
@@ -5504,13 +5530,6 @@ def rebuild_autofailover(
                             delete_disk=delete_disk)
     create_autofailover(meta, spec, patch, status, logger,
                         get_autofailover_labels(meta))
-    waiting_target_postgresql_ready(meta,
-                                    spec,
-                                    patch,
-                                    get_field(AUTOFAILOVER),
-                                    status,
-                                    logger,
-                                    timeout=MINUTES * 5)
 
     # step3. resume postgresql
     #   first, resume primary.

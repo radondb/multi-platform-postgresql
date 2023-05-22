@@ -59,6 +59,7 @@ helm-package:
 	/bin/rm -rf platforms/kubernetes/postgres-operator/deploy/postgres-operator/
 exporter-image:
 	cp exporterversions.json image/exporter/versions.json
+	cp jq-template.awk image/exporter/jq-template.awk
 	cd image/exporter; ./generate_image.sh
 
 format:

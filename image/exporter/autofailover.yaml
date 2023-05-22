@@ -1,3 +1,4 @@
+# only autofailover nodes are used by setting the PG_EXPORTER_EXTEND_QUERY_PATH environment
 pg_auto_failover_async:
   query: "select count(*) as count from pgautofailover.node where reportedrepstate <> 'quorum' and reportedrepstate <> 'unknown'"
   metrics:

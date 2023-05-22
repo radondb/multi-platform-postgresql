@@ -59,7 +59,7 @@ spec:
             limits:
               memory: "200Mi"
               cpu: "0.2"
-        - image: radondb-postgres-exporter:v1.1.0
+        - image: radondb-postgres-exporter:15-v1.2.0
           imagePullPolicy: IfNotPresent
           name: exporter # can't change the name
           volumeMounts:
@@ -107,7 +107,7 @@ spec:
               limits:
                 memory: "500Mi"
                 cpu: "0.5"
-          - image: radondb-postgres-exporter:v1.1.0
+          - image: radondb-postgres-exporter:15-v1.2.0
             imagePullPolicy: IfNotPresent
             name: exporter # can't change the name
             volumeMounts:
@@ -141,7 +141,7 @@ spec:
               limits:
                 memory: "500Mi"
                 cpu: "0.5"
-          - image: radondb-postgres-exporter:v1.1.0
+          - image: radondb-postgres-exporter:15-v1.2.0
             imagePullPolicy: IfNotPresent
             name: exporter # can't change the name
             volumeMounts:
