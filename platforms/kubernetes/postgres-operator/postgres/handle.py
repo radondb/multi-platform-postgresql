@@ -4989,7 +4989,7 @@ def update_configs(
             # rolling update exporter env DATA_SOURCE_NAME.port
             rolling_update(meta, spec, patch, status, logger, [
                 get_field(POSTGRESQL, READWRITEINSTANCE),
-                get_field(POSTGRESQL, READWRITEINSTANCE)
+                get_field(POSTGRESQL, READONLYINSTANCE)
             ])
     if FIELD == DIFF_FIELD_AUTOFAILOVER_CONFIGS:
         autofailover_conns.free_conns()
