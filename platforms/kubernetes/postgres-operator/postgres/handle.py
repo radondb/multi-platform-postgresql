@@ -4100,42 +4100,6 @@ def update_number_sync_standbys(
                 break
         autofailover_conns.free_conns()
 
-
-def update_number_sync_standbys(
-    meta: kopf.Meta,
-    spec: kopf.Spec,
-    patch: kopf.Patch,
-    status: kopf.Status,
-    logger: logging.Logger,
-) -> None:
-    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(
-        spec)
-
-    pg_nodes = readwrite_replicas + readonly_replicas
-    number_sync = readwrite_replicas + readonly_replicas if spec[POSTGRESQL][
-        READONLYINSTANCE][STREAMING] == STREAMING_SYNC else readwrite_replicas
-    expect_number = number_sync - 2
-    if expect_number < 0:
-        expect_number = 0
-
-    if pg_nodes >= 2:
-        autofailover_conns = connections(spec, meta, patch,
-                                         get_field(AUTOFAILOVER), False, None,
-                                         logger, None, status, False)
-        cmd = [
-            "pgtools", "-S", "' formation number-sync-standbys  " +
-            str(expect_number) + PRIMARY_FORMATION + "'"
-        ]
-        logger.info(f"set number-sync-standbys with cmd {cmd}")
-        output = exec_command(autofailover_conns.get_conns()[0],
-                              cmd,
-                              logger,
-                              interrupt=False)
-        if output.find(SUCCESS) == -1:
-            logger.error(f"set number-sync-standbys failed {cmd}  {output}")
-        autofailover_conns.free_conns()
-
-
 def fuzzy_matching(data: Any, match_data: Tuple) -> bool:
     ldata = str(data)
 
