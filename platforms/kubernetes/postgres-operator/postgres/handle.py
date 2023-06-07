@@ -4100,6 +4100,7 @@ def update_number_sync_standbys(
                 break
         autofailover_conns.free_conns()
 
+
 def fuzzy_matching(data: Any, match_data: Tuple) -> bool:
     ldata = str(data)
 
