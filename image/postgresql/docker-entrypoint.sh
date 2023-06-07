@@ -179,10 +179,12 @@ main() {
 			cmd="pg_autoctl create postgres --pgctl $PGHOME/bin/pg_ctl --pgdata $PGDATA --pgport $run_port --hostname $EXTERNAL_HOSTNAME --username $POSTGRES_USER --dbname $POSTGRES_DB --formation $formation --monitor postgres://autoctl_node:$AUTOCTL_NODE_PASSWORD@$MONITOR_HOSTNAME:$monitor_port/pg_auto_failover?sslmode=prefer  --skip-pg-hba --no-ssl --run --maximum-backup-rate 1024M"
 			if [ "$PG_MODE" = readonly ]; then
 				cmd="$cmd --candidate-priority 0"
-				if [ "$PG_STREAMING" = sync ]; then
-					cmd="$cmd --replication-quorum 1"
-				else
-					cmd="$cmd --replication-quorum 0"
+				if [ ! -s "$PGDATA/PG_VERSION" ]; then
+					if [ "$PG_STREAMING" = sync ]; then
+						cmd="$cmd --replication-quorum 1"
+					else
+						cmd="$cmd --replication-quorum 0"
+					fi
 				fi
 			fi
 
