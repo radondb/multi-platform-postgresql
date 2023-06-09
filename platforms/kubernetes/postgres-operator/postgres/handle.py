@@ -347,6 +347,9 @@ RESTORE_NAME = "RESTORE_NAME"
 
 SPECIAL_CHARACTERS = "/##/"
 
+### messages
+FILE_NOT_EXISTS = "No_such_file"
+
 
 def set_cluster_status(meta: kopf.Meta,
                        statefield: str,
@@ -782,7 +785,11 @@ def waiting_postgresql_recovery_completed(conns: InstanceConnections,
                                           timeout: int = WAIT_TIMEOUT) -> bool:
 
     recovery_is_success = False
-    recover_completed_cmd = ["cat", os.path.join(ASSIST_DIR, RECOVERY_FINISH)]
+    recover_completed_cmd = [
+        "test", "-f",
+        os.path.join(ASSIST_DIR, RECOVERY_FINISH), "||", "echo",
+        FILE_NOT_EXISTS
+    ]
     pg_running_cmd = [
         "head -1",
         os.path.join(PG_DATABASE_RESTORING_DIR, POSTMASTER_FILE), "|",
@@ -799,7 +806,7 @@ def waiting_postgresql_recovery_completed(conns: InstanceConnections,
                                   recover_completed_cmd,
                                   logger,
                                   interrupt=False)
-            if output.find("No such file or directory") != -1:
+            if output.find(FILE_NOT_EXISTS) != -1:
                 logger.warning(
                     f"recovery not completed. try {i} times. {output}")
             else:
@@ -822,6 +829,88 @@ def waiting_postgresql_recovery_completed(conns: InstanceConnections,
                 break
 
     return recovery_is_success
+
+
+# def waiting_target_postgresql_pg_basebackup_completed(
+#         meta: kopf.Meta,
+#         spec: kopf.Spec,
+#         patch: kopf.Patch,
+#         field: str,
+#         status: kopf.Status,
+#         logger: logging.Logger,
+#         connect_start: int = None,
+#         connect_end: int = None) -> None:
+#     conns: InstanceConnections = connections(spec, meta, patch, field, False,
+#                                              None, logger, None, status, False,
+#                                              None)
+#     waiting_pg_basebackup_completed(conns, logger, connect_start, connect_end)
+#     conns.free_conns()
+
+
+def waiting_pg_basebackup_completed(conns: InstanceConnections,
+                                    logger: logging.Logger,
+                                    connect_start: int = None,
+                                    connect_end: int = None,
+                                    timeout: int = DAYS) -> bool:
+    if connect_start is None:
+        connect_start = 0
+    if connect_end is None:
+        connect_end = conns.get_number()
+    conns = conns.get_conns()[connect_start:connect_end]
+
+    pg_basebackup_is_success = False
+    pg_basebackup_precheck_cmd = [
+        "test", "-d", PG_DATABASE_DIR, "&&", "ls", PG_DATABASE_DIR, "|", "wc",
+        "-l", "||", "echo", "0"
+    ]
+    pg_basebackup_completed_cmd = [
+        "ps -ef | grep -v grep | grep pg_basebackup"
+    ]
+    for conn in conns:
+        i = 0
+        maxtry = timeout
+        pg_basebackup_precheck_timeout = 60
+        success_counter = 0
+        success_threshold = 10
+        while True:
+            i += 1
+            time.sleep(1)
+
+            output = exec_command(conn,
+                                  pg_basebackup_precheck_cmd,
+                                  logger,
+                                  interrupt=False)
+            if i < pg_basebackup_precheck_timeout and to_int(output) == 0:
+                logger.warning(
+                    f"pg_basebackup execute pg_basebackup_precheck_cmd for {get_connhost(conn)} not completed. try {i} times."
+                )
+                continue
+
+            output = exec_command(conn,
+                                  pg_basebackup_completed_cmd,
+                                  logger,
+                                  interrupt=False)
+            if output.strip() == "":
+                success_counter += 1
+                logger.info(
+                    f"pg_basebackup for {get_connhost(conn)} complete {success_counter} times, success_threshold is {success_threshold}."
+                )
+                if success_counter >= success_threshold:
+                    pg_basebackup_is_success = True
+                    break
+            else:
+                logger.warning(
+                    f"pg_basebackup for {get_connhost(conn)} not completed. try {i} times."
+                )
+                success_counter = 0
+
+            if i >= maxtry:
+                logger.warning(
+                    f"pg_basebackup for {get_connhost(conn)} not completed. skip waitting."
+                )
+                break
+
+    return pg_basebackup_is_success
 
 
 def create_statefulset(
@@ -1461,8 +1550,8 @@ def create_postgresql(
                                localspec[PODSPEC],
                                localspec[VOLUMECLAIMTEMPLATES], antiaffinity,
                                k8s_env, logger, k8s_exporter_env)
-            # waiting pull image success and instance ready
-            waiting_instance_ready(conns, logger, replica, replica + 1)
+        # waiting pull image success and instance ready
+        waiting_instance_ready(conns, logger, replica, replica + 1)
 
         # wait primary node create finish
         if wait_primary == True and field == get_field(
@@ -1483,6 +1572,8 @@ def create_postgresql(
                 create_users(meta, spec, patch, status, logger, tmpconns)
             else:
                 restore_postgresql(meta, spec, patch, status, logger, tmpconn)
+
+    waiting_pg_basebackup_completed(conns, logger, create_begin, replicas)
 
 
 def restore_postgresql_fromssh(
@@ -5822,11 +5913,6 @@ def update_cluster(
                     meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
                 if need_update_number_sync_standbys == False and return_update_number_sync_standbys == True:
                     need_update_number_sync_standbys = True
-
-        # update readwrite replicas or update readonly replicas need wait pg_basebackup
-        if need_update_number_sync_standbys:
-            waiting_cluster_final_status(meta, spec, patch, status, logger,
-                                         1 * HOURS)
 
         for diff in diffs:
             AC = diff[0]
