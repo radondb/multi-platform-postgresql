@@ -5602,6 +5602,9 @@ def rebuild_autofailover(
     multi_exec_command(standby_conns, cmds, logger, interrupt=False)
     waiting_postgresql_ready(standby_conns, logger, 1 * MINUTES)
 
+    # step4. update number_sync_standbys
+    update_number_sync_standbys(meta, spec, patch, status, logger)
+
     auto_failover_conns.free_conns()
     readwrite_conns.free_conns()
     readonly_conns.free_conns()
