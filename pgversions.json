@@ -58,9 +58,9 @@
   },
   "15": {
     "major": 15,
-    "minor": [0],
+    "minor": [3],
     "debian": "bullseye-slim",
-    "tag": ["REL_15_0"],
+    "tag": ["REL_15_3"],
     "failover": "v2.0",
     "dirtyread": "2.4",
     "citus": "v11.1.3",
