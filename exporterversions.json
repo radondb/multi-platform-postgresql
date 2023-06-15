@@ -2,7 +2,7 @@
   "12": {
     "major": 12,
     "name": "radondb-postgres-exporter",
-    "version": "dev",
+    "version": "v1.2.0",
     "total_time_seconds": "total_time",
     "min_time_seconds": "min_time",
     "max_time_seconds": "max_time",
@@ -12,7 +12,7 @@
   "13": {
     "major": 13,
     "name": "radondb-postgres-exporter",
-    "version": "dev",
+    "version": "v1.2.0",
     "total_time_seconds": "total_exec_time",
     "min_time_seconds": "min_exec_time",
     "max_time_seconds": "max_exec_time",
@@ -22,7 +22,7 @@
   "14": {
     "major": 14,
     "name": "radondb-postgres-exporter",
-    "version": "dev",
+    "version": "v1.2.0",
     "total_time_seconds": "total_exec_time",
     "min_time_seconds": "min_exec_time",
     "max_time_seconds": "max_exec_time",
@@ -32,7 +32,7 @@
   "15": {
     "major": 15,
     "name": "radondb-postgres-exporter",
-    "version": "dev",
+    "version": "v1.2.0",
     "total_time_seconds": "total_exec_time",
     "min_time_seconds": "min_exec_time",
     "max_time_seconds": "max_exec_time",
