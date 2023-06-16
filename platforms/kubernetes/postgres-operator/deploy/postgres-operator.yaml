@@ -173,6 +173,12 @@ spec:
                 properties:
                   nodeName:
                     type: string
+              switchover:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  masterNode:
+                    type: string
               services:
                 type: array
                 items:
@@ -576,8 +582,12 @@ spec:
       priorityClassName: system-cluster-critical
       containers:
       - name: radondb-postgres-operator
-        image: radondb/radondb-postgres-operator:v1.2.0
+        image: radondb/radondb-postgres-operator:v1.2.1
         imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            memory: "500Mi"
+            cpu: "0.5"
         livenessProbe:
           timeoutSeconds: 10
           initialDelaySeconds: 60
