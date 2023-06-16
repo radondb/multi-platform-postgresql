@@ -880,11 +880,17 @@ def waiting_pg_basebackup_completed(conns: InstanceConnections,
                                   pg_basebackup_precheck_cmd,
                                   logger,
                                   interrupt=False)
-            if i < pg_basebackup_precheck_timeout and to_int(output) == 0:
-                logger.warning(
-                    f"pg_basebackup execute pg_basebackup_precheck_cmd for {get_connhost(conn)} not completed. try {i} times."
-                )
-                continue
+            if to_int(output) == 0:
+                if i < pg_basebackup_precheck_timeout:
+                    logger.warning(
+                        f"pg_basebackup execute pg_basebackup_precheck_cmd for {get_connhost(conn)} not completed. try {i} times."
+                    )
+                    continue
+                else:
+                    logger.warning(
+                        f"pg_basebackup execute pg_basebackup_precheck_cmd for {get_connhost(conn)} not completed. skip waitting."
+                    )
+                    break
 
             output = exec_command(conn,
                                   pg_basebackup_completed_cmd,
