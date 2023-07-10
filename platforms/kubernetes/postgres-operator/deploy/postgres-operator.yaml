@@ -440,6 +440,123 @@ spec:
                         type: string
 
 ---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: postgresqlbackups.postgres.radondb.io
+  namespace: radondb-postgres-operator
+spec:
+  group: postgres.radondb.io
+  names:
+    kind: PostgreSQLBackup
+    listKind: PostgreSQLBackupList
+    plural: postgresqlbackups
+    singular: postgresqlbackup
+    shortNames:
+    - pgb
+  scope: Namespaced
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    additionalPrinterColumns:
+    - jsonPath: .status.state
+      description: The postgresql cluster status
+      name: State
+      type: string
+      priority: 0
+    - jsonPath: .status.beginTime
+      description: Backup begin time
+      name: BeginTime
+      type: string
+      priority: 0
+    - jsonPath: .status.endTime
+      description: Backup end time
+      name: EndTime
+      type: string
+      priority: 0
+    - jsonPath: .status.backupId
+      description: Backup id
+      name: BackupId
+      type: string
+      priority: 0
+    - jsonPath: .status.backupSize
+      description: Backup size
+      name: BackupSize
+      type: string
+      priority: 0
+    - jsonPath: .status.backupBeginWal
+      description: Backup begin wal
+      name: BackupBeginWal
+      type: string
+      priority: 1
+    - jsonPath: .status.backupEndWal
+      description: Backup end wal
+      name: BackupEndWal
+      type: string
+      priority: 1
+    - jsonPath: .spec.deletes3
+      description: delete S3 data when backup is deleted.
+      name: DeleteS3
+      type: boolean
+      priority: 1
+    - jsonPath: .spec.backup.backupToS3.schedule
+      description: If Backup is cron show Bakcup Schedule
+      name: Schedule
+      type: string
+      priority: 1
+    - jsonPath: .status.nextRunTime
+      description: If Backup is cron show Backup next run time
+      name: NextRunTime
+      type: string
+      priority: 1
+#    - jsonPath: .status.backups_list
+#      description: The postgresql cluster backup status
+#      name: BackupStatus
+#      type: string
+#      priority: 1
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+          spec:
+            type: object
+            properties:
+              clusterName:
+                type: string
+                description: "The name of the cluster to be backed up"
+              clusterNamespace:
+                type: string
+                description: "The namespace of the cluster to be backed up"
+              backup:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  backupToS3:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                    properties:
+                      name:
+                        type: string
+                      kind:
+                        type: string
+                        enum:
+                        - single
+                        - schedule
+                      schedule:
+                        type: string
+                        description: "Rules for scheduled backup."
+              deletes3:
+                type: boolean
+                enum:
+                - true
+                - false
+                default: false
+                description: "Delete S3 data when backup is deleted."
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -477,8 +594,8 @@ rules:
 
   # Application: read-only access for watching cluster-wide.
   - apiGroups: [postgres.radondb.io]
-    resources: [postgresqls]
-    verbs: [list, watch, get, patch, create,]
+    resources: [postgresqls, postgresqlbackups]
+    verbs: [list, watch, get, patch, create, delete, update]
 
   - apiGroups: [""]
     resources: [pods, persistentvolumeclaims, services]
@@ -512,8 +629,8 @@ rules:
 
   # Application: watching & handling for the custom resource we declare.
   - apiGroups: [postgres.radondb.io]
-    resources: [postgresqls]
-    verbs: [list, watch, get, patch]
+    resources: [postgresqls, postgresqlbackups]
+    verbs: [list, watch, get, patch, delete, create, update]
 
   # Application: other resources it produces and manipulates.
   # Here, we create Jobs+PVCs+Pods, but we do not patch/update/delete them ever.
@@ -582,7 +699,7 @@ spec:
       priorityClassName: system-cluster-critical
       containers:
       - name: radondb-postgres-operator
-        image: radondb/radondb-postgres-operator:v1.2.1
+        image: radondb/radondb-postgres-operator:v1.2.2
         imagePullPolicy: IfNotPresent
         resources:
           limits:

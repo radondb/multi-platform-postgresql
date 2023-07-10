@@ -2,8 +2,11 @@ import kopf
 import logging
 import gc
 
-from handle import connections, get_field, exec_command, connections_target
-from constants import *
+from pgsqlcommons.constants import (
+    POSTGRESQL,
+    READWRITEINSTANCE,
+)
+import pgsqlclusters.utiles as pgsql_util
 
 
 def test(
@@ -28,10 +31,10 @@ def test_timeout(
 ):
     # test timeout
     logger.warning(f"start test timeout.")
-    readwrite_conns = connections(spec, meta, patch,
-                                  get_field(POSTGRESQL, READWRITEINSTANCE),
-                                  False, None, logger, None, status, False)
-    output = exec_command(
+    readwrite_conns = pgsql_util.connections(
+        spec, meta, patch, pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE),
+        False, None, logger, None, status, False)
+    output = pgsql_util.exec_command(
         readwrite_conns.get_conns()[0],
         ["i=1; while true; do echo $i; i=$((i+1)); sleep 1; done"],
         logger,
@@ -52,10 +55,11 @@ def test_free_conn(
     logger.warning(f"test test_free_conn start.")
     gc.collect()
 
-    conns = connections_target(meta, spec, patch, status, logger,
-                               get_field(POSTGRESQL, READWRITEINSTANCE), None,
-                               [10000, 10001])
-    output = exec_command(conns.get_conns()[0], ["test"],
-                          logger,
-                          interrupt=True)
+    conns = pgsql_util.connections_target(
+        meta, spec, patch, status, logger,
+        pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE), None,
+        [10000, 10001])
+    output = pgsql_util.exec_command(conns.get_conns()[0], ["test"],
+                                     logger,
+                                     interrupt=True)
     logger.warning(f"test test_free_conn end and output = {output}.")

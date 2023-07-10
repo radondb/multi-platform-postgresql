@@ -370,7 +370,7 @@ function s3_backup() {
 		check_and_set_backup_param
 	fi
 	if [ $role == "$ROLE_MASTER" ]; then
-		backup_cmd="barman-cloud-backup -h 127.0.0.1 -p $run_port --immediate-checkpoint $(eval $BARMAN_S3_PARAM)"
+		backup_cmd="barman-cloud-backup -h 127.0.0.1 -p $run_port --name $BARMAN_BACKUP_ALIAS_NAME --immediate-checkpoint $(eval $BARMAN_S3_PARAM)"
 		backup_cmd=$(add_s3_param "$backup_cmd")
 		$backup_cmd
 		check_error $? "backup failed, please check error log"
@@ -407,10 +407,12 @@ function get_backup_info_or_backup_size() {
 	fi
 }
 
-#function delete_backup_by_id() {
-#	backupid=$1
-#	barman-cloud-backup-delete $(eval $BARMAN_S3_PARAM) --backup-id $backupid
-#}
+function delete_backup_by_id() {
+	# backup_id is comma separated
+	for id in $(echo ${backup_id} | tr ',' ' '); do
+		barman-cloud-backup-delete $(eval $BARMAN_S3_PARAM) --backup-id $id
+	done
+}
 
 function delete_backup_by_policy() {
 	barman-cloud-backup-delete $(eval $BARMAN_S3_PARAM) --retention-policy "$retention"
@@ -418,7 +420,10 @@ function delete_backup_by_policy() {
 
 function delete_backup() {
 	check_and_generate_s3_profile
-	if [ ! "$retention" -o "$retention" == "none" ]; then
+	if [ "${backup_id}" ]; then
+		delete_backup_by_id
+		check_error $? "delete_backup ${backup_id} maybe not completed, please check error log"
+	elif [ ! "$retention" -o "$retention" == "none" ]; then
 		check_error 1 "delete_backup but retention env is not set or retention is none."
 	elif [ "$retention" == "$BARMAN_RENTION_DELETE_ALL" ]; then
 		param=$(get_aws_param)

@@ -1,6 +1,6 @@
 import paramiko
 from typing import Dict, TypedDict, TypeVar, Optional, List, Optional, Callable, Tuple, Any
-from constants import (
+from pgsqlcommons.constants import (
     AUTOFAILOVER,
     POSTGRESQL,
 )
