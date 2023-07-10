@@ -1,6 +1,6 @@
 {
-  "appVersion": "v1.2.0",
-  "version": "v1.2.0",
+  "appVersion": "v1.2.2",
+  "version": "v1.2.2",
 
   "template_name": "radondb-postgres-operator",
   "template_image": "radondb/radondb-postgres-operator:v1.2.0",
