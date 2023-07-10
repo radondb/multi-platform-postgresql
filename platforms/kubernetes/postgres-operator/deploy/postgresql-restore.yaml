@@ -1,0 +1,20 @@
+apiVersion: postgres.radondb.io/v1
+kind: PostgreSQLRestore
+metadata:
+  name: pgr
+spec:
+  restore:
+    toCluster:                                # restore clusterNamespace/clusterName must not exists
+      clusterName: pg
+      clusterNamespace: default
+    fromBackup:
+      backupName: xxx
+      backupNamespace: default
+      recovery: latest                        # backupid or recovery_time or macro variable
+                                                # eg:
+                                                  # recovery: 20221011T143943 means recovering full data from 20221011T143943 backup
+                                                  # recovery: 2022-10-11 14:45:32 means the data recovered to 2022-10-11 14:45:32
+                                                # supported macro variable:
+                                                  # latest: Restoring to latest state
+                                                  # latest-full: Restoring to the latest full backup state
+                                                  # oldest-full: Restoring to the oldest full backup state

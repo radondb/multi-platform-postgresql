@@ -1,8 +1,8 @@
 import logging
 import os
-from typed import List, Optional
+from pgsqlcommons.typed import List, Optional
 import kopf
-from constants import (
+from pgsqlcommons.constants import (
     AUTOFAILOVER,
     POSTGRESQL,
 )

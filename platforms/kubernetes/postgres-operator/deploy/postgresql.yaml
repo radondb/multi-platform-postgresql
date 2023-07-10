@@ -49,7 +49,7 @@ spec:
       terminationGracePeriodSeconds: 60
 #      priorityClassName: high-priority
       containers:
-        - image: radondb-postgresql:15.3-v1.2.1
+        - image: radondb-postgresql:15.3-v1.2.2
           imagePullPolicy: IfNotPresent
           name: postgresql #can't change the name
           volumeMounts:
@@ -97,7 +97,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: radondb-postgresql:15.3-v1.2.1
+          - image: radondb-postgresql:15.3-v1.2.2
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
@@ -131,7 +131,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image:  radondb-postgresql:15.3-v1.2.1
+          - image:  radondb-postgresql:15.3-v1.2.2
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
@@ -172,17 +172,6 @@ spec:
 #  backupCluster:
 #    backupToS3:
 ##      name: postgresql-backup
-#      manual:
-#        trigger-id: 1
-#      cron:
-#        enable: true                          # whether to enable scheduled backup
-#        schedule: "0 1 * * wed,sat"             # cron expression: minute(0-59) hour(0-23) day(1-31) month(1-12) day_of_week(0-6, mon,tue,wed,thu,fri,sat,sun)
-##                                                     execute once a day at 23:00: 0 23 * * *
-##                                                     1:00 every weekend: 0 1 * * sun
-##                                                     executed at 1:00 AM on the first day of each month : 0 1 1 * *
-##                                                     execute once every day at 0:00, 13:00: 0 0,13 * * *
-##                                                     executed at 1:00 AM every Wednesday and Saturday: 0 1 * * wed,sat
-##                                                 For more information see https://apscheduler.readthedocs.io/en/3.x/modules/triggers/cron.html?highlight=cron
 #      policy:                                  # take effect on next backup
 #        archive: 'on'                            # whether to archive WAL. on/off
 #        compression: gzip                        # backup compression. none/gzip/bzip2/snappy

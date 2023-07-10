@@ -1,0 +1,18 @@
+apiVersion: postgres.radondb.io/v1
+kind: PostgreSQLBackup
+metadata:
+  name: pgb
+spec:
+  clusterName: pg
+  clusterNamespace: default
+  deletes3: false
+  backup:
+    backupToS3:
+      kind: single                           # single/schedule
+#      schedule: "0 1 * * wed,sat"           # schedule: minute(0-59) hour(0-23) day(1-31) month(1-12) day_of_week(0-6, mon,tue,wed,thu,fri,sat,sun)
+##                                                execute once a day at 23:00: 0 23 * * *
+##                                                1:00 every weekend: 0 1 * * sun
+##                                                executed at 1:00 AM on the first day of each month : 0 1 1 * *
+##                                                execute once every day at 0:00, 13:00: 0 0,13 * * *
+##                                                executed at 1:00 AM every Wednesday and Saturday: 0 1 * * wed,sat
+##                                            For more information see https://apscheduler.readthedocs.io/en/3.x/modules/triggers/cron.html?highlight=cron

@@ -94,6 +94,8 @@ API_GROUP = "postgres.radondb.io"
 API_VERSION_V1 = "v1"
 RESOURCE_POSTGRESQL = "postgresqls"
 RESOURCE_KIND_POSTGRESQL = "PostgreSQL"
+RESOURCE_POSTGRESQL_BACKUP = "postgresqlbackups"
+RESOURCE_KIND_POSTGRESQLBACKUP = "PostgreSQLBackup"
 
 # status.CLUSTER_CREATE_CLUSTER
 CLUSTER_STATE = "state"
@@ -332,3 +334,141 @@ echo 0 > /proc/sys/net/ipv4/conf/lo/arp_announce;
 echo 0 > /proc/sys/net/ipv4/conf/all/arp_ignore;
 echo 0 > /proc/sys/net/ipv4/conf/all/arp_announce;
 '''
+
+# config
+
+PGLOG_DIR = "log"
+PRIMARY_FORMATION = " --formation primary "
+FIELD_DELIMITER = "-"
+WAITING_POSTGRESQL_READY_COMMAND = ["pgtools", "-a"]
+INIT_FINISH_MESSAGE = "init postgresql finish"
+STOP_FAILED_MESSAGE = "stop auto_failover failed"
+POSTGRESQL_NOT_RUNNING_MESSAGE = "can't connect database."
+SWITCHOVER_FAILED_MESSAGE = "switchover failed"
+AUTO_FAILOVER_PORT = 55555
+EXPORTER_PORT = 9187
+DIFF_ADD = "add"
+DIFF_CHANGE = "change"
+DIFF_REMOVE = "remove"
+PGPASSFILE_PATH = ASSIST_DIR + "/pgpassfile"
+DIFF_FIELD_ACTION = (SPEC, ACTION)
+DIFF_FIELD_SERVICE = (SPEC, SERVICES)
+DIFF_FIELD_AUTOFAILOVER_HBAS = (SPEC, AUTOFAILOVER, HBAS)
+DIFF_FIELD_POSTGRESQL_HBAS = (SPEC, POSTGRESQL, HBAS)
+DIFF_FIELD_AUTOFAILOVER_CONFIGS = (SPEC, AUTOFAILOVER, CONFIGS)
+DIFF_FIELD_POSTGRESQL_CONFIGS = (SPEC, POSTGRESQL, CONFIGS)
+DIFF_FIELD_POSTGRESQL_USERS = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS)
+DIFF_FIELD_POSTGRESQL_USERS_ADMIN = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS,
+                                     SPEC_POSTGRESQL_USERS_ADMIN)
+DIFF_FIELD_POSTGRESQL_USERS_MAINTENANCE = (SPEC, POSTGRESQL,
+                                           SPEC_POSTGRESQL_USERS,
+                                           SPEC_POSTGRESQL_USERS_MAINTENANCE)
+DIFF_FIELD_POSTGRESQL_USERS_NORMAL = (SPEC, POSTGRESQL, SPEC_POSTGRESQL_USERS,
+                                      SPEC_POSTGRESQL_USERS_NORMAL)
+DIFF_FIELD_STREAMING = (SPEC, POSTGRESQL, READONLYINSTANCE, STREAMING)
+DIFF_FIELD_READWRITE_REPLICAS = (SPEC, POSTGRESQL, READWRITEINSTANCE, REPLICAS)
+DIFF_FIELD_READWRITE_MACHINES = (SPEC, POSTGRESQL, READWRITEINSTANCE, MACHINES)
+DIFF_FIELD_READONLY_REPLICAS = (SPEC, POSTGRESQL, READONLYINSTANCE, REPLICAS)
+DIFF_FIELD_READONLY_MACHINES = (SPEC, POSTGRESQL, READONLYINSTANCE, MACHINES)
+DIFF_FIELD_AUTOFAILOVER_PODSPEC = (SPEC, AUTOFAILOVER, PODSPEC)
+DIFF_FIELD_READWRITE_PODSPEC = (SPEC, POSTGRESQL, READWRITEINSTANCE, PODSPEC)
+DIFF_FIELD_READONLY_PODSPEC = (SPEC, POSTGRESQL, READONLYINSTANCE, PODSPEC)
+DIFF_FIELD_AUTOFAILOVER_VOLUME = (SPEC, AUTOFAILOVER, VOLUMECLAIMTEMPLATES)
+DIFF_FIELD_READWRITE_VOLUME = (SPEC, POSTGRESQL, READWRITEINSTANCE,
+                               VOLUMECLAIMTEMPLATES)
+DIFF_FIELD_READONLY_VOLUME = (SPEC, POSTGRESQL, READONLYINSTANCE,
+                              VOLUMECLAIMTEMPLATES)
+DIFF_FIELD_SPEC_ANTIAFFINITY = (SPEC, SPEC_ANTIAFFINITY)
+DIFF_FIELD_SPEC_BACKUPCLUSTER = (SPEC, SPEC_BACKUPCLUSTER)
+DIFF_FIELD_SPEC_BACKUPS3_MANUAL = (SPEC, SPEC_BACKUPCLUSTER, SPEC_BACKUPTOS3,
+                                   SPEC_BACKUPTOS3_MANUAL)
+DIFF_FIELD_SPEC_REBUILD = (SPEC, SPEC_REBUILD)
+DIFF_FIELD_SPEC_REBUILD_NODENAMES = (SPEC, SPEC_REBUILD,
+                                     SPCE_REBUILD_NODENAMES)
+DIFF_FIELD_SPEC_SWITCHOVER = (SPEC, SPEC_SWITCHOVER)
+DIFF_FIELD_SPEC_SWITCHOVER_MASTERNODE = (SPEC, SPEC_SWITCHOVER,
+                                         SPEC_SWITCHOVER_MASTERNODE)
+
+STATEFULSET_REPLICAS = 1
+PG_CONFIG_MASTER_LARGE_THAN_SLAVE = ("max_connections", "max_worker_processes",
+                                     "max_wal_senders",
+                                     "max_prepared_transactions",
+                                     "max_locks_per_transaction")
+PG_CONFIG_IGNORE = ("block_size", "data_checksums", "data_directory_mode",
+                    "debug_assertions", "integer_datetimes", "lc_collate",
+                    "lc_ctype", "max_function_args", "max_identifier_length",
+                    "max_index_keys", "segment_size", "server_encoding",
+                    "server_version", "server_version_num", "ssl_library",
+                    "wal_block_size", "wal_segment_size")
+PG_CONFIG_RESTART = (
+    "allow_system_table_mods", "archive_mode", "autovacuum_freeze_max_age",
+    "autovacuum_max_workers", "autovacuum_multixact_freeze_max_age", "bonjour",
+    "bonjour_name", "cluster_name", "config_file", "data_directory",
+    "data_sync_retry", "dynamic_shared_memory_type", "event_source",
+    "external_pid_file", "hba_file", "hot_standby", "huge_pages",
+    "huge_page_size", "ident_file", "ignore_invalid_pages", "jit_provider",
+    "listen_addresses", "logging_collector", "max_connections",
+    "max_files_per_process", "max_locks_per_transaction",
+    "max_logical_replication_workers", "max_pred_locks_per_transaction",
+    "max_prepared_transactions", "max_replication_slots", "max_wal_senders",
+    "max_worker_processes", "min_dynamic_shared_memory",
+    "old_snapshot_threshold", "pg_stat_statements.max", "port",
+    "primary_conninfo", "primary_slot_name", "recovery_target",
+    "recovery_target_action", "recovery_target_inclusive",
+    "recovery_target_lsn", "recovery_target_name", "recovery_target_time",
+    "recovery_target_timeline", "recovery_target_xid", "restore_command",
+    "shared_buffers", "shared_memory_type", "shared_preload_libraries",
+    "superuser_reserved_connections", "track_activity_query_size",
+    "track_commit_timestamp", "unix_socket_directories", "unix_socket_group",
+    "unix_socket_permissions", "wal_buffers", "wal_level", "wal_log_hints")
+units = {
+    "Ki": 1 << 10,
+    "Mi": 1 << 20,
+    "Gi": 1 << 30,
+    "Ti": 1 << 40,
+    "Pi": 1 << 50,
+    "Ei": 1 << 60,
+    "K": pow(1000, 1),
+    "M": pow(1000, 2),
+    "G": pow(1000, 3),
+    "T": pow(1000, 4),
+    "P": pow(1000, 5),
+    "E": pow(1000, 6)
+}
+
+POSTGRESQL_PAUSE = "pause"
+POSTGRESQL_RESUME = "resume"
+KEEPALIVED_CONF = "/etc/keepalived/keepalived.conf"
+START_KEEPALIVED = "systemctl restart keepalived.service"
+STOP_KEEPALIVED = "systemctl stop keepalived.service"
+STATUS_KEEPALIVED = "systemctl status keepalived.service"
+RECOVERY_CONF_FILE = "postgresql-auto-failover-standby.conf"
+RECOVERY_SET_FILE = "postgresql-auto-failover.conf"
+STANDBY_SIGNAL = "standby.signal"
+RECOVERY_SIGNAL = "recovery.signal"
+POSTMASTER_FILE = "postmaster.pid"
+POSTGRESQL_BACKUP_RESTORE_CONFIG = "postgresql_backup_restore.conf"
+GET_INET_CMD = "ip addr | grep inet"
+SUCCESS_CHECKPOINT = "CHECKPOINT"
+CONTAINER_ENV = "env"
+CONTAINER_ENV_NAME = "name"
+CONTAINER_ENV_VALUE = "value"
+EXPORTER_CONTAINER_INDEX = 1
+POSTGRESQL_CONTAINER_INDEX = 0
+NODE_PRIORITY_HIGH = 100
+NODE_PRIORITY_DEFAULT = 50
+NODE_PRIORITY_NEVER = 0
+WAIT_TIMEOUT = MINUTES * 20
+POSTGRESQL_IMAGE_VERSION_v1_1_0 = 'v1.1.0'
+
+## backup
+BACKUP_MODE_NONE = "none"
+BACKUP_MODE_S3_MANUAL = "manual"
+BACKUP_MODE_S3_CRON = "cron"
+BACKUP_NAME = "BACKUP_NAME"
+RESTORE_NAME = "RESTORE_NAME"
+
+SPECIAL_CHARACTERS = "/##/"
+
+# ### messages
+FILE_NOT_EXISTS = "No_such_file"
