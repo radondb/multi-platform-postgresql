@@ -25,8 +25,8 @@ build_image()
 	echo "processing $dir ..."
 
 	# image check
-	pre_build_image "$image" || error=true
-	if [ "$error" ]; then
+	pre_build_image "$image" && error=false || error=true
+	if [ "$error" = "true" ]; then
 		return
 	fi
 
