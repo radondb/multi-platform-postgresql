@@ -3,6 +3,9 @@ name: Build Image
 on:
   release:
     types: [published]
+  # manual run
+  workflow_dispatch:
+    inputs:
 
 jobs:
   build-postgres-image:
