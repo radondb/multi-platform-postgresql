@@ -3,7 +3,7 @@
   "version": "v1.2.2",
 
   "template_name": "radondb-postgres-operator",
-  "template_image": "radondb/radondb-postgres-operator:v1.2.0",
+  "template_image": "radondb/radondb-postgres-operator:v1.2.2",
   "template_enablePrometheusMonitor": "false",
   "template_prometheusMonitorLabels": "{}",
   "template_imageRegistry": "",
