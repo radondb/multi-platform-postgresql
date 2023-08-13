@@ -15,7 +15,7 @@ from pgsqlcommons.constants import *
 from pgsqlclusters.timer import (
     correct_postgresql_password,
     correct_user_password,
-    )
+)
 from pgsqlclusters.utiles import (
     set_cluster_status,
     check_param,
@@ -497,7 +497,8 @@ def create_postgresql(
                     machine_env += "PG_MODE=readonly\n"
                     machine_env += "PG_STREAMING=" + spec[SPEC_DISASTERBACKUP][
                         SPEC_DISASTERBACKUP_STREAMING] + "\n"
-                    machine_env += "AUTOCTL_NAME=" + get_autoctl_name(meta, spec, patch, status, logger) + "\n"
+                    machine_env += "AUTOCTL_NAME=" + get_autoctl_name(
+                        meta, spec, patch, status, logger) + "\n"
                 else:
                     machine_env += "PG_MODE=readwrite\n"
 
@@ -507,7 +508,9 @@ def create_postgresql(
                 machine_env += "AUTOCTL_REPLICATOR_PASSWORD=" + autoctl_replicator_password + "\n"
                 machine_env += "MONITOR_HOSTNAME=" + auto_failover_host + "\n"
             else:
-                auto_failover_host = get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
+                auto_failover_host = get_pod_address(meta["name"],
+                                                     AUTOFAILOVER, 0,
+                                                     namespace)
                 if disaster_mode == True:
                     autoctl_node_password = spec[SPEC_DISASTERBACKUP][
                         SPEC_DISASTERBACKUP_AUTOCTL_NODE]
@@ -553,10 +556,8 @@ def create_postgresql(
                     CONTAINER_ENV_VALUE: autoctl_replicator_password
                 })
                 k8s_env.append({
-                    CONTAINER_ENV_NAME:
-                    "MONITOR_HOSTNAME",
-                    CONTAINER_ENV_VALUE:
-                    auto_failover_host
+                    CONTAINER_ENV_NAME: "MONITOR_HOSTNAME",
+                    CONTAINER_ENV_VALUE: auto_failover_host
                 })
         if field == get_field(POSTGRESQL, READONLYINSTANCE):
             if mode == MACHINE_MODE:
@@ -656,15 +657,25 @@ def create_postgresql(
             # wait primary node create finish
             if wait_primary == True:
                 if is_restore_mode(meta, spec, patch, status, logger) == False:
-                    waiting_postgresql_ready(tmpconns, logger, timeout=MINUTES * 5)
-                    create_log_table( logger, tmpconn, int( postgresql_image.split(':')[1].split('-')[0].split('.') [0]))
+                    waiting_postgresql_ready(tmpconns,
+                                             logger,
+                                             timeout=MINUTES * 5)
+                    create_log_table(
+                        logger, tmpconn,
+                        int(
+                            postgresql_image.split(':')[1].split('-')[0].split(
+                                '.')[0]))
                     create_users(meta, spec, patch, status, logger, tmpconns)
                 else:
-                    restore_postgresql(meta, spec, patch, status, logger, tmpconn)
+                    restore_postgresql(meta, spec, patch, status, logger,
+                                       tmpconn)
             else:
                 if disaster_mode == False:
-                    waiting_postgresql_ready(tmpconns, logger, timeout=MINUTES * 5)
-                    correct_user_password(meta, spec, patch, status, logger, tmpconn)
+                    waiting_postgresql_ready(tmpconns,
+                                             logger,
+                                             timeout=MINUTES * 5)
+                    correct_user_password(meta, spec, patch, status, logger,
+                                          tmpconn)
                     time.sleep(5)
 
     if field != get_field(AUTOFAILOVER):
@@ -1056,8 +1067,7 @@ def create_postgresql_disaster(
     logger.info("create postgresql disaster")
     conns = connections(spec, meta, patch, get_field(POSTGRESQL,
                                                      DISASTER), True,
-                        get_readonly_labels(meta), logger, 0,
-                        status, False, 1)
+                        get_readonly_labels(meta), logger, 0, status, False, 1)
     conns.free_conns()
 
 

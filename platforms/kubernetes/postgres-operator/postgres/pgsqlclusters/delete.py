@@ -271,16 +271,29 @@ def delete_postgresql_cluster(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
-    if pgsql_util.in_disaster_backup(meta, spec, patch, status, logger) == True:
-        if spec[SPEC_DISASTERBACKUP][SPEC_DISASTERBACKUP_STREAMING] == STREAMING_SYNC:
-            pgsql_util.update_number_sync_standbys(meta, spec, patch, status, logger, is_delete = True)
+    if pgsql_util.in_disaster_backup(meta, spec, patch, status,
+                                     logger) == True:
+        if spec[SPEC_DISASTERBACKUP][
+                SPEC_DISASTERBACKUP_STREAMING] == STREAMING_SYNC:
+            pgsql_util.update_number_sync_standbys(meta,
+                                                   spec,
+                                                   patch,
+                                                   status,
+                                                   logger,
+                                                   is_delete=True)
         conns = []
         readwrite_conns = pgsql_util.connections(
             spec, meta, patch,
-            pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE),
-            False, None, logger, None, status, False)
-        delete_postgresql(meta, spec, patch, status,
-                                         logger, True, readwrite_conns.get_conns()[0], switchover = False)
+            pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE), False, None,
+            logger, None, status, False)
+        delete_postgresql(meta,
+                          spec,
+                          patch,
+                          status,
+                          logger,
+                          True,
+                          readwrite_conns.get_conns()[0],
+                          switchover=False)
         readwrite_conns.free_conns()
 
     if spec[SPEC_DELETE_S3]:

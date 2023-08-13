@@ -248,7 +248,6 @@ DIR_AUTO_FAILOVER = "auto_failover"
 DIR_BACKUP = "backup"
 DIR_BARMAN = "barman"
 
-
 # net
 # main_vip
 # read_vip

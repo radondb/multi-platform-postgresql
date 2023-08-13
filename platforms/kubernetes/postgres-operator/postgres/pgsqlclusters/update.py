@@ -117,10 +117,12 @@ def update_streaming(
                 spec, meta, patch,
                 pgsql_util.get_field(POSTGRESQL, READONLYINSTANCE), False,
                 None, logger, None, status, False)
-            need_update_number_sync_standbys = set_postgresql_streaming(meta, spec, patch, status, logger, NEW, conns.get_conns())
+            need_update_number_sync_standbys = set_postgresql_streaming(
+                meta, spec, patch, status, logger, NEW, conns.get_conns())
             conns.free_conns()
 
     return need_update_number_sync_standbys
+
 
 def set_postgresql_streaming(
     meta: kopf.Meta,
@@ -136,10 +138,14 @@ def set_postgresql_streaming(
     need_update_number_sync_standbys = False
 
     def local_update_number_sync_standbys():
-        pgsql_util.waiting_cluster_final_status(
-            meta, spec, patch, status, logger)
-        pgsql_util.update_number_sync_standbys(meta, spec, patch,
-                                               status, logger, force_disaster = force_disaster)
+        pgsql_util.waiting_cluster_final_status(meta, spec, patch, status,
+                                                logger)
+        pgsql_util.update_number_sync_standbys(meta,
+                                               spec,
+                                               patch,
+                                               status,
+                                               logger,
+                                               force_disaster=force_disaster)
 
     if streaming == STREAMING_SYNC:
         quorum = 1
@@ -150,10 +156,7 @@ def set_postgresql_streaming(
         logger.info(
             "waiting for update_cluster success when treaming set to async")
         local_update_number_sync_standbys()
-    cmd = [
-        "pgtools", "-S",
-        "'node replication-quorum " + str(quorum) + "'"
-    ]
+    cmd = ["pgtools", "-S", "'node replication-quorum " + str(quorum) + "'"]
     logger.info(f"set streaming with cmd {cmd}")
     for conn in conns:
         i = 0
@@ -163,12 +166,10 @@ def set_postgresql_streaming(
                                              logger,
                                              interrupt=False)
             if output.find(SUCCESS) == -1:
-                logger.error(
-                    f"set streaming failed {cmd}  {output}")
+                logger.error(f"set streaming failed {cmd}  {output}")
                 i += 1
                 if i >= 60:
-                    logger.error(
-                        f"set streaming failed, skip")
+                    logger.error(f"set streaming failed, skip")
                     break
             else:
                 break
@@ -178,6 +179,7 @@ def set_postgresql_streaming(
         need_update_number_sync_standbys = False
 
     return need_update_number_sync_standbys
+
 
 def update_action(
     meta: kopf.Meta,
@@ -1624,7 +1626,11 @@ def retain_postgresql_data(
     pgsql_util.waiting_instance_ready(tmpconns, logger)
 
     # remove old data
-    cmd = ["rm", "-rf", DATA_DIR + "/" + DIR_ASSIST, DATA_DIR + "/" + DIR_AUTO_FAILOVER, DATA_DIR + "/" + DIR_BACKUP, DATA_DIR + "/" + DIR_BARMAN]
+    cmd = [
+        "rm", "-rf", DATA_DIR + "/" + DIR_ASSIST,
+        DATA_DIR + "/" + DIR_AUTO_FAILOVER, DATA_DIR + "/" + DIR_BACKUP,
+        DATA_DIR + "/" + DIR_BARMAN
+    ]
     pgsql_util.exec_command(conn, cmd, logger, interrupt=True)
 
     # delay start
@@ -1667,43 +1673,77 @@ def update_disasterBackup(
     NEW: Any,
 ) -> None:
     if FIELD[0:len(DIFF_FIELD_DISASTERBACKUP)] == DIFF_FIELD_DISASTERBACKUP:
+
         def enable_disaster():
             conns = []
             readwrite_conns = pgsql_util.connections(
                 spec, meta, patch,
-                pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE),
-                False, None, logger, None, status, False)
+                pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE), False,
+                None, logger, None, status, False)
             conns += readwrite_conns.get_conns()
             readonly_conns = pgsql_util.connections(
                 spec, meta, patch,
-                pgsql_util.get_field(POSTGRESQL, READONLYINSTANCE),
-                False, None, logger, None, status, False)
+                pgsql_util.get_field(POSTGRESQL, READONLYINSTANCE), False,
+                None, logger, None, status, False)
             conns += readonly_conns.get_conns()
             for conn in conns:
-                pgsql_delete.delete_postgresql(meta, spec, patch, status,
-                                             logger, True, conn, switchover = False)
+                pgsql_delete.delete_postgresql(meta,
+                                               spec,
+                                               patch,
+                                               status,
+                                               logger,
+                                               True,
+                                               conn,
+                                               switchover=False)
             readwrite_conns.free_conns()
             readonly_conns.free_conns()
-            pgsql_create.create_postgresql_disaster(
-                meta, spec, patch, status, logger)
-            if spec[SPEC_DISASTERBACKUP][SPEC_DISASTERBACKUP_STREAMING] == STREAMING_SYNC:
-                pgsql_util.update_number_sync_standbys(meta, spec, patch, status, logger)
+            pgsql_create.create_postgresql_disaster(meta, spec, patch, status,
+                                                    logger)
+            if spec[SPEC_DISASTERBACKUP][
+                    SPEC_DISASTERBACKUP_STREAMING] == STREAMING_SYNC:
+                pgsql_util.update_number_sync_standbys(meta, spec, patch,
+                                                       status, logger)
 
         def disable_disaster():
             readwrite_conns = pgsql_util.connections(
                 spec, meta, patch,
-                pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE),
-                False, None, logger, None, status, False)
-            if spec[SPEC_DISASTERBACKUP][SPEC_DISASTERBACKUP_STREAMING] == STREAMING_SYNC:
-                pgsql_util.update_number_sync_standbys(meta, spec, patch, status, logger, is_delete = True, force_disaster = True)
-            retain_postgresql_data(meta, spec, patch, status, logger, readwrite_conns.get_conns()[0])
-            pgsql_delete.delete_postgresql(meta, spec, patch, status, logger, False, readwrite_conns.get_conns()[0], switchover = False)
+                pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE), False,
+                None, logger, None, status, False)
+            if spec[SPEC_DISASTERBACKUP][
+                    SPEC_DISASTERBACKUP_STREAMING] == STREAMING_SYNC:
+                pgsql_util.update_number_sync_standbys(meta,
+                                                       spec,
+                                                       patch,
+                                                       status,
+                                                       logger,
+                                                       is_delete=True,
+                                                       force_disaster=True)
+            retain_postgresql_data(meta, spec, patch, status, logger,
+                                   readwrite_conns.get_conns()[0])
+            pgsql_delete.delete_postgresql(meta,
+                                           spec,
+                                           patch,
+                                           status,
+                                           logger,
+                                           False,
+                                           readwrite_conns.get_conns()[0],
+                                           switchover=False)
             readwrite_conns.free_conns()
-            pgsql_create.create_postgresql_readwrite(meta, spec, patch, status, logger, pgsql_util.get_readwrite_labels(meta), 0, False)
-            pgsql_create.create_postgresql_readonly(meta, spec, patch, status, logger, pgsql_util.get_readonly_labels(meta), 0)
-            pgsql_util.waiting_cluster_final_status(meta, spec, patch, status, logger, timeout=MINUTES * 5)
+            pgsql_create.create_postgresql_readwrite(
+                meta, spec, patch, status, logger,
+                pgsql_util.get_readwrite_labels(meta), 0, False)
+            pgsql_create.create_postgresql_readonly(
+                meta, spec, patch, status, logger,
+                pgsql_util.get_readonly_labels(meta), 0)
+            pgsql_util.waiting_cluster_final_status(meta,
+                                                    spec,
+                                                    patch,
+                                                    status,
+                                                    logger,
+                                                    timeout=MINUTES * 5)
 
-        if AC == DIFF_ADD and pgsql_util.in_disaster_backup(meta, spec, patch, status, logger) == True:
+        if AC == DIFF_ADD and pgsql_util.in_disaster_backup(
+                meta, spec, patch, status, logger) == True:
             enable_disaster()
         if AC == DIFF_REMOVE:
             disable_disaster()
@@ -1724,11 +1764,23 @@ def update_disasterBackup(
                         False, None, logger, None, status, False)
                     if FIELD[-1] == SPEC_DISASTERBACKUP_STREAMING:
                         # if disaster mode running, don't have node in autofailover.
-                        if len(pgsql_util.get_primary_host(meta, spec, patch, status, logger)) == 0:
-                            set_postgresql_streaming(meta, spec, patch, status, logger, NEW, [readwrite_conns.get_conns()[0]], update_sync = True, force_disaster = True)
+                        if len(
+                                pgsql_util.get_primary_host(
+                                    meta, spec, patch, status, logger)) == 0:
+                            set_postgresql_streaming(
+                                meta,
+                                spec,
+                                patch,
+                                status,
+                                logger,
+                                NEW, [readwrite_conns.get_conns()[0]],
+                                update_sync=True,
+                                force_disaster=True)
                         readwrite_conns.free_conns()
                     else:
-                        logger.error(f"don't support change {FIELD[-1]} when disaster backup is running")
+                        logger.error(
+                            f"don't support change {FIELD[-1]} when disaster backup is running"
+                        )
                         #pgsql_delete.delete_postgresql(meta, spec, patch, status,
                         #                             logger, True, readwrite_conns.get_conns()[0], switchover = False)
                         #readwrite_conns.free_conns()
@@ -1764,7 +1816,8 @@ def update_cluster(
                 update_disasterBackup(meta, spec, patch, status, logger, AC,
                                       FIELD, OLD, NEW)
 
-            if pgsql_util.in_disaster_backup(meta, spec, patch, status, logger) == True:
+            if pgsql_util.in_disaster_backup(meta, spec, patch, status,
+                                             logger) == True:
                 logger.warning(
                     "disaster mode only allow modify disasterBackup")
                 return

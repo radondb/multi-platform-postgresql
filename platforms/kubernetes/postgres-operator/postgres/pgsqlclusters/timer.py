@@ -25,7 +25,8 @@ def timer_cluster(
 ) -> None:
     correct_postgresql_status_lsn(meta, spec, patch, status, logger)
 
-    if pgsql_util.in_disaster_backup(meta, spec, patch, status, logger) == True:
+    if pgsql_util.in_disaster_backup(meta, spec, patch, status,
+                                     logger) == True:
         return
 
     correct_postgresql_role(meta, spec, patch, status, logger)
@@ -36,6 +37,7 @@ def timer_cluster(
 
     from .test import test
     test(meta, spec, patch, status, logger)
+
 
 def correct_postgresql_status_lsn(
     meta: kopf.Meta,
@@ -51,20 +53,30 @@ def correct_postgresql_status_lsn(
 
     local_split = '@'
     local_str = ''
-    if pgsql_util.in_disaster_backup(meta, spec, patch, status, logger) == True:
+    if pgsql_util.in_disaster_backup(meta, spec, patch, status,
+                                     logger) == True:
         local_str = '--local'
 
-    pg_disaster_status_cmd = ['pg_autoctl', 'show', 'state', local_str, '--pgdata', PG_DATABASE_DIR, '|', 'grep', AUTOCTL_DISASTER_NAME, '|', 'cut', '-d', "'|'", '-f', '3,4,6', '|', 'tr', "'\n'", f"'{local_split}'"]
-    pg_disaster_status = exec_command(conn, pg_disaster_status_cmd, logger, interrupt=False)
+    pg_disaster_status_cmd = [
+        'pg_autoctl', 'show', 'state', local_str, '--pgdata', PG_DATABASE_DIR,
+        '|', 'grep', AUTOCTL_DISASTER_NAME, '|', 'cut', '-d', "'|'", '-f',
+        '3,4,6', '|', 'tr', "'\n'", f"'{local_split}'"
+    ]
+    pg_disaster_status = exec_command(conn,
+                                      pg_disaster_status_cmd,
+                                      logger,
+                                      interrupt=False)
 
     pg_disaster_status_dict = {}
-    if len(pg_disaster_status) > 3 and pg_disaster_status.find('Failed to connect to') == -1 and pg_disaster_status != FAILED:
-        pg_disaster_status_old = copy.deepcopy(status[CLUSTER_STATUS_DISASTER_BACKUP_STATUS])
+    if len(pg_disaster_status) > 3 and pg_disaster_status.find(
+            'Failed to connect to') == -1 and pg_disaster_status != FAILED:
+        pg_disaster_status_old = copy.deepcopy(
+            status[CLUSTER_STATUS_DISASTER_BACKUP_STATUS])
         for s in pg_disaster_status.split(local_split):
             s = s.split('|')
             if len(s) < 3:
                 break
-            s = [ s.strip() for s in s ]
+            s = [s.strip() for s in s]
             pg_disaster_status_dict[s[0]] = {"LSN": s[1], "state": s[2]}
         if type(pg_disaster_status_old) == type({}):
             for old_key in pg_disaster_status_old.keys():
@@ -74,8 +86,10 @@ def correct_postgresql_status_lsn(
     else:
         pg_disaster_status_dict = ''
 
-    patch.status[CLUSTER_STATUS_DISASTER_BACKUP_STATUS] = pg_disaster_status_dict
+    patch.status[
+        CLUSTER_STATUS_DISASTER_BACKUP_STATUS] = pg_disaster_status_dict
     readwrite_conns.free_conns()
+
 
 def correct_user_password(
     meta: kopf.Meta,
