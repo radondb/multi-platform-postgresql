@@ -216,13 +216,13 @@ function restart_postgresql(){
 function stop_auto_failover(){
 	# auto_failover can't restart. so stop it. k8s or docker will start it
 	touch ${ASSIST}/stop
-	for i in `seq 1 100`
+	for i in `seq 1 50`
 	do
 		pg_autoctl stop --pgdata=$PGDATA
 		if [ $? == 0 ]; then
 			exit 0
 		fi
-		sleep 6
+		sleep 2
 	done
 
 	pg_autoctl stop --pgdata=$PGDATA
@@ -569,13 +569,13 @@ if [ "$ready_accept" = 1 ]; then
 fi
 
 if [ "$switchover" = 1 ]; then
-	#for i in `seq 1 100`
+	#for i in `seq 1 50`
 	#do
 	#	pg_autoctl perform switchover --pgdata $PGDATA --formation primary
 	#	if [ $? == 0 ]; then
 	#		exit 0
 	#	fi
-	#	sleep 6
+	#	sleep 2
 	#done
 	pg_autoctl perform switchover --pgdata $PGDATA --formation primary
 	check_error $? "switchover failed"
@@ -644,13 +644,13 @@ if [ "$do_pause" != 0 ]; then
 fi
 
 if [ "${drop_auto_failover}" = 1 ]; then
-	for i in `seq 1 100`
+	for i in `seq 1 50`
 	do
 		pg_autoctl drop node --pgdata=$PGDATA --force
 		if [ $? == 0 ]; then
 			exit 0
 		fi
-		sleep 6
+		sleep 2
 	done
 	pg_autoctl drop node --pgdata=$PGDATA --force
 	check_error $? "drop auto_failover failed"
@@ -658,13 +658,13 @@ fi
 
 if [ "${actual_drop_auto_failover}" = 1 ]; then
 	touch ${ASSIST}/actual_drop
-	for i in `seq 1 100`
+	for i in `seq 1 50`
 	do
 		pg_autoctl drop node --pgdata=$PGDATA --force
 		if [ $? == 0 ]; then
 			exit 0
 		fi
-		sleep 6
+		sleep 2
 	done
 	pg_autoctl drop node --pgdata=$PGDATA --force
 	check_error $? "drop auto_failover failed"

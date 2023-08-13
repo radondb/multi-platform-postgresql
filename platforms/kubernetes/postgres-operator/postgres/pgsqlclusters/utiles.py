@@ -8,6 +8,7 @@ import time
 import random
 import tempfile
 import base64
+import hashlib
 import re
 
 from kubernetes import client
@@ -171,7 +172,7 @@ def waiting_cluster_final_status(
 ) -> bool:
     is_health = True
 
-    if spec[ACTION] == ACTION_STOP:
+    if spec[ACTION] == ACTION_STOP or in_disaster_backup(meta, spec, patch, status, logger) == True:
         return is_health
 
     # waiting for restart
@@ -181,15 +182,15 @@ def waiting_cluster_final_status(
     for conn in auto_failover_conns.get_conns():
         not_correct_cmd = [
             "pgtools", "-w", "0", "-Q", "pg_auto_failover", "-q",
-            '''" select count(*) from pgautofailover.node where reportedstate <> 'primary' and reportedstate <> 'secondary' and reportedstate <> 'single'  "'''
+            f'''" select count(*) from pgautofailover.node where reportedstate <> 'primary' and reportedstate <> 'secondary' and reportedstate <> 'single' and nodename not like '{AUTOCTL_DISASTER_NAME}%' "'''
         ]
         primary_cmd = [
             "pgtools", "-w", "0", "-Q", "pg_auto_failover", "-q",
-            '''" select count(*) from pgautofailover.node where reportedstate = 'primary' or reportedstate = 'single'  "'''
+            f'''" select count(*) from pgautofailover.node where reportedstate = 'primary' or reportedstate = 'single' and nodename not like '{AUTOCTL_DISASTER_NAME}%' "'''
         ]
         nodes_cmd = [
             "pgtools", "-w", "0", "-Q", "pg_auto_failover", "-q",
-            '''" select count(*) from pgautofailover.node  "'''
+            f'''" select count(*) from pgautofailover.node where nodename not like '{AUTOCTL_DISASTER_NAME}%' "'''
         ]
 
         i = 0
@@ -315,6 +316,17 @@ def waiting_cluster_correct_status(
 
             break
     auto_failover_conns.free_conns()
+
+
+def in_disaster_backup(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> bool:
+    if spec.get(SPEC_DISASTERBACKUP, {}).get(SPEC_DISASTERBACKUP_ENABLE) == True:
+        return True
 
 
 def waiting_postgresql_ready(
@@ -831,9 +843,13 @@ def get_replicas(spec: kopf.Spec) -> (str, int, int, int):
 
 
 # Check parameters or get the number of field replicas
-def check_param(spec: kopf.Spec,
-                logger: logging.Logger,
-                create: bool = True) -> int:
+def check_param(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    create: bool = True) -> int:
 
     mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(
         spec)
@@ -853,6 +869,8 @@ def check_param(spec: kopf.Spec,
         raise kopf.PermanentError("readwrite replicas must set at lease one")
     if readonly_replicas < 0:
         raise kopf.PermanentError("readonly replicas must large than zero")
+    if create and in_disaster_backup(meta, spec, patch, status, logger) == True:
+        raise kopf.PermanentError("can't set disaster backup at create.")
 
     #maintenance_users = spec[POSTGRESQL][SPEC_POSTGRESQL_USERS].get(SPEC_POSTGRESQL_USERS_MAINTENANCE)
     #if maintenance_users == None or len(maintenance_users) == 0:
@@ -925,6 +943,26 @@ def update_pgpassfile(
     conns.free_conns()
     readonly_conns.free_conns()
 
+def get_autoctl_name(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    ) -> str:
+    autofailover_conns = connections(spec, meta, patch,
+                                      get_field(AUTOFAILOVER),
+                                      False, None, logger, None,
+                                      status, False)
+    auto_failover_conn = autofailover_conns.get_conns()[0]
+    if auto_failover_conn.get_machine() != None:
+        hash_text = auto_failover_conn.get_machine().get_host()
+    else:
+        hash_text = get_pod_address(meta["name"], AUTOFAILOVER, 0, meta["namespace"])
+
+    autofailover_conns.free_conns()
+
+    return AUTOCTL_DISASTER_NAME + '_' + hashlib.md5(hash_text.encode()).hexdigest()[0:8]
 
 def update_number_sync_standbys(
     meta: kopf.Meta,
@@ -932,42 +970,98 @@ def update_number_sync_standbys(
     patch: kopf.Patch,
     status: kopf.Status,
     logger: logging.Logger,
+    is_delete: bool = False,
+    force_disaster: bool = False,
 ) -> None:
-    mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(
-        spec)
+    conns = None
+    if in_disaster_backup(meta, spec, patch, status, logger) == True or force_disaster == True:
+        readwrite_conns = connections( spec, meta, patch,
+                get_field(POSTGRESQL, READWRITEINSTANCE),
+                False, None, logger, None, status, False)
+        conns = readwrite_conns
+    else:
+        autofailover_conns = connections(spec, meta, patch,
+                                     get_field(AUTOFAILOVER), False, None,
+                                     logger, None, status, False)
+        conns = autofailover_conns
 
-    pg_nodes = readwrite_replicas + readonly_replicas
-    number_sync = readwrite_replicas + readonly_replicas if spec[POSTGRESQL][
-        READONLYINSTANCE][STREAMING] == STREAMING_SYNC else readwrite_replicas
+    if in_disaster_backup(meta, spec, patch, status, logger) == True or force_disaster == True:
+        i = 0
+        max_times = 60
+        while True:
+            # run select on source cluster autofailover node.
+            number_sync_cmd = ["psql", "-t", "-c", f'''"select count(*) from pgautofailover.node where nodename <> '{get_autoctl_name(meta, spec,patch,status,logger)}' and replicationquorum = 't' "''', "-d", f'''postgres://autoctl_node:{spec[SPEC_DISASTERBACKUP][SPEC_DISASTERBACKUP_AUTOCTL_NODE]}@{spec[SPEC_DISASTERBACKUP][SPEC_DISASTERBACKUP_MONITOR_HOSTNAME]}:{AUTO_FAILOVER_PORT}/pg_auto_failover''']
+
+            number_sync = exec_command(conns.get_conns()[0],
+                                  number_sync_cmd,
+                                  logger,
+                                  interrupt=False)
+            try:
+                int(number_sync)
+            except:
+                number_sync = FAILED
+
+            if number_sync == FAILED:
+                logger.warning("can't select node info from source disaster cluster")
+                time.sleep(SECONDS)
+                i += 1
+                if i >= max_times:
+                    conns.free_conns()
+                    logger.warning("can't select node info from source disaster cluster, skip update_number_sync_standbys")
+                    return
+            else:
+                break
+
+        number_sync = int(number_sync)
+        if is_delete == False:
+            number_sync = number_sync + 1 if spec[SPEC_DISASTERBACKUP][SPEC_DISASTERBACKUP_STREAMING] == STREAMING_SYNC else number_sync
+        logger.info(f"there are {number_sync} sync nodes in the source cluster on disaster mode.")
+    else:
+        mode, autofailover_replicas, readwrite_replicas, readonly_replicas = get_replicas(
+            spec)
+
+        # local cluster sync number
+        number_sync = readwrite_replicas + readonly_replicas if spec[POSTGRESQL][
+            READONLYINSTANCE][STREAMING] == STREAMING_SYNC else readwrite_replicas
+
+        # other cluster disaster sync number
+        disaster_sync_nodes_cmd = [
+            "pgtools", "-w", "0", "-Q", "pg_auto_failover", "-q",
+            f'''" select count(*) from pgautofailover.node where nodename like '{AUTOCTL_DISASTER_NAME}%' and replicationquorum = 't' "'''
+        ]
+        disaster_sync_nodes = exec_command(conns.get_conns()[0],
+                              disaster_sync_nodes_cmd,
+                              logger,
+                              interrupt=False)
+        number_sync += int(disaster_sync_nodes)
+        logger.info(f"there are {number_sync} sync nodes in the cluster")
+
+    # except sync number
     expect_number = number_sync - 2
     if expect_number < 0:
         expect_number = 0
 
-    if pg_nodes >= 2:
-        autofailover_conns = connections(spec, meta, patch,
-                                         get_field(AUTOFAILOVER), False, None,
-                                         logger, None, status, False)
-        cmd = [
-            "pgtools", "-S", "' formation number-sync-standbys  " +
-            str(expect_number) + PRIMARY_FORMATION + "'"
-        ]
-        i = 0
-        while True:
-            logger.info(f"set number-sync-standbys with cmd {cmd}")
-            output = exec_command(autofailover_conns.get_conns()[0],
-                                  cmd,
-                                  logger,
-                                  interrupt=False)
-            if output.find(SUCCESS) == -1:
-                logger.error(
-                    f"set number-sync-standbys failed {cmd}  {output}")
-                i += 1
-                if i >= 60:
-                    logger.error(f"set number-sync-standbys failed, skip ")
-                    break
-            else:
+    cmd = [
+        "pgtools", "-S", "' formation number-sync-standbys  " +
+        str(expect_number) + PRIMARY_FORMATION + "'"
+    ]
+    i = 0
+    while True:
+        logger.info(f"set number-sync-standbys with cmd {cmd}")
+        output = exec_command(conns.get_conns()[0],
+                              cmd,
+                              logger,
+                              interrupt=False)
+        if output.find(SUCCESS) == -1:
+            logger.error(
+                f"set number-sync-standbys failed {cmd}  {output}")
+            i += 1
+            if i >= 60:
+                logger.error(f"set number-sync-standbys failed, skip ")
                 break
-        autofailover_conns.free_conns()
+        else:
+            break
+    conns.free_conns()
 
 
 def connect_pods(
@@ -1206,6 +1300,9 @@ def connections(
     wait_primary: bool,
     create_end: int = None,
 ) -> InstanceConnections:
+    origin_field = field
+    if field == get_field(POSTGRESQL, DISASTER):
+        field = get_field(POSTGRESQL, READWRITEINSTANCE)
 
     conns: InstanceConnections = InstanceConnections()
     if len(field.split(FIELD_DELIMITER)) == 1:
@@ -1223,7 +1320,7 @@ def connections(
         #logger.info("connect node in k8s mode")
         conns = connect_pods(meta, spec, field)
         if create:
-            pgsql_create.create_postgresql(K8S_MODE, spec, meta, field, labels,
+            pgsql_create.create_postgresql(K8S_MODE, spec, meta, origin_field, labels,
                                            logger, conns, patch, create_begin,
                                            status, wait_primary, create_end)
     else:
@@ -1232,7 +1329,7 @@ def connections(
             #logger.info("connect node in machine mode, host is " + conn.get_machine().get_host())
             conns.add(conn)
         if create:
-            pgsql_create.create_postgresql(MACHINE_MODE, spec, meta, field,
+            pgsql_create.create_postgresql(MACHINE_MODE, spec, meta, origin_field,
                                            labels, logger, conns, patch,
                                            create_begin, status, wait_primary,
                                            create_end)

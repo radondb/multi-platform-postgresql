@@ -20,6 +20,8 @@ spec:
         ports:
           - name: exporter # cant' change the name
             port: 9187 #targetPort: 9187
+          - name: autofailover-port
+            port: 55555 # can't change the port
     - selector: primary # autofailover/primary/standby/readonly/standby-readonly
       metadata:
         name: readwrite
@@ -161,6 +163,12 @@ spec:
                 storage: 1Gi
 #  rebuild:
 #    nodeName: pg-readwriteinstance-1 /##/ test          # statefulset names, characters after /##/ will be ignored
+#  disasterBackup:
+#    enable: false # in disaster mode. don't modify this yaml.
+#    streaming: 'async' # if set sync to true, the source cluster readwrite number must large than 2(eg: 3 nodes).
+#    autoctl_node: 'x'
+#    pgautofailover_replicator: 'x'
+#    monitor_hostname: 'x'
 #  switchover:
 #    masterNode: pg-readwriteinstance-1 /##/ test         # statefulset names, characters after /##/ will be ignored
 #  S3:

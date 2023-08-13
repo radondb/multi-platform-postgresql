@@ -1,5 +1,6 @@
 import kopf
 import logging
+import time
 
 from kubernetes import client
 
@@ -20,12 +21,13 @@ def delete_postgresql(
     logger: logging.Logger,
     delete_disk: bool,
     conn: InstanceConnection,
+    switchover: bool = True,
 ) -> None:
     grace_period_seconds = 70
 
     if delete_disk == True:
         logger.info("delete postgresql instance from autofailover")
-        if pgsql_util.get_primary_host(
+        if switchover == True and pgsql_util.get_primary_host(
                 meta, spec, patch, status,
                 logger) == pgsql_util.get_connhost(conn):
             pgsql_util.autofailover_switchover(
@@ -72,7 +74,7 @@ def delete_postgresql(
         try:
             core_v1_api = client.CoreV1Api()
             # delete_pod override grace_period_seconds param
-            delete_pod_grace_period_seconds = 0
+            delete_pod_grace_period_seconds = 10
             logger.info("delete postgresql pod from k8s: " +
                         conn.get_k8s().get_podname())
             core_v1_api.delete_namespaced_pod(
@@ -189,12 +191,18 @@ def delete_cluster(
 
 def delete_pvc(logger: logging.Logger, name: str, namespace: str) -> None:
     core_v1_api = client.CoreV1Api()
-    grace_period_seconds = 0
+    grace_period_seconds = 10
 
-    logger.info(f"delete pvc {name}")
     try:
-        core_v1_api.delete_namespaced_persistent_volume_claim(
+        # delete pvc
+        logger.info(f"delete pvc {name}")
+        rep = core_v1_api.delete_namespaced_persistent_volume_claim(
             name, namespace, grace_period_seconds=grace_period_seconds)
+        # wait k8s free pv
+        time.sleep(5)
+        # delete pv. if delete pv k8s can't release the pv data.
+        #logger.info(f"delete pv {rep.spec.volume_name}")
+        #rep = core_v1_api.delete_persistent_volume(rep.spec.volume_name, grace_period_seconds=grace_period_seconds)
     except Exception as e:
         logger.error(
             "Exception when calling CoreV1Api->delete_namespaced_persistent_volume_claim: %s\n"
@@ -209,7 +217,6 @@ def delete_storage(
     logger: logging.Logger,
     conn: InstanceConnection,
 ) -> None:
-
     if conn.get_k8s() != None:
         delete_pvc(logger,
                    pgsql_util.get_pvc_name(conn.get_k8s().get_podname()),
@@ -264,6 +271,18 @@ def delete_postgresql_cluster(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
+    if pgsql_util.in_disaster_backup(meta, spec, patch, status, logger) == True:
+        if spec[SPEC_DISASTERBACKUP][SPEC_DISASTERBACKUP_STREAMING] == STREAMING_SYNC:
+            pgsql_util.update_number_sync_standbys(meta, spec, patch, status, logger, is_delete = True)
+        conns = []
+        readwrite_conns = pgsql_util.connections(
+            spec, meta, patch,
+            pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE),
+            False, None, logger, None, status, False)
+        delete_postgresql(meta, spec, patch, status,
+                                         logger, True, readwrite_conns.get_conns()[0], switchover = False)
+        readwrite_conns.free_conns()
+
     if spec[SPEC_DELETE_S3]:
         pgsql_backup.delete_s3_backup_by_main_cr(
             meta,

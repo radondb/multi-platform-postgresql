@@ -173,6 +173,31 @@ spec:
                 properties:
                   nodeName:
                     type: string
+              disasterBackup:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  enable:
+                    type: boolean
+                    enum:
+                    - true
+                    - false
+                    default: false
+                  sync:
+                    type: string
+                    enum:
+                    - 'sync'
+                    - 'async'
+                    default: 'async'
+                  autoctl_node:
+                    type: string
+                    default: 'x'
+                  pgautofailover_replicator:
+                    type: string
+                    default: 'x'
+                  monitor_hostname:
+                    type: string
+                    default: 'x'
               switchover:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true

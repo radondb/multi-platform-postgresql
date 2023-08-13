@@ -9,6 +9,7 @@ from pgsqlcommons.constants import *
 from pgsqlcommons.typed import LabelType, InstanceConnection, InstanceConnections, TypedDict, InstanceConnectionMachine, InstanceConnectionK8S, Tuple, Any, List
 import pgsqlbackups.backup as pgsql_backup
 import pgsqlbackups.utils as backup_util
+import pgsqlbackups.restore as backup_restore
 import pgsqlclusters.create as pgsql_create
 import pgsqlclusters.delete as pgsql_delete
 import pgsqlclusters.utiles as pgsql_util
@@ -112,49 +113,71 @@ def update_streaming(
         if AC != DIFF_CHANGE:
             logger.error(DIFF_FIELD_STREAMING + " only support " + DIFF_CHANGE)
         else:
-            #pg_autoctl set node replication-quorum 0 --pgdata /var/lib/postgresql/data/pg_data/
-            if NEW == STREAMING_SYNC:
-                quorum = 1
-                need_update_number_sync_standbys = True
-            elif NEW == STREAMING_ASYNC:
-                quorum = 0
-                # must set number before set async
-                logger.info(
-                    "waiting for update_cluster success on readonly treaming")
-                pgsql_util.waiting_cluster_final_status(
-                    meta, spec, patch, status, logger)
-                pgsql_util.update_number_sync_standbys(meta, spec, patch,
-                                                       status, logger)
-            cmd = [
-                "pgtools", "-S",
-                "'node replication-quorum " + str(quorum) + "'"
-            ]
-            logger.info(f"set readonly streaming with cmd {cmd}")
             conns = pgsql_util.connections(
                 spec, meta, patch,
                 pgsql_util.get_field(POSTGRESQL, READONLYINSTANCE), False,
                 None, logger, None, status, False)
-            for conn in conns.get_conns():
-                i = 0
-                while True:
-                    output = pgsql_util.exec_command(conn,
-                                                     cmd,
-                                                     logger,
-                                                     interrupt=False)
-                    if output.find(SUCCESS) == -1:
-                        logger.error(
-                            f"set readonly streaming failed {cmd}  {output}")
-                        i += 1
-                        if i >= 60:
-                            logger.error(
-                                f"set readonly streaming failed, skip")
-                            break
-                    else:
-                        break
+            need_update_number_sync_standbys = set_postgresql_streaming(meta, spec, patch, status, logger, NEW, conns.get_conns())
             conns.free_conns()
 
     return need_update_number_sync_standbys
 
+def set_postgresql_streaming(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    streaming: str,
+    conns: [InstanceConnection],
+    update_sync: bool = False,
+    force_disaster: bool = False,
+) -> bool:
+    need_update_number_sync_standbys = False
+
+    def local_update_number_sync_standbys():
+        pgsql_util.waiting_cluster_final_status(
+            meta, spec, patch, status, logger)
+        pgsql_util.update_number_sync_standbys(meta, spec, patch,
+                                               status, logger, force_disaster = force_disaster)
+
+    if streaming == STREAMING_SYNC:
+        quorum = 1
+        need_update_number_sync_standbys = True
+    elif streaming == STREAMING_ASYNC:
+        quorum = 0
+        # must set number before set async
+        logger.info(
+            "waiting for update_cluster success when treaming set to async")
+        local_update_number_sync_standbys()
+    cmd = [
+        "pgtools", "-S",
+        "'node replication-quorum " + str(quorum) + "'"
+    ]
+    logger.info(f"set streaming with cmd {cmd}")
+    for conn in conns:
+        i = 0
+        while True:
+            output = pgsql_util.exec_command(conn,
+                                             cmd,
+                                             logger,
+                                             interrupt=False)
+            if output.find(SUCCESS) == -1:
+                logger.error(
+                    f"set streaming failed {cmd}  {output}")
+                i += 1
+                if i >= 60:
+                    logger.error(
+                        f"set streaming failed, skip")
+                    break
+            else:
+                break
+
+    if update_sync == True and need_update_number_sync_standbys == True:
+        local_update_number_sync_standbys()
+        need_update_number_sync_standbys = False
+
+    return need_update_number_sync_standbys
 
 def update_action(
     meta: kopf.Meta,
@@ -1579,6 +1602,140 @@ def change_user_password(conn: InstanceConnection, name: str, password: str,
         logger.error(f"can't alter user {cmd}, {output}")
 
 
+def retain_postgresql_data(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conn: InstanceConnection,
+) -> None:
+    # don't free the tmpconns
+    tmpconns: InstanceConnections = InstanceConnections()
+    tmpconns.add(conn)
+
+    # wait postgresql ready
+    pgsql_util.waiting_postgresql_ready(tmpconns, logger, timeout=MINUTES * 5)
+
+    # drop from autofailover and pause start postgresql
+    cmd = ["pgtools", "-d", "-p", POSTGRESQL_PAUSE]
+    pgsql_util.exec_command(conn, cmd, logger, interrupt=True)
+
+    pgsql_util.waiting_instance_ready(tmpconns, logger)
+
+    # remove old data
+    cmd = ["rm", "-rf", DATA_DIR + "/" + DIR_ASSIST, DATA_DIR + "/" + DIR_AUTO_FAILOVER, DATA_DIR + "/" + DIR_BACKUP, DATA_DIR + "/" + DIR_BARMAN]
+    pgsql_util.exec_command(conn, cmd, logger, interrupt=True)
+
+    # delay start
+    cmd = ["touch", ASSIST_DIR + "/stop"]
+    #cmd = ["pgtools", "-R"]
+    pgsql_util.exec_command(conn, cmd, logger, interrupt=True)
+
+    # remove recovery file
+    #cmd =["rm", "-rf", os.path.join(PG_DATABASE_DIR, RECOVERY_CONF_FILE)]
+    cmd = [
+        "truncate", "--size", "0",
+        os.path.join(PG_DATABASE_DIR, RECOVERY_CONF_FILE)
+    ]
+    pgsql_util.exec_command(conn, cmd, logger, interrupt=True, user='postgres')
+
+    #cmd =["rm", "-rf", os.path.join(PG_DATABASE_DIR, RECOVERY_SET_FILE)]
+    cmd = [
+        "truncate", "--size", "0",
+        os.path.join(PG_DATABASE_DIR, RECOVERY_SET_FILE)
+    ]
+    pgsql_util.exec_command(conn, cmd, logger, interrupt=True, user='postgres')
+
+    cmd = ["rm", "-rf", os.path.join(PG_DATABASE_DIR, STANDBY_SIGNAL)]
+    pgsql_util.exec_command(conn, cmd, logger, interrupt=True)
+
+    # resume postgresql
+    cmd = ["pgtools", "-p", POSTGRESQL_RESUME]
+    pgsql_util.exec_command(conn, cmd, logger, interrupt=True)
+
+
+def update_disasterBackup(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    AC: str,
+    FIELD: Tuple,
+    OLD: Any,
+    NEW: Any,
+) -> None:
+    if FIELD[0:len(DIFF_FIELD_DISASTERBACKUP)] == DIFF_FIELD_DISASTERBACKUP:
+        def enable_disaster():
+            conns = []
+            readwrite_conns = pgsql_util.connections(
+                spec, meta, patch,
+                pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE),
+                False, None, logger, None, status, False)
+            conns += readwrite_conns.get_conns()
+            readonly_conns = pgsql_util.connections(
+                spec, meta, patch,
+                pgsql_util.get_field(POSTGRESQL, READONLYINSTANCE),
+                False, None, logger, None, status, False)
+            conns += readonly_conns.get_conns()
+            for conn in conns:
+                pgsql_delete.delete_postgresql(meta, spec, patch, status,
+                                             logger, True, conn, switchover = False)
+            readwrite_conns.free_conns()
+            readonly_conns.free_conns()
+            pgsql_create.create_postgresql_disaster(
+                meta, spec, patch, status, logger)
+            if spec[SPEC_DISASTERBACKUP][SPEC_DISASTERBACKUP_STREAMING] == STREAMING_SYNC:
+                pgsql_util.update_number_sync_standbys(meta, spec, patch, status, logger)
+
+        def disable_disaster():
+            readwrite_conns = pgsql_util.connections(
+                spec, meta, patch,
+                pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE),
+                False, None, logger, None, status, False)
+            if spec[SPEC_DISASTERBACKUP][SPEC_DISASTERBACKUP_STREAMING] == STREAMING_SYNC:
+                pgsql_util.update_number_sync_standbys(meta, spec, patch, status, logger, is_delete = True, force_disaster = True)
+            retain_postgresql_data(meta, spec, patch, status, logger, readwrite_conns.get_conns()[0])
+            pgsql_delete.delete_postgresql(meta, spec, patch, status, logger, False, readwrite_conns.get_conns()[0], switchover = False)
+            readwrite_conns.free_conns()
+            pgsql_create.create_postgresql_readwrite(meta, spec, patch, status, logger, pgsql_util.get_readwrite_labels(meta), 0, False)
+            pgsql_create.create_postgresql_readonly(meta, spec, patch, status, logger, pgsql_util.get_readonly_labels(meta), 0)
+            pgsql_util.waiting_cluster_final_status(meta, spec, patch, status, logger, timeout=MINUTES * 5)
+
+        if AC == DIFF_ADD and pgsql_util.in_disaster_backup(meta, spec, patch, status, logger) == True:
+            enable_disaster()
+        if AC == DIFF_REMOVE:
+            disable_disaster()
+        if AC == DIFF_CHANGE:
+            if FIELD[-1] == SPEC_DISASTERBACKUP_ENABLE:
+                if NEW == True:  # enable: false to true
+                    enable_disaster()
+                if NEW == False:  # enable: false to true
+                    disable_disaster()
+            else:
+                if spec[SPEC_DISASTERBACKUP][
+                        SPEC_DISASTERBACKUP_ENABLE] == False:  # other field eg sync but enable is true.
+                    return
+                else:
+                    readwrite_conns = pgsql_util.connections(
+                        spec, meta, patch,
+                        pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE),
+                        False, None, logger, None, status, False)
+                    if FIELD[-1] == SPEC_DISASTERBACKUP_STREAMING:
+                        # if disaster mode running, don't have node in autofailover.
+                        if len(pgsql_util.get_primary_host(meta, spec, patch, status, logger)) == 0:
+                            set_postgresql_streaming(meta, spec, patch, status, logger, NEW, [readwrite_conns.get_conns()[0]], update_sync = True, force_disaster = True)
+                        readwrite_conns.free_conns()
+                    else:
+                        logger.error(f"don't support change {FIELD[-1]} when disaster backup is running")
+                        #pgsql_delete.delete_postgresql(meta, spec, patch, status,
+                        #                             logger, True, readwrite_conns.get_conns()[0], switchover = False)
+                        #readwrite_conns.free_conns()
+                        #pgsql_create.create_postgresql_disaster(
+                        #        meta, spec, patch, status, logger)
+
+
 # kubectl patch pg lzzhang --patch '{"spec": {"action": "stop"}}' --type=merge
 def update_cluster(
     meta: kopf.Meta,
@@ -1589,123 +1746,145 @@ def update_cluster(
     diffs: kopf.Diff,
 ) -> None:
     try:
+        logger.info("check update_cluster params")
+        pgsql_util.check_param(meta, spec, patch, status, logger, create=False)
+
         pgsql_util.set_cluster_status(meta, CLUSTER_STATE,
                                       CLUSTER_STATUS_UPDATE, logger)
-        logger.info("check update_cluster params")
-        pgsql_util.check_param(spec, logger, create=False)
-        need_roll_update = False
-        need_update_number_sync_standbys = False
-        update_toleration = spec.get(UPDATE_TOLERATION, False)
-        except_nodes = get_except_nodes(meta, spec, patch, status, logger,
-                                        diffs)
 
-        for diff in diffs:
-            AC = diff[0]
-            FIELD = diff[1]
-            OLD = diff[2]
-            NEW = diff[3]
-
-            logger.info(diff)
-
-            update_action(meta, spec, patch, status, logger, AC, FIELD, OLD,
-                          NEW)
-            update_service(meta, spec, patch, status, logger, AC, FIELD, OLD,
-                           NEW)
-            trigger_rebuild_postgresql(meta, spec, patch, status, logger, AC,
-                                       FIELD, OLD, NEW)
-
-        if update_toleration == False and pgsql_util.waiting_cluster_final_status(
-                meta, spec, patch, status, logger,
-                except_nodes=except_nodes) == False:
-            logger.error(f"cluster status is not health.")
-            raise kopf.PermanentError(f"cluster status is not health.")
-        else:
+        def update_common():
             for diff in diffs:
                 AC = diff[0]
                 FIELD = diff[1]
                 OLD = diff[2]
                 NEW = diff[3]
 
-                return_update_number_sync_standbys = update_replicas(
+                logger.info(diff)
+
+                update_disasterBackup(meta, spec, patch, status, logger, AC,
+                                      FIELD, OLD, NEW)
+
+            if pgsql_util.in_disaster_backup(meta, spec, patch, status, logger) == True:
+                logger.warning(
+                    "disaster mode only allow modify disasterBackup")
+                return
+
+            need_roll_update = False
+            need_update_number_sync_standbys = False
+            update_toleration = spec.get(UPDATE_TOLERATION, False)
+            except_nodes = get_except_nodes(meta, spec, patch, status, logger,
+                                            diffs)
+
+            for diff in diffs:
+                AC = diff[0]
+                FIELD = diff[1]
+                OLD = diff[2]
+                NEW = diff[3]
+
+                update_action(meta, spec, patch, status, logger, AC, FIELD,
+                              OLD, NEW)
+                update_service(meta, spec, patch, status, logger, AC, FIELD,
+                               OLD, NEW)
+                trigger_rebuild_postgresql(meta, spec, patch, status, logger,
+                                           AC, FIELD, OLD, NEW)
+
+            if update_toleration == False and pgsql_util.waiting_cluster_final_status(
+                    meta, spec, patch, status, logger,
+                    except_nodes=except_nodes) == False:
+                logger.error(f"cluster status is not health.")
+                raise kopf.PermanentError(f"cluster status is not health.")
+            else:
+                for diff in diffs:
+                    AC = diff[0]
+                    FIELD = diff[1]
+                    OLD = diff[2]
+                    NEW = diff[3]
+
+                    return_update_number_sync_standbys = update_replicas(
+                        meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
+                    if need_update_number_sync_standbys == False and return_update_number_sync_standbys == True:
+                        need_update_number_sync_standbys = True
+
+            for diff in diffs:
+                AC = diff[0]
+                FIELD = diff[1]
+                OLD = diff[2]
+                NEW = diff[3]
+
+                if update_toleration == False and pgsql_util.waiting_cluster_final_status(
+                        meta, spec, patch, status, logger) == False:
+                    logger.error(f"cluster status is not health.")
+                    raise kopf.PermanentError(f"cluster status is not health.")
+
+                update_podspec_volume(meta, spec, patch, status, logger, AC,
+                                      FIELD, OLD, NEW)
+                if FIELD[0:len(DIFF_FIELD_SPEC_ANTIAFFINITY
+                               )] == DIFF_FIELD_SPEC_ANTIAFFINITY:
+                    need_roll_update = True
+
+            if need_roll_update:
+                update_antiaffinity(
+                    meta,
+                    spec,
+                    patch,
+                    status,
+                    logger, [
+                        pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE),
+                        pgsql_util.get_field(POSTGRESQL, READONLYINSTANCE)
+                    ],
+                    True,
+                    timeout=MINUTES * 5)
+
+            for diff in diffs:
+                AC = diff[0]
+                FIELD = diff[1]
+                OLD = diff[2]
+                NEW = diff[3]
+
+                if update_toleration == False and pgsql_util.waiting_cluster_final_status(
+                        meta, spec, patch, status, logger) == False:
+                    logger.error(f"cluster status is not health.")
+                    raise kopf.PermanentError(f"cluster status is not health.")
+
+                update_hbas(meta, spec, patch, status, logger, AC, FIELD, OLD,
+                            NEW)
+                update_users(meta, spec, patch, status, logger, AC, FIELD, OLD,
+                             NEW)
+                return_update_number_sync_standbys = update_streaming(
                     meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
                 if need_update_number_sync_standbys == False and return_update_number_sync_standbys == True:
                     need_update_number_sync_standbys = True
+                update_configs(meta, spec, patch, status, logger, AC, FIELD,
+                               OLD, NEW)
 
-        for diff in diffs:
-            AC = diff[0]
-            FIELD = diff[1]
-            OLD = diff[2]
-            NEW = diff[3]
+                trigger_backup_to_s3_manual(meta, spec, patch, status, logger,
+                                            AC, FIELD, OLD, NEW)
+                trigger_switchover_postgresql(meta, spec, patch, status,
+                                              logger, AC, FIELD, OLD, NEW)
 
-            if update_toleration == False and pgsql_util.waiting_cluster_final_status(
-                    meta, spec, patch, status, logger) == False:
-                logger.error(f"cluster status is not health.")
-                raise kopf.PermanentError(f"cluster status is not health.")
+            # waiting
+            if spec[ACTION] == ACTION_START:
+                logger.info("waiting for update_cluster success")
+                pgsql_util.waiting_cluster_final_status(
+                    meta, spec, patch, status, logger)
 
-            update_podspec_volume(meta, spec, patch, status, logger, AC, FIELD,
-                                  OLD, NEW)
-            if FIELD[0:len(DIFF_FIELD_SPEC_ANTIAFFINITY
-                           )] == DIFF_FIELD_SPEC_ANTIAFFINITY:
-                need_roll_update = True
+                # after waiting_cluster_final_status. update number_sync
+                if need_update_number_sync_standbys:
+                    pgsql_util.waiting_cluster_final_status(meta,
+                                                            spec,
+                                                            patch,
+                                                            status,
+                                                            logger,
+                                                            timeout=MINUTES *
+                                                            5)
+                    pgsql_util.update_number_sync_standbys(
+                        meta, spec, patch, status, logger)
 
-        if need_roll_update:
-            update_antiaffinity(
-                meta,
-                spec,
-                patch,
-                status,
-                logger, [
-                    pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE),
-                    pgsql_util.get_field(POSTGRESQL, READONLYINSTANCE)
-                ],
-                True,
-                timeout=MINUTES * 5)
+            # wait a few seconds to prevent the pod not running
+            time.sleep(5)
 
-        for diff in diffs:
-            AC = diff[0]
-            FIELD = diff[1]
-            OLD = diff[2]
-            NEW = diff[3]
+        update_common()
 
-            if update_toleration == False and pgsql_util.waiting_cluster_final_status(
-                    meta, spec, patch, status, logger) == False:
-                logger.error(f"cluster status is not health.")
-                raise kopf.PermanentError(f"cluster status is not health.")
-
-            update_hbas(meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
-            update_users(meta, spec, patch, status, logger, AC, FIELD, OLD,
-                         NEW)
-            return_update_number_sync_standbys = update_streaming(
-                meta, spec, patch, status, logger, AC, FIELD, OLD, NEW)
-            if need_update_number_sync_standbys == False and return_update_number_sync_standbys == True:
-                need_update_number_sync_standbys = True
-            update_configs(meta, spec, patch, status, logger, AC, FIELD, OLD,
-                           NEW)
-
-            trigger_backup_to_s3_manual(meta, spec, patch, status, logger, AC,
-                                        FIELD, OLD, NEW)
-            trigger_switchover_postgresql(meta, spec, patch, status, logger,
-                                          AC, FIELD, OLD, NEW)
-
-        # waiting
-        if spec[ACTION] == ACTION_START:
-            logger.info("waiting for update_cluster success")
-            pgsql_util.waiting_cluster_final_status(meta, spec, patch, status,
-                                                    logger)
-
-            # after waiting_cluster_final_status. update number_sync
-            if need_update_number_sync_standbys:
-                pgsql_util.waiting_cluster_final_status(meta,
-                                                        spec,
-                                                        patch,
-                                                        status,
-                                                        logger,
-                                                        timeout=MINUTES * 5)
-                pgsql_util.update_number_sync_standbys(meta, spec, patch,
-                                                       status, logger)
-
-        # wait a few seconds to prevent the pod not running
-        time.sleep(5)
         if spec[ACTION] == ACTION_STOP:
             cluster_status = CLUSTER_STATUS_STOP
         else:

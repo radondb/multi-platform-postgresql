@@ -177,6 +177,9 @@ main() {
 			export run_port
 
 			cmd="pg_autoctl create postgres --pgctl $PGHOME/bin/pg_ctl --pgdata $PGDATA --pgport $run_port --hostname $EXTERNAL_HOSTNAME --username $POSTGRES_USER --dbname $POSTGRES_DB --formation $formation --monitor postgres://autoctl_node:$AUTOCTL_NODE_PASSWORD@$MONITOR_HOSTNAME:$monitor_port/pg_auto_failover?sslmode=prefer  --skip-pg-hba --no-ssl --run --maximum-backup-rate 1024M"
+			if [ -n "$AUTOCTL_NAME" ]; then
+				cmd="$cmd --name $AUTOCTL_NAME "
+			fi
 			if [ "$PG_MODE" = readonly ]; then
 				cmd="$cmd --candidate-priority 0"
 				if [ ! -s "$PGDATA/PG_VERSION" ]; then
@@ -215,17 +218,17 @@ main() {
 			check_error 1 "this node is droped"
 		fi
 
-		if [ -f "$ASSIST/stop" ]; then
-			echo "this node is stop, sleep 30 seconds for protect k8s/docker start it"
-			sleep 30
-			/bin/rm -rf "$ASSIST/stop"
-		fi
-
 		while [ -e "${ASSIST}/pause" ]
 		do
 			echo "start is pause, waiting"
 			sleep 5
 		done
+
+		if [ -f "$ASSIST/stop" ]; then
+			echo "this node is stop, sleep 30 seconds for protect k8s/docker start it"
+			sleep 30
+			/bin/rm -rf "$ASSIST/stop"
+		fi
 
 		if [ -s "$PGDATA/postgresql-auto-failover-standby.conf" ]; then
 			echo "delay start(10 seconds) on slave node"
@@ -234,6 +237,7 @@ main() {
 
 		# delete old pid
 		rm -rf /tmp/pg_autoctl
+		rm -rf "$XDG_CONFIG_HOME/pg_autoctl/var/lib/postgresql/data/pg_data/pg_autoctl.init"
 
 		init_over
 		exec $cmd

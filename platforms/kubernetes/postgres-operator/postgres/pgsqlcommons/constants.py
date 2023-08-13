@@ -7,6 +7,8 @@ RADONDB_POSTGRES = "radondb-postgres"
 POSTGRES_OPERATOR = "postgres-operator"
 AUTOFAILOVER = "autofailover"
 POSTGRESQL = "postgresql"
+DISASTER = "disaster"
+AUTOCTL_DISASTER_NAME = "pgdisaster"
 READWRITEINSTANCE = "readwriteinstance"
 READONLYINSTANCE = "readonlyinstance"
 MACHINES = "machines"
@@ -88,6 +90,12 @@ SPEC_REBUILD = "rebuild"
 SPCE_REBUILD_NODENAMES = "nodeName"
 SPEC_SWITCHOVER = "switchover"
 SPEC_SWITCHOVER_MASTERNODE = "masterNode"
+SPEC_DISASTERBACKUP = "disasterBackup"
+SPEC_DISASTERBACKUP_ENABLE = "enable"
+SPEC_DISASTERBACKUP_STREAMING = "streaming"
+SPEC_DISASTERBACKUP_AUTOCTL_NODE = "autoctl_node"
+SPEC_DISASTERBACKUP_PGAUTOFAILOVER_REPLICATOR = "pgautofailover_replicator"
+SPEC_DISASTERBACKUP_MONITOR_HOSTNAME = "monitor_hostname"
 
 # api
 API_GROUP = "postgres.radondb.io"
@@ -116,6 +124,7 @@ CLUSTER_STATUS_STOP = "stop"
 CLUSTER_STATUS_BACKUP = "backups_list"
 CLUSTER_STATUS_ARCHIVE = "backups_wal_archive"
 CLUSTER_STATUS_CRON_NEXT_RUN = "cron_next_run_time"
+CLUSTER_STATUS_DISASTER_BACKUP_STATUS = 'disaster_backup_status'
 
 # base label
 BASE_LABEL_PART_OF = "part-of"
@@ -234,6 +243,12 @@ PG_LOG_FILENAME = "start.log"
 PG_CONFIG_PREFIX = "PG_CONFIG_"
 PG_HBA_PREFIX = "PG_HBA_"
 
+DIR_ASSIST = "assist"
+DIR_AUTO_FAILOVER = "auto_failover"
+DIR_BACKUP = "backup"
+DIR_BARMAN = "barman"
+
+
 # net
 # main_vip
 # read_vip
@@ -351,6 +366,7 @@ DIFF_ADD = "add"
 DIFF_CHANGE = "change"
 DIFF_REMOVE = "remove"
 PGPASSFILE_PATH = ASSIST_DIR + "/pgpassfile"
+DIFF_FIELD_DISASTERBACKUP = (SPEC, SPEC_DISASTERBACKUP)
 DIFF_FIELD_ACTION = (SPEC, ACTION)
 DIFF_FIELD_SERVICE = (SPEC, SERVICES)
 DIFF_FIELD_AUTOFAILOVER_HBAS = (SPEC, AUTOFAILOVER, HBAS)

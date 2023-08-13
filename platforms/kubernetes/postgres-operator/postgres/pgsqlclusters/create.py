@@ -4,6 +4,7 @@ import os
 import copy
 import traceback
 import time
+import hashlib
 
 from kubernetes import client
 
@@ -11,6 +12,10 @@ from pgsqlbackups.restore import restore_postgresql, is_restore_mode
 from pgsqlcommons.config import operator_config
 from pgsqlcommons.typed import LabelType, InstanceConnection, InstanceConnections, TypedDict, InstanceConnectionMachine, InstanceConnectionK8S, Tuple, Any, List
 from pgsqlcommons.constants import *
+from pgsqlclusters.timer import (
+    correct_postgresql_password,
+    correct_user_password,
+    )
 from pgsqlclusters.utiles import (
     set_cluster_status,
     check_param,
@@ -24,6 +29,7 @@ from pgsqlclusters.utiles import (
     machine_exec_command,
     waiting_target_postgresql_ready,
     get_postgresql_config_port,
+    get_autoctl_name,
     machine_sftp_put,
     connections,
     get_autofailover_labels,
@@ -61,7 +67,7 @@ def create_cluster(
         set_cluster_status(meta, CLUSTER_STATE, CLUSTER_STATUS_CREATE, logger)
 
         logging.info("check create_cluster params")
-        check_param(spec, logger, create=True)
+        check_param(meta, spec, patch, status, logger, create=True)
         create_postgresql_cluster(meta, spec, patch, status, logger)
 
         logger.info("waiting for create_cluster success")
@@ -271,6 +277,11 @@ def create_postgresql(
 
     logger.info("create postgresql on " + mode)
 
+    disaster_mode = False
+    if field == get_field(POSTGRESQL, DISASTER):
+        field = get_field(POSTGRESQL, READWRITEINSTANCE)
+        disaster_mode = True
+
     antiaffinity = spec.get(SPEC_ANTIAFFINITY)
     if len(field.split(FIELD_DELIMITER)) == 1:
         localspec = spec.get(field)
@@ -467,6 +478,7 @@ def create_postgresql(
                 })
 
         if field == get_field(POSTGRESQL, READWRITEINSTANCE):
+
             if mode == MACHINE_MODE:
                 auto_failover_conns = connections(spec, meta, patch,
                                                   get_field(AUTOFAILOVER),
@@ -475,17 +487,57 @@ def create_postgresql(
                 auto_failover_host = auto_failover_conns.get_conns(
                 )[0].get_machine().get_host()
                 auto_failover_conns.free_conns()
-                machine_env += "PG_MODE=readwrite\n"
+                if disaster_mode == True:
+                    autoctl_node_password = spec[SPEC_DISASTERBACKUP][
+                        SPEC_DISASTERBACKUP_AUTOCTL_NODE]
+                    autoctl_replicator_password = spec[SPEC_DISASTERBACKUP][
+                        SPEC_DISASTERBACKUP_PGAUTOFAILOVER_REPLICATOR]
+                    auto_failover_host = spec[SPEC_DISASTERBACKUP][
+                        SPEC_DISASTERBACKUP_MONITOR_HOSTNAME]
+                    machine_env += "PG_MODE=readonly\n"
+                    machine_env += "PG_STREAMING=" + spec[SPEC_DISASTERBACKUP][
+                        SPEC_DISASTERBACKUP_STREAMING] + "\n"
+                    machine_env += "AUTOCTL_NAME=" + get_autoctl_name(meta, spec, patch, status, logger) + "\n"
+                else:
+                    machine_env += "PG_MODE=readwrite\n"
+
                 machine_env += "AUTOCTL_NODE_PASSWORD=" + autoctl_node_password + "\n"
                 machine_env += "EXTERNAL_HOSTNAME=" + conns.get_conns(
                 )[replica].get_machine().get_host() + "\n"
                 machine_env += "AUTOCTL_REPLICATOR_PASSWORD=" + autoctl_replicator_password + "\n"
                 machine_env += "MONITOR_HOSTNAME=" + auto_failover_host + "\n"
             else:
-                k8s_env.append({
-                    CONTAINER_ENV_NAME: "PG_MODE",
-                    CONTAINER_ENV_VALUE: "readwrite"
-                })
+                auto_failover_host = get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
+                if disaster_mode == True:
+                    autoctl_node_password = spec[SPEC_DISASTERBACKUP][
+                        SPEC_DISASTERBACKUP_AUTOCTL_NODE]
+                    autoctl_replicator_password = spec[SPEC_DISASTERBACKUP][
+                        SPEC_DISASTERBACKUP_PGAUTOFAILOVER_REPLICATOR]
+                    auto_failover_host = spec[SPEC_DISASTERBACKUP][
+                        SPEC_DISASTERBACKUP_MONITOR_HOSTNAME]
+                    k8s_env.append({
+                        CONTAINER_ENV_NAME: "PG_MODE",
+                        CONTAINER_ENV_VALUE: "readonly"
+                    })
+                    k8s_env.append({
+                        CONTAINER_ENV_NAME:
+                        "PG_STREAMING",
+                        CONTAINER_ENV_VALUE:
+                        spec[SPEC_DISASTERBACKUP]
+                        [SPEC_DISASTERBACKUP_STREAMING]
+                    })
+                    k8s_env.append({
+                        CONTAINER_ENV_NAME:
+                        "AUTOCTL_NAME",
+                        CONTAINER_ENV_VALUE:
+                        get_autoctl_name(meta, spec, patch, status, logger)
+                    })
+                else:
+                    k8s_env.append({
+                        CONTAINER_ENV_NAME: "PG_MODE",
+                        CONTAINER_ENV_VALUE: "readwrite"
+                    })
+
                 k8s_env.append({
                     CONTAINER_ENV_NAME: "AUTOCTL_NODE_PASSWORD",
                     CONTAINER_ENV_VALUE: autoctl_node_password
@@ -504,7 +556,7 @@ def create_postgresql(
                     CONTAINER_ENV_NAME:
                     "MONITOR_HOSTNAME",
                     CONTAINER_ENV_VALUE:
-                    get_pod_address(meta["name"], AUTOFAILOVER, 0, namespace)
+                    auto_failover_host
                 })
         if field == get_field(POSTGRESQL, READONLYINSTANCE):
             if mode == MACHINE_MODE:
@@ -596,27 +648,27 @@ def create_postgresql(
         # waiting pull image success and instance ready
         waiting_instance_ready(conns, logger, replica, replica + 1)
 
-        # wait primary node create finish
-        if wait_primary == True and field == get_field(
-                POSTGRESQL, READWRITEINSTANCE) and replica == 0:
+        if field == get_field(POSTGRESQL, READWRITEINSTANCE) and replica == 0:
             # don't free the tmpconns
             tmpconn = conns.get_conns()[0]
-            if is_restore_mode(meta, spec, patch, status, logger) == False:
-                tmpconns: InstanceConnections = InstanceConnections()
-                tmpconns.add(tmpconn)
-                waiting_postgresql_ready(tmpconns, logger, timeout=MINUTES * 5)
-
-                create_log_table(
-                    logger, tmpconn,
-                    int(
-                        postgresql_image.split(':')[1].split('-')[0].split('.')
-                        [0]))
-
-                create_users(meta, spec, patch, status, logger, tmpconns)
+            tmpconns: InstanceConnections = InstanceConnections()
+            tmpconns.add(tmpconn)
+            # wait primary node create finish
+            if wait_primary == True:
+                if is_restore_mode(meta, spec, patch, status, logger) == False:
+                    waiting_postgresql_ready(tmpconns, logger, timeout=MINUTES * 5)
+                    create_log_table( logger, tmpconn, int( postgresql_image.split(':')[1].split('-')[0].split('.') [0]))
+                    create_users(meta, spec, patch, status, logger, tmpconns)
+                else:
+                    restore_postgresql(meta, spec, patch, status, logger, tmpconn)
             else:
-                restore_postgresql(meta, spec, patch, status, logger, tmpconn)
+                if disaster_mode == False:
+                    waiting_postgresql_ready(tmpconns, logger, timeout=MINUTES * 5)
+                    correct_user_password(meta, spec, patch, status, logger, tmpconn)
+                    time.sleep(5)
 
-    waiting_pg_basebackup_completed(conns, logger, create_begin, replicas)
+    if field != get_field(AUTOFAILOVER):
+        waiting_pg_basebackup_completed(conns, logger, create_begin, replicas)
 
 
 def create_services(
@@ -991,6 +1043,21 @@ def create_postgresql_readwrite(
     conns = connections(spec, meta, patch,
                         get_field(POSTGRESQL, READWRITEINSTANCE), True, labels,
                         logger, create_begin, status, wait_primary, create_end)
+    conns.free_conns()
+
+
+def create_postgresql_disaster(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    logger.info("create postgresql disaster")
+    conns = connections(spec, meta, patch, get_field(POSTGRESQL,
+                                                     DISASTER), True,
+                        get_readonly_labels(meta), logger, 0,
+                        status, False, 1)
     conns.free_conns()
 
 

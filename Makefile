@@ -39,7 +39,8 @@ postgres-image: download
 operator-image:
 	cp operatorversions.json image/postgres-operator/versions.json
 	cd image/postgres-operator; ./generate_image.sh
-operator-yaml: operator-image
+#operator-yaml: operator-image
+operator-yaml:
 	cp operatorversions.json platforms/kubernetes/postgres-operator/deploy/versions.json
 	cp jq-template.awk platforms/kubernetes/postgres-operator/deploy/jq-template.awk
 	cd platforms/kubernetes/postgres-operator/deploy/; awk -f jq-template.awk postgres-operator.yaml.template > postgres-operator.yaml
