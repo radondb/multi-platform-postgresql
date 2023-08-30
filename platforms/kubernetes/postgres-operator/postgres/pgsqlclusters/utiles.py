@@ -1189,15 +1189,20 @@ def exec_command(conn: InstanceConnection,
                  interrupt: bool = True,
                  user: str = "root",
                  timeout: int = EXEC_COMMAND_DEFAULT_TIMEOUT):
+    ret = None
     if conn.get_k8s() != None:
-        return pod_exec_command(conn.get_k8s().get_podname(),
+        ret =  pod_exec_command(conn.get_k8s().get_podname(),
                                 conn.get_k8s().get_namespace(), cmd, logger,
                                 interrupt, user, timeout)
     if conn.get_machine() != None:
-        return docker_exec_command(conn.get_machine().get_role(),
+        ret = docker_exec_command(conn.get_machine().get_role(),
                                    conn.get_machine().get_ssh(), cmd, logger,
                                    interrupt, user,
                                    conn.get_machine().get_host(), timeout)
+    if ret == None:
+        ret = ''
+
+    return ret
 
 
 def pod_exec_command(name: str,
@@ -1270,7 +1275,11 @@ def docker_exec_command(role: str,
 
     # see pod_exec_command, don't check ret_code
     std_output = ssh_stdout.read().decode().strip()
+    if std_output == None:
+        std_output = ''
     err_output = ssh_stderr.read().decode().strip()
+    if err_output == None:
+        err_output = ''
     #ret_code = ssh_stdout.channel.recv_exit_status()
     #if ret_code != 0:
     #    if interrupt:

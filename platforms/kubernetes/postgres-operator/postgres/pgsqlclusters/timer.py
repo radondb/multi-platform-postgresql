@@ -60,7 +60,7 @@ def correct_postgresql_status_lsn(
     pg_disaster_status_cmd = [
         'pg_autoctl', 'show', 'state', local_str, '--pgdata', PG_DATABASE_DIR,
         '|', 'grep', AUTOCTL_DISASTER_NAME, '|', 'cut', '-d', "'|'", '-f',
-        '3,4,6', '|', 'tr', "'\n'", f"'{local_split}'"
+        '3,4,6', '|', 'tr', '-d', "' '", '|', 'tr', "'\n'", f"'{local_split}'"
     ]
     pg_disaster_status = exec_command(conn,
                                       pg_disaster_status_cmd,
