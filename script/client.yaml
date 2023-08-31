@@ -4,7 +4,7 @@ metadata:
   name: pg-client
 spec:
   containers:
-    - image: radondb-postgresql:15.0-v1.2.0
+    - image: radondb-postgresql:15.3-v1.3.0
       name: pg-client
       command: [ "/bin/bash", "-c", "--" ]
       args: [ "while true; do sleep 3600; done;" ]
