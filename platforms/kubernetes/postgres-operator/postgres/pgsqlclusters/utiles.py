@@ -1191,14 +1191,14 @@ def exec_command(conn: InstanceConnection,
                  timeout: int = EXEC_COMMAND_DEFAULT_TIMEOUT):
     ret = None
     if conn.get_k8s() != None:
-        ret =  pod_exec_command(conn.get_k8s().get_podname(),
-                                conn.get_k8s().get_namespace(), cmd, logger,
-                                interrupt, user, timeout)
+        ret = pod_exec_command(conn.get_k8s().get_podname(),
+                               conn.get_k8s().get_namespace(), cmd, logger,
+                               interrupt, user, timeout)
     if conn.get_machine() != None:
         ret = docker_exec_command(conn.get_machine().get_role(),
-                                   conn.get_machine().get_ssh(), cmd, logger,
-                                   interrupt, user,
-                                   conn.get_machine().get_host(), timeout)
+                                  conn.get_machine().get_ssh(), cmd, logger,
+                                  interrupt, user,
+                                  conn.get_machine().get_host(), timeout)
     if ret == None:
         ret = ''
 
