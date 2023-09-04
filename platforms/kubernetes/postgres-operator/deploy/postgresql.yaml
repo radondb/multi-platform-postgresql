@@ -94,6 +94,7 @@ spec:
       - shared_buffers=133MB
       - port=5432
       - enable_seqscan=on
+      - ssl=off #This parameter can be modified only after the cluster is created!!!
     readwriteinstance:
       replicas: 2
       podspec:

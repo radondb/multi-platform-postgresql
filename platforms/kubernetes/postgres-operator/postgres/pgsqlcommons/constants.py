@@ -123,6 +123,7 @@ CLUSTER_STATUS_TERMINATE = "Terminating"
 CLUSTER_STATUS_STOP = "stop"
 CLUSTER_STATUS_BACKUP = "backups_list"
 CLUSTER_STATUS_ARCHIVE = "backups_wal_archive"
+CLUSTER_STATUS_SERVER_CRT = "server_crt"
 CLUSTER_STATUS_CRON_NEXT_RUN = "cron_next_run_time"
 CLUSTER_STATUS_DISASTER_BACKUP_STATUS = 'disaster_backup_status'
 
