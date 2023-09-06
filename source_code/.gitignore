@@ -6,3 +6,4 @@ postgis
 barman
 pgaudit
 postgres-aws-s3
+pgvector

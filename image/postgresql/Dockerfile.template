@@ -136,6 +136,12 @@ RUN python3 -m pip install --trusted-host mirrors.aliyun.com psycopg2-binary -i 
 	python3 setup.py build; \
 	python3 setup.py install --home=/var/lib/postgresql/barman --install-lib=/var/lib/postgresql/barman/lib;
 
+ADD pgvector /usr/src/pgvector
+RUN	cd /usr/src/pgvector; \
+	git checkout {{ .pgvector }}; \
+	make PG_CONFIG=/var/lib/postgresql/bin/pg_config -j `expr $(nproc) - 2` >/dev/null; \
+	make install PG_CONFIG=/var/lib/postgresql/bin/pg_config;
+
 RUN cd /var/lib/postgresql; \
 		tar czhvf lib.tar.gz `find . -type f | xargs ldd 2>/dev/null | grep "=>" | cut -d ">" -f 2 | cut -d "(" -f 1 | sort -u`
 	

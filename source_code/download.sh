@@ -55,4 +55,7 @@ download_source_code "pgaudit" "https://github.com/pgaudit/pgaudit.git"
 # postgres-aws-s3
 download_source_code "postgres-aws-s3" "https://github.com/radondb/postgres-aws-s3.git"
 
+# pgvector
+download_source_code "pgvector" "https://github.com/pgvector/pgvector.git"
+
 exit 0
