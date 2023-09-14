@@ -38,7 +38,6 @@ def timer_cluster(
     from .test import test
     test(meta, spec, patch, status, logger)
 
-
 def correct_postgresql_status_lsn(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -51,40 +50,43 @@ def correct_postgresql_status_lsn(
                                   False, None, logger, None, status, False)
     conn = readwrite_conns.get_conns()[0]
 
-    local_split = '@'
     local_str = ''
     if pgsql_util.in_disaster_backup(meta, spec, patch, status,
                                      logger) == True:
         local_str = '--local'
 
-    pg_disaster_status_cmd = [
-        'pg_autoctl', 'show', 'state', local_str, '--pgdata', PG_DATABASE_DIR,
-        '|', 'grep', AUTOCTL_DISASTER_NAME, '|', 'cut', '-d', "'|'", '-f',
-        '3,4,6', '|', 'tr', '-d', "' '", '|', 'tr', "'\n'", f"'{local_split}'"
-    ]
-    pg_disaster_status = exec_command(conn,
+    pg_disaster_status_dict = {}
+    if status.get(CLUSTER_STATUS_DISASTER_BACKUP_STATUS) == None:
+        pg_disaster_status_old = {}
+    else:
+        pg_disaster_status_old = copy.deepcopy(status[CLUSTER_STATUS_DISASTER_BACKUP_STATUS])
+
+    for i in range(1, 10):
+        pg_disaster_status_cmd = [
+                'pg_autoctl', 'show', 'state', local_str, '--pgdata', PG_DATABASE_DIR,
+                '|', 'grep', AUTOCTL_DISASTER_NAME, '|', 'cut', '-d', "'|'", '-f',
+                '3,4,6', '|', 'tr', '-d', "' '", '|', 'sed', '-n', f'{i}p'
+                ]
+        pg_disaster_status = exec_command(conn,
                                       pg_disaster_status_cmd,
                                       logger,
                                       interrupt=False)
-
-    pg_disaster_status_dict = {}
-    if len(pg_disaster_status) > 3 and pg_disaster_status.find(
-            'Failed to connect to') == -1 and pg_disaster_status != FAILED:
-        pg_disaster_status_old = copy.deepcopy(
-            status[CLUSTER_STATUS_DISASTER_BACKUP_STATUS])
-        for s in pg_disaster_status.split(local_split):
-            s = s.split('|')
-            if len(s) < 3:
+        if pg_disaster_status.find('Failed to connect to') == -1 and pg_disaster_status != FAILED:
+            if len(pg_disaster_status) > 10:
+                pg_disaster_status = [s.strip() for s in pg_disaster_status.split('|')]
+                pg_disaster_status_dict[pg_disaster_status[0]] = {"LSN": pg_disaster_status[1], "state": pg_disaster_status[2]}
+            else:
                 break
-            s = [s.strip() for s in s]
-            pg_disaster_status_dict[s[0]] = {"LSN": s[1], "state": s[2]}
-        if type(pg_disaster_status_old) == type({}):
-            for old_key in pg_disaster_status_old.keys():
-                if old_key not in pg_disaster_status_dict.keys():
-                    pg_disaster_status_dict = ''
-                    break
-    else:
-        pg_disaster_status_dict = ''
+        else:
+            pg_disaster_status_dict = {}
+            break
+
+    # cleanup expired data
+    if type(pg_disaster_status_old) == type({}):
+        for old_key in pg_disaster_status_old.keys():
+            if old_key not in pg_disaster_status_dict.keys():
+                pg_disaster_status_dict = '' # {} empty dict can't cleanup expired record.
+                break
 
     patch.status[
         CLUSTER_STATUS_DISASTER_BACKUP_STATUS] = pg_disaster_status_dict

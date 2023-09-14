@@ -1293,7 +1293,8 @@ def docker_exec_command(role: str,
     #        return FAILED
 
     #return str(ssh_stdout.read()).replace('\\r\\n', '').replace('\\n', '')[2:-1]
-    return std_output + err_output
+    ret = std_output + err_output
+    return ret.replace('\r\n', '\n')
 
 
 def machine_exec_command(ssh: paramiko.SSHClient,
