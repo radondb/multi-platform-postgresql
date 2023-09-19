@@ -1356,7 +1356,8 @@ def docker_exec_command(role: str,
         base64_cmd = [string_to_base64(" ".join(cmd))]
         user_cmd = "docker exec " + role + " " + " ".join(
             ['gosu', user, 'pgtools', '-f'] + base64_cmd)
-        logger.info(f"docker exec command {cmd} on host {host}") # not user_cmd, it is base64_cmd
+        logger.info(f"docker exec command {cmd} on host {host}"
+                    )  # not user_cmd, it is base64_cmd
         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(user_cmd,
                                                              timeout=timeout,
                                                              get_pty=True)
