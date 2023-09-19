@@ -13,7 +13,7 @@ from pgsqlcommons.constants import *
 from pgsqlcommons.typed import LabelType, InstanceConnection, InstanceConnections, TypedDict, InstanceConnectionMachine, InstanceConnectionK8S, Tuple, Any, List
 from pgsqlclusters.utiles import get_conn_role, get_connhost, exec_command, connections, get_field, get_primary_conn, \
     machine_exec_command, get_readwrite_labels, dict_to_str, pod_exec_command, patch_role_body, \
-    get_postgresql_config_port, set_cluster_status, to_int
+    get_postgresql_config_port, set_cluster_status, to_int, create_ssl_key
 
 
 def timer_cluster(
@@ -35,8 +35,22 @@ def timer_cluster(
     correct_backup_status(meta, spec, patch, status, logger)
     correct_s3_profile(meta, spec, patch, status, logger)
 
+    # last executed
+    correct_ssl_server_crt(meta, spec, patch, status, logger)
+
     from .test import test
     test(meta, spec, patch, status, logger)
+
+
+def correct_ssl_server_crt(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+) -> None:
+    if status.get(CLUSTER_STATUS_SERVER_CRT) == None:
+        create_ssl_key(meta, spec, patch, status, logger)
 
 
 def correct_postgresql_status_lsn(
@@ -174,18 +188,22 @@ def correct_keepalived(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
+    main_vip = ""
+    read_vip = ""
+    autofailover_conns = connections(spec, meta, patch,
+                                     get_field(AUTOFAILOVER), False, None,
+                                     logger, None, status, False)
     conns = connections(spec, meta, patch,
                         get_field(POSTGRESQL, READWRITEINSTANCE), False, None,
                         logger, None, status, False)
     readonly_conns = connections(spec, meta, patch,
                                  get_field(POSTGRESQL, READONLYINSTANCE),
                                  False, None, logger, None, status, False)
+    # keepalived is stop
     for conn in (conns.get_conns() + readonly_conns.get_conns()):
         if conn.get_machine() == None:
             break
 
-        main_vip = ""
-        read_vip = ""
         for service in spec[SERVICES]:
             if service[SELECTOR] == SERVICE_PRIMARY:
                 main_vip = service[VIP]
@@ -209,11 +227,37 @@ def correct_keepalived(
                                       STATUS_KEEPALIVED,
                                       interrupt=False)
         if output.find("Active: active (running)") == -1:
+            logger.warning("keepalived is not running. recreate the services")
             pgsql_delete.delete_services(meta, spec, patch, status, logger)
             pgsql_create.create_services(meta, spec, patch, status, logger)
             break
+    # can't access keepalived vip
+    accept = False
+    port = get_postgresql_config_port(meta, spec, patch, status, logger)
+    for t in [1, 3, 6]:  # timeout
+        cmd = [
+            "pg_isready", "-U", "postgres", "-t",
+            str(t), "-h", main_vip, "-p",
+            str(port)
+        ]
+        output = exec_command(autofailover_conns.get_conns()[0],
+                              cmd,
+                              logger,
+                              interrupt=False)
+        if output.find("accepting connections") != -1:
+            accept = True
+            break
+    if accept == False:
+        logger.warning("can't access keepalived. restart keepalived")
+        for conn in (conns.get_conns() + readonly_conns.get_conns()):
+            if conn.get_machine() == None:
+                break
+            machine_exec_command(conn.get_machine().get_ssh(),
+                                 START_KEEPALIVED,
+                                 interrupt=False)
     conns.free_conns()
     readonly_conns.free_conns()
+    autofailover_conns.free_conns()
 
 
 def correct_postgresql_role(

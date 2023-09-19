@@ -53,6 +53,7 @@ from pgsqlclusters.utiles import (
     get_statefulset_name,
     waiting_instance_ready,
     statefulset_name_get_external_service_name,
+    create_ssl_key,
 )
 
 
@@ -666,7 +667,12 @@ def create_postgresql(
                             postgresql_image.split(':')[1].split('-')[0].split(
                                 '.')[0]))
                     create_users(meta, spec, patch, status, logger, tmpconns)
-                    create_ssl_key(meta, spec, patch, status, logger, tmpconns)
+                    create_ssl_key(meta,
+                                   spec,
+                                   patch,
+                                   status,
+                                   logger,
+                                   conn=tmpconn)
                 else:
                     restore_postgresql(meta, spec, patch, status, logger,
                                        tmpconn)
@@ -1179,42 +1185,6 @@ def create_users_normal(
             create_one_user(conn, user[SPEC_POSTGRESQL_USERS_USER_NAME],
                             user[SPEC_POSTGRESQL_USERS_USER_PASSWORD], False,
                             logger)
-
-
-def create_ssl_key(
-    meta: kopf.Meta,
-    spec: kopf.Spec,
-    patch: kopf.Patch,
-    status: kopf.Status,
-    logger: logging.Logger,
-    conns: InstanceConnections,
-) -> None:
-    conn = get_primary_conn(conns, 0, logger)
-    DNS = "DNS:"
-    protect_dns = []
-    autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
-    # k8s mode
-    if autofailover_machines == None:
-        for service in spec[SERVICES]:
-            protect_dns.append(DNS + get_service_name(meta, service))
-    else:
-        for service in spec[SERVICES]:
-            protect_dns.append(DNS + service[VIP])
-
-    cmd = [
-        "openssl", "req", "-new", "-x509", "-days", "36500", "-nodes", "-text",
-        "-out", PG_DATABASE_DIR + "/server.crt", "-keyout",
-        PG_DATABASE_DIR + "/server.key",
-        f'''-subj "/CN=www.qingcloud.com" -addext "subjectAltName = {', '.join(protect_dns)}"'''
-    ]
-
-    logger.info(f"create ssl key with cmd {cmd}")
-    output = exec_command(conn, cmd, logger, interrupt=False, user="postgres")
-    logger.info(f"create ssl key {output}")
-    cmd = ["base64", PG_DATABASE_DIR + "/server.crt"]
-    server_crt_base64 = exec_command(conn, cmd, logger, interrupt=False)
-    set_cluster_status(meta, CLUSTER_STATUS_SERVER_CRT, server_crt_base64,
-                       logger)
 
 
 def create_users(

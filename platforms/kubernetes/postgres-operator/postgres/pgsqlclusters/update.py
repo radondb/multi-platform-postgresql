@@ -1709,6 +1709,12 @@ def update_disasterBackup(
                 spec, meta, patch,
                 pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE), False,
                 None, logger, None, status, False)
+            pgsql_util.create_ssl_key(meta,
+                                      spec,
+                                      patch,
+                                      status,
+                                      logger,
+                                      conn=readwrite_conns.get_conns()[0])
             if spec[SPEC_DISASTERBACKUP][
                     SPEC_DISASTERBACKUP_STREAMING] == STREAMING_SYNC:
                 pgsql_util.update_number_sync_standbys(meta,

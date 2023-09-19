@@ -101,6 +101,100 @@ def get_connhost(conn: InstanceConnection) -> str:
         return conn.get_machine().get_host()
 
 
+def set_status_ssl_server_crt(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conn: InstanceConnection,
+) -> None:
+    cmd = ["base64", PG_DATABASE_DIR + "/server.crt"]
+    server_crt_base64 = exec_command(conn, cmd, logger, interrupt=False)
+    set_cluster_status(meta, CLUSTER_STATUS_SERVER_CRT, server_crt_base64,
+                       logger)
+
+
+def create_ssl_key(
+    meta: kopf.Meta,
+    spec: kopf.Spec,
+    patch: kopf.Patch,
+    status: kopf.Status,
+    logger: logging.Logger,
+    conn: InstanceConnection = None,
+) -> None:
+    readwrite_conns = None
+    readonly_conns = None
+    conns = None
+
+    if conn == None:
+        waiting_cluster_final_status(meta, spec, patch, status, logger)
+        readwrite_conns = connections(spec, meta, patch,
+                                      get_field(POSTGRESQL, READWRITEINSTANCE),
+                                      False, None, logger, None, status, False)
+        readonly_conns = connections(spec, meta, patch,
+                                     get_field(POSTGRESQL, READONLYINSTANCE),
+                                     False, None, logger, None, status, False)
+        conns = readwrite_conns.get_conns() + readonly_conns.get_conns()
+        conn = conns[0]
+
+    DNS = "DNS:"
+    protect_dns = []
+    autofailover_machines = spec.get(AUTOFAILOVER).get(MACHINES)
+    # k8s mode
+    if autofailover_machines == None:
+        for service in spec[SERVICES]:
+            protect_dns.append(DNS + get_service_name(meta, service))
+    else:
+        for service in spec[SERVICES]:
+            protect_dns.append(DNS + service[VIP])
+
+    cmd = [
+        "openssl", "req", "-new", "-x509", "-days", "36500", "-nodes", "-text",
+        "-out", PG_DATABASE_DIR + "/server.crt", "-keyout",
+        PG_DATABASE_DIR + "/server.key",
+        f'''-subj "/CN=www.qingcloud.com" -addext "subjectAltName = {', '.join(protect_dns)}"'''
+    ]
+
+    logger.info(f"create ssl key with cmd {cmd}")
+    output = exec_command(conn, cmd, logger, interrupt=False, user="postgres")
+    logger.info(f"create ssl key {output}")
+
+    set_status_ssl_server_crt(meta, spec, patch, status, logger, conn)
+
+    if conns != None and len(conns) > 1:
+        cmd = ["base64", PG_DATABASE_DIR + "/server.crt"]
+        server_crt_base64 = exec_command(conn, cmd, logger, interrupt=False)
+        cmd = ["base64", PG_DATABASE_DIR + "/server.key"]
+        server_key_base64 = exec_command(conn, cmd, logger, interrupt=False)
+        for i in range(1, len(conns)):
+            cmd = [
+                "echo", server_crt_base64, "|", "base64", "-d", ">",
+                PG_DATABASE_DIR + "/server.crt", "&&", "chown",
+                "postgres:postgres", PG_DATABASE_DIR + "/server.crt"
+            ]
+            output = exec_command(conns[i],
+                                  cmd,
+                                  logger,
+                                  interrupt=False,
+                                  user="postgres")
+            cmd = [
+                "echo", server_key_base64, "|", "base64", "-d", ">",
+                PG_DATABASE_DIR + "/server.key", "&&", "chown",
+                "postgres:postgres", PG_DATABASE_DIR + "/server.key"
+            ]
+            output = exec_command(conns[i],
+                                  cmd,
+                                  logger,
+                                  interrupt=False,
+                                  user="postgres")
+
+    if readwrite_conns != None:
+        readwrite_conns.free_conns()
+    if readonly_conns != None:
+        readonly_conns.free_conns()
+
+
 def autofailover_switchover(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -1262,7 +1356,7 @@ def docker_exec_command(role: str,
         base64_cmd = [string_to_base64(" ".join(cmd))]
         user_cmd = "docker exec " + role + " " + " ".join(
             ['gosu', user, 'pgtools', '-f'] + base64_cmd)
-        logger.info(f"docker exec command {cmd} on host {host}")
+        logger.info(f"docker exec command {cmd} on host {host}") # not user_cmd, it is base64_cmd
         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(user_cmd,
                                                              timeout=timeout,
                                                              get_pty=True)
