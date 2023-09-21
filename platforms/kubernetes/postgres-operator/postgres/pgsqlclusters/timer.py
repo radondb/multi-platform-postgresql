@@ -193,6 +193,10 @@ def correct_keepalived(
     autofailover_conns = connections(spec, meta, patch,
                                      get_field(AUTOFAILOVER), False, None,
                                      logger, None, status, False)
+    if autofailover_conns.get_conns()[0].get_machine() == None:
+        autofailover_conns.free_conns()
+        return
+
     conns = connections(spec, meta, patch,
                         get_field(POSTGRESQL, READWRITEINSTANCE), False, None,
                         logger, None, status, False)
@@ -201,9 +205,6 @@ def correct_keepalived(
                                  False, None, logger, None, status, False)
     # keepalived is stop
     for conn in (conns.get_conns() + readonly_conns.get_conns()):
-        if conn.get_machine() == None:
-            break
-
         for service in spec[SERVICES]:
             if service[SELECTOR] == SERVICE_PRIMARY:
                 main_vip = service[VIP]
