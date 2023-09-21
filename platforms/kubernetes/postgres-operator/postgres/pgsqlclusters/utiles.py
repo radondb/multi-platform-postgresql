@@ -164,9 +164,11 @@ def create_ssl_key(
 
     if conns != None and len(conns) > 1:
         cmd = ["base64", PG_DATABASE_DIR + "/server.crt"]
-        server_crt_base64 = exec_command(conn, cmd, logger, interrupt=False).replace('\n', '')
+        server_crt_base64 = exec_command(conn, cmd, logger,
+                                         interrupt=False).replace('\n', '')
         cmd = ["base64", PG_DATABASE_DIR + "/server.key"]
-        server_key_base64 = exec_command(conn, cmd, logger, interrupt=False).replace('\n', '')
+        server_key_base64 = exec_command(conn, cmd, logger,
+                                         interrupt=False).replace('\n', '')
         for i in range(1, len(conns)):
             cmd = [
                 "echo", server_crt_base64, "|", "base64", "-d", ">",
