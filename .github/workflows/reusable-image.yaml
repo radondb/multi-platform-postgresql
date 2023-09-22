@@ -28,6 +28,10 @@ jobs:
         run: |
           docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Docker binfmt
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt --install all
+
       - name: Build Image
         run: |
           make pgversion=${{ inputs.version }} platform=all ${{ inputs.target }}
