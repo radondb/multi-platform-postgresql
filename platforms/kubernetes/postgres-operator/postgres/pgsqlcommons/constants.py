@@ -126,6 +126,7 @@ CLUSTER_STATUS_ARCHIVE = "backups_wal_archive"
 CLUSTER_STATUS_SERVER_CRT = "server_crt"
 CLUSTER_STATUS_CRON_NEXT_RUN = "cron_next_run_time"
 CLUSTER_STATUS_DISASTER_BACKUP_STATUS = 'disaster_backup_status'
+CLUSTER_STATUS_TIMER = 'timer'
 
 # base label
 BASE_LABEL_PART_OF = "part-of"

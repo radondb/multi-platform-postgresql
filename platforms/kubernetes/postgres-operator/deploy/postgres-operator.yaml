@@ -724,7 +724,7 @@ spec:
       priorityClassName: system-cluster-critical
       containers:
       - name: radondb-postgres-operator
-        image: radondb/radondb-postgres-operator:v1.3.1
+        image: radondb/radondb-postgres-operator:v1.3.2
         imagePullPolicy: IfNotPresent
         resources:
           limits:

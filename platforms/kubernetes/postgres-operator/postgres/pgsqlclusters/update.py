@@ -209,12 +209,15 @@ def update_action(
                 spec, meta, patch,
                 pgsql_util.get_field(POSTGRESQL, READWRITEINSTANCE), False,
                 None, logger, None, status, False)
-            conns += readwrite_conns.get_conns()
             readonly_conns = pgsql_util.connections(
                 spec, meta, patch,
                 pgsql_util.get_field(POSTGRESQL, READONLYINSTANCE), False,
                 None, logger, None, status, False)
-            conns += readonly_conns.get_conns()
+            if pgsql_util.in_disaster_backup(meta, spec, patch, status, logger) == True:
+                conns += [ readwrite_conns.get_conns()[0] ]
+            else:
+                conns += readwrite_conns.get_conns()
+                conns += readonly_conns.get_conns()
             if NEW == ACTION_STOP:
                 start = False
             elif NEW == ACTION_START:
@@ -223,7 +226,7 @@ def update_action(
                 pgsql_util.postgresql_action(meta, spec, patch, status, logger,
                                              conn, start)
 
-            if NEW == ACTION_START:
+            if NEW == ACTION_START and pgsql_util.in_disaster_backup(meta, spec, patch, status, logger) == False:
                 pgsql_util.waiting_postgresql_ready(readwrite_conns, logger)
                 pgsql_util.waiting_postgresql_ready(readonly_conns, logger)
                 pgsql_util.waiting_cluster_final_status(
@@ -1821,6 +1824,8 @@ def update_cluster(
 
                 update_disasterBackup(meta, spec, patch, status, logger, AC,
                                       FIELD, OLD, NEW)
+                update_action(meta, spec, patch, status, logger, AC, FIELD,
+                              OLD, NEW)
 
             if pgsql_util.in_disaster_backup(meta, spec, patch, status,
                                              logger) == True:
@@ -1840,8 +1845,6 @@ def update_cluster(
                 OLD = diff[2]
                 NEW = diff[3]
 
-                update_action(meta, spec, patch, status, logger, AC, FIELD,
-                              OLD, NEW)
                 update_service(meta, spec, patch, status, logger, AC, FIELD,
                                OLD, NEW)
                 trigger_rebuild_postgresql(meta, spec, patch, status, logger,

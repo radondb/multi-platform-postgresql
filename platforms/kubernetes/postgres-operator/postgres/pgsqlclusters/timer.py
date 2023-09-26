@@ -1,6 +1,7 @@
 import kopf
 import logging
 import copy
+import time
 
 from kubernetes import client
 
@@ -16,6 +17,9 @@ from pgsqlclusters.utiles import get_conn_role, get_connhost, exec_command, conn
     get_postgresql_config_port, set_cluster_status, to_int, create_ssl_key
 
 
+def current_time() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
 def timer_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
@@ -23,6 +27,10 @@ def timer_cluster(
     status: kopf.Status,
     logger: logging.Logger,
 ) -> None:
+    # set the timer run time
+    patch.status[CLUSTER_STATUS_TIMER] = current_time()
+    #set_cluster_status(meta, CLUSTER_STATUS_TIMER, current_time(), logger)
+
     correct_postgresql_status_lsn(meta, spec, patch, status, logger)
 
     if pgsql_util.in_disaster_backup(meta, spec, patch, status,
