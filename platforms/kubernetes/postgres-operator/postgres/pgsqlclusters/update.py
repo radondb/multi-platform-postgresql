@@ -213,8 +213,9 @@ def update_action(
                 spec, meta, patch,
                 pgsql_util.get_field(POSTGRESQL, READONLYINSTANCE), False,
                 None, logger, None, status, False)
-            if pgsql_util.in_disaster_backup(meta, spec, patch, status, logger) == True:
-                conns += [ readwrite_conns.get_conns()[0] ]
+            if pgsql_util.in_disaster_backup(meta, spec, patch, status,
+                                             logger) == True:
+                conns += [readwrite_conns.get_conns()[0]]
             else:
                 conns += readwrite_conns.get_conns()
                 conns += readonly_conns.get_conns()
@@ -226,7 +227,8 @@ def update_action(
                 pgsql_util.postgresql_action(meta, spec, patch, status, logger,
                                              conn, start)
 
-            if NEW == ACTION_START and pgsql_util.in_disaster_backup(meta, spec, patch, status, logger) == False:
+            if NEW == ACTION_START and pgsql_util.in_disaster_backup(
+                    meta, spec, patch, status, logger) == False:
                 pgsql_util.waiting_postgresql_ready(readwrite_conns, logger)
                 pgsql_util.waiting_postgresql_ready(readonly_conns, logger)
                 pgsql_util.waiting_cluster_final_status(

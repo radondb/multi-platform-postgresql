@@ -20,6 +20,7 @@ from pgsqlclusters.utiles import get_conn_role, get_connhost, exec_command, conn
 def current_time() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
+
 def timer_cluster(
     meta: kopf.Meta,
     spec: kopf.Spec,
