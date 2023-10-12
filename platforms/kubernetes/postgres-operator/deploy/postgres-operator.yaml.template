@@ -727,9 +727,12 @@ spec:
         image: {{ .image }}
         imagePullPolicy: IfNotPresent
         resources:
+          requests:
+            memory: "200Mi"
+            cpu: "0.2"
           limits:
-            memory: "500Mi"
-            cpu: "0.5"
+            memory: "200Mi"
+            cpu: "0.2"
         livenessProbe:
           timeoutSeconds: 10
           initialDelaySeconds: 60
