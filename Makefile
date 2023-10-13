@@ -51,7 +51,9 @@ helm-package:
 	cd platforms/kubernetes/postgres-operator/deploy/; \
 		/bin/rm -rf platforms/kubernetes/postgres-operator/deploy/postgres-operator/; \
 		cp -r helm_template/postgres-operator/ ./postgres-operator; \
-		awk -f jq-template.awk postgres-operator.yaml.template > postgres-operator/templates/postgres-operator.yaml; \
+		mkdir -p postgres-operator/crds; \
+		awk -f jq-template.awk postgres-operator.yaml.template | grep -B 99999 "crds is end" > postgres-operator/crds/postgres-crds.yaml; \
+		awk -f jq-template.awk postgres-operator.yaml.template | grep -A 99999 "crds is end" > postgres-operator/templates/postgres-operator.yaml; \
 		awk -f jq-template.awk postgres-operator/Chart.yaml.template > postgres-operator/Chart.yaml; \
 		awk -f jq-template.awk postgres-operator/values.yaml.template > postgres-operator/values.yaml; \
 		/bin/rm postgres-operator/Chart.yaml.template postgres-operator/values.yaml.template;
