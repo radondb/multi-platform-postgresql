@@ -386,10 +386,8 @@ def create_postgresql(
         else:
             shared_preload_env = f"'citus,pg_stat_statements{pgaudit}'"
         k8s_env.append({
-            CONTAINER_ENV_NAME:
-            PG_CONFIG_PREFIX + "shared_preload_libraries",
-            CONTAINER_ENV_VALUE:
-            shared_preload_env
+            CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "shared_preload_libraries",
+            CONTAINER_ENV_VALUE: shared_preload_env
         })
         k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_truncate_on_rotation",
