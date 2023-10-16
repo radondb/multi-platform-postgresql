@@ -361,7 +361,10 @@ def create_postgresql(
         pgaudit = ',pgaudit'
 
     if mode == MACHINE_MODE:
-        machine_env += PG_CONFIG_PREFIX + f"shared_preload_libraries='citus,pgautofailover,pg_stat_statements{pgaudit}'" + "\n"
+        if field == get_field(AUTOFAILOVER):
+            machine_env += PG_CONFIG_PREFIX + f"shared_preload_libraries='pgautofailover'" + "\n"
+        else:
+            machine_env += PG_CONFIG_PREFIX + f"shared_preload_libraries='citus,pg_stat_statements{pgaudit}'" + "\n"
         machine_env += PG_CONFIG_PREFIX + 'log_truncate_on_rotation=true' + "\n"
         machine_env += PG_CONFIG_PREFIX + 'logging_collector=on' + "\n"
         machine_env += PG_CONFIG_PREFIX + "log_directory='" + PGLOG_DIR + "'" + "\n"
@@ -378,11 +381,15 @@ def create_postgresql(
         machine_env += PG_CONFIG_PREFIX + "archive_mode=on" + "\n"
         machine_env += PG_CONFIG_PREFIX + "archive_command='/bin/true'" + "\n"
     else:
+        if field == get_field(AUTOFAILOVER):
+            shared_preload_env = f"'pgautofailover'"
+        else:
+            shared_preload_env = f"'citus,pg_stat_statements{pgaudit}'"
         k8s_env.append({
             CONTAINER_ENV_NAME:
             PG_CONFIG_PREFIX + "shared_preload_libraries",
             CONTAINER_ENV_VALUE:
-            f"'citus,pgautofailover,pg_stat_statements{pgaudit}'"
+            shared_preload_env
         })
         k8s_env.append({
             CONTAINER_ENV_NAME: PG_CONFIG_PREFIX + "log_truncate_on_rotation",
