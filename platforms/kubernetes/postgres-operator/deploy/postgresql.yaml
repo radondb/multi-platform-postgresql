@@ -175,7 +175,7 @@ spec:
 #  S3:
 #    ACCESS_KEY: "xxxxxxxxxxxxxxxxxxx"
 #    SECRET_KEY: "xxxxxxxxxxxxxxxxxxx"
-#    ENDPOINT: "http://s3.pek3.qingstor.com/"
+#    ENDPOINT: "https://s3.pek3b.qingstor.com/"
 #    BUCKET: "postgresql"
 #    PATH: "test/backup"
 #  backupCluster:
