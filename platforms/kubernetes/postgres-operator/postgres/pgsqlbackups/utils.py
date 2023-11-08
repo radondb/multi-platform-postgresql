@@ -544,7 +544,6 @@ def is_s3_manual_backup_mode(
         return False
 
     if spec.get(SPEC_S3) == None:
-        logger.warning("s3 related information is not set.")
         return False
 
     if spec[SPEC_BACKUPCLUSTER].get(SPEC_BACKUPTOS3,
@@ -565,7 +564,6 @@ def is_s3_cron_backup_mode(
         return False
 
     if spec.get(SPEC_S3) == None:
-        logger.warning("s3 related information is not set.")
         return False
 
     if spec[SPEC_BACKUPCLUSTER].get(SPEC_BACKUPTOS3,
