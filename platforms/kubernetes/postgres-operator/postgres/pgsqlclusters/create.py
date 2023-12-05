@@ -669,8 +669,8 @@ def create_postgresql(
                     create_log_table(
                         logger, tmpconn,
                         int(
-                            postgresql_image.split(':')[-1].split('-')[0].split(
-                                '.')[0]))
+                            postgresql_image.split(':')[-1].split('-')
+                            [0].split('.')[0]))
                     create_users(meta, spec, patch, status, logger, tmpconns)
                     create_ssl_key(meta,
                                    spec,
