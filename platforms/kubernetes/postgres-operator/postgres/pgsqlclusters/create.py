@@ -303,7 +303,7 @@ def create_postgresql(
         if container[
                 CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
             postgresql_image = container[IMAGE]
-            postgresql_image_version = postgresql_image.split(':')[1].split(
+            postgresql_image_version = postgresql_image.split(':')[-1].split(
                 '-')[1]
         if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_EXPORTER_CONTAINER:
             exporter_image = container[IMAGE]
@@ -669,7 +669,7 @@ def create_postgresql(
                     create_log_table(
                         logger, tmpconn,
                         int(
-                            postgresql_image.split(':')[1].split('-')[0].split(
+                            postgresql_image.split(':')[-1].split('-')[0].split(
                                 '.')[0]))
                     create_users(meta, spec, patch, status, logger, tmpconns)
                     create_ssl_key(meta,
