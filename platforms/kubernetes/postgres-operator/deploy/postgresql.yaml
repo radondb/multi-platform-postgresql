@@ -68,9 +68,12 @@ spec:
             - name: data # can't change the name
               mountPath: /var/lib/postgresql/data
           resources:
+            requests:
+              memory: "300Mi"
+              cpu: "0.3"
             limits:
-              memory: "100Mi"
-              cpu: "0.1"
+              memory: "500Mi"
+              cpu: "0.5"
     volumeClaimTemplates:
       - metadata:
           name: data
@@ -117,9 +120,12 @@ spec:
               - name: data # can't change the name
                 mountPath: /var/lib/postgresql/data
             resources:
+              requests:
+                memory: "300Mi"
+                cpu: "0.3"
               limits:
-                memory: "100Mi"
-                cpu: "0.1"
+                memory: "500Mi"
+                cpu: "0.5"
       volumeClaimTemplates:
         - metadata:
             name: data
@@ -151,9 +157,12 @@ spec:
               - name: data # can't change the name
                 mountPath: /var/lib/postgresql/data
             resources:
+              requests:
+                memory: "300Mi"
+                cpu: "0.3"
               limits:
-                memory: "100Mi"
-                cpu: "0.1"
+                memory: "500Mi"
+                cpu: "0.5"
       volumeClaimTemplates:
         - metadata:
             name: data
