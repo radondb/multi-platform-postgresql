@@ -5,7 +5,7 @@ networks:
 
 services:
   pg15-auto:
-    image: "radondb/radondb-postgresql:15.3-v1.3.1"
+    image: "radondb/radondb-postgresql:15.3-v1.4.0"
     container_name: "pg15-auto"
     command: auto_failover
     restart: always
@@ -22,7 +22,7 @@ services:
     networks:
       - bitnet
   pg15-readwrite:
-    image: "radondb/radondb-postgresql:15.3-v1.3.1"
+    image: "radondb/radondb-postgresql:15.3-v1.4.0"
     container_name: "pg15-readwrite"
     command: auto_failover
     restart: always
@@ -47,7 +47,7 @@ services:
     networks:
       - bitnet
   pg15-readonly:
-    image: "radondb/radondb-postgresql:15.3-v1.3.1"
+    image: "radondb/radondb-postgresql:15.3-v1.4.0"
     container_name: "pg15-readonly"
     command: auto_failover
     restart: always

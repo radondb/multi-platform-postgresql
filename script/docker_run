@@ -4,13 +4,13 @@ create net:
 	docker network create test
 
 monitor:
-docker run --rm -it --net=test -h monitor --name monitor -e PG_MODE=monitor -e AUTOCTL_NODE_PASSWORD=password -e EXTERNAL_HOSTNAME=monitor radondb-postgresql:15.3-v1.3.1 auto_failover
+docker run --rm -it --net=test -h monitor --name monitor -e PG_MODE=monitor -e AUTOCTL_NODE_PASSWORD=password -e EXTERNAL_HOSTNAME=monitor radondb-postgresql:15.3-v1.4.0 auto_failover
 
 readwrite:
-docker run --rm -it --net=test -h readwrite --name readwrite   -e PG_MODE=readwrite -e AUTOCTL_NODE_PASSWORD=password -e EXTERNAL_HOSTNAME=readwrite -e MONITOR_HOSTNAME=monitor -e AUTOCTL_REPLICATOR_PASSWORD=password -e PG_CONFIG_port=5432  radondb-postgresql:15.3-v1.3.1 auto_failover
+docker run --rm -it --net=test -h readwrite --name readwrite   -e PG_MODE=readwrite -e AUTOCTL_NODE_PASSWORD=password -e EXTERNAL_HOSTNAME=readwrite -e MONITOR_HOSTNAME=monitor -e AUTOCTL_REPLICATOR_PASSWORD=password -e PG_CONFIG_port=5432  radondb-postgresql:15.3-v1.4.0 auto_failover
 
 standby:
-docker run --rm -it --net=test -h standby --name standby   -e PG_MODE=readwrite -e AUTOCTL_NODE_PASSWORD=password -e EXTERNAL_HOSTNAME=standby -e MONITOR_HOSTNAME=monitor -e AUTOCTL_REPLICATOR_PASSWORD=password -e PG_CONFIG_port=5432  radondb-postgresql:15.3-v1.3.1 auto_failover
+docker run --rm -it --net=test -h standby --name standby   -e PG_MODE=readwrite -e AUTOCTL_NODE_PASSWORD=password -e EXTERNAL_HOSTNAME=standby -e MONITOR_HOSTNAME=monitor -e AUTOCTL_REPLICATOR_PASSWORD=password -e PG_CONFIG_port=5432  radondb-postgresql:15.3-v1.4.0 auto_failover
 
 readonly:
-docker run --rm -it --net=test -h readonly --name readonly   -e PG_MODE=readonly -e AUTOCTL_NODE_PASSWORD=password -e EXTERNAL_HOSTNAME=readonly -e MONITOR_HOSTNAME=monitor -e AUTOCTL_REPLICATOR_PASSWORD=password -e PG_STREAMING=sync -e PG_CONFIG_port=5432  radondb-postgresql:15.3-v1.3.1 auto_failover
+docker run --rm -it --net=test -h readonly --name readonly   -e PG_MODE=readonly -e AUTOCTL_NODE_PASSWORD=password -e EXTERNAL_HOSTNAME=readonly -e MONITOR_HOSTNAME=monitor -e AUTOCTL_REPLICATOR_PASSWORD=password -e PG_STREAMING=sync -e PG_CONFIG_port=5432  radondb-postgresql:15.3-v1.4.0 auto_failover
