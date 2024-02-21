@@ -12,8 +12,9 @@
     "pgaudit": "1.4.3",
     "postgres_aws_s3": "v1.0.0",
     "name": "radondb-postgresql",
-    "version": "v1.3.1",
+    "version": "v1.4.0",
     "pgvector": "v0.5.0",
+    "pgrouting": "v3.6.1",
     "arches": [
       "aarch64",
       "x86_64"
@@ -32,8 +33,9 @@
     "pgaudit": "1.5.2",
     "postgres_aws_s3": "v1.0.0",
     "name": "radondb-postgresql",
-    "version": "v1.3.1",
+    "version": "v1.4.0",
     "pgvector": "v0.5.0",
+    "pgrouting": "v3.6.1",
     "arches": [
       "aarch64",
       "x86_64"
@@ -52,8 +54,9 @@
     "pgaudit": "1.6.2",
     "postgres_aws_s3": "v1.0.0",
     "name": "radondb-postgresql",
-    "version": "v1.3.1",
+    "version": "v1.4.0",
     "pgvector": "v0.5.0",
+    "pgrouting": "v3.6.1",
     "arches": [
       "aarch64",
       "x86_64"
@@ -72,8 +75,9 @@
     "pgaudit": "1.7.0",
     "postgres_aws_s3": "v1.0.0",
     "name": "radondb-postgresql",
-    "version": "v1.3.1",
+    "version": "v1.4.0",
     "pgvector": "v0.5.0",
+    "pgrouting": "v3.6.1",
     "arches": [
       "aarch64",
       "x86_64"

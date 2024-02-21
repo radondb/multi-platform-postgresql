@@ -58,4 +58,6 @@ download_source_code "postgres-aws-s3" "https://github.com/radondb/postgres-aws-
 # pgvector
 download_source_code "pgvector" "https://github.com/pgvector/pgvector.git"
 
+# pgrouting
+download_source_code "pgrouting" "https://github.com/pgRouting/pgrouting.git"
 exit 0

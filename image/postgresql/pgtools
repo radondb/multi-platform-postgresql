@@ -540,14 +540,14 @@ if [ "${do_hba}" = 1 ]; then
 	fi
 
 	cp "$hba_file_origin" "$hba_file"
-	env | grep "^$PG_HBA" | while read item
+	env | grep "^$PG_HBA" | sort | while read item
 	do
 		conf=${item#*${PG_HBA}}
 		#conf_name=${conf%%=*}
 		conf_value=${conf#*=}
 		echo "$conf_value" >> "$hba_file"
 	done
-	echo "host all all all md5" >> "$hba_file"
+	#echo "host all all all md5" >> "$hba_file"
 	echo "host replication all all md5" >> "$hba_file"
 
 	reload_postgresql

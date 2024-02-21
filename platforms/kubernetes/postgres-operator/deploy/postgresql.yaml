@@ -51,7 +51,7 @@ spec:
       terminationGracePeriodSeconds: 60
 #      priorityClassName: high-priority
       containers:
-        - image: radondb-postgresql:15.3-v1.3.1
+        - image: radondb-postgresql:15.3-v1.4.0
           imagePullPolicy: IfNotPresent
           name: postgresql #can't change the name
           volumeMounts:
@@ -59,8 +59,8 @@ spec:
               mountPath: /var/lib/postgresql/data
           resources:
             limits:
-              memory: "200Mi"
-              cpu: "0.2"
+              memory: "500Mi"
+              cpu: "0.5"
         - image: radondb-postgres-exporter:15-v1.2.1
           imagePullPolicy: IfNotPresent
           name: exporter # can't change the name
@@ -103,7 +103,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image: radondb-postgresql:15.3-v1.3.1
+          - image: radondb-postgresql:15.3-v1.4.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
@@ -140,7 +140,7 @@ spec:
       podspec:
         terminationGracePeriodSeconds: 60
         containers:
-          - image:  radondb-postgresql:15.3-v1.3.1
+          - image:  radondb-postgresql:15.3-v1.4.0
             imagePullPolicy: IfNotPresent
             name: postgresql #can't change the name
             volumeMounts:
