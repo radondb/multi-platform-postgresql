@@ -16,9 +16,9 @@
   "clusterrolebinding": "radondb-postgres-operator-rolebinding-cluster",
   "rolebinding": "radondb-postgres-operator-rolebinding-role",
   "name": "{{ .Values.operator.name }}",
-  "image": "{{ printf \"%s/%s\" ( .Values.localRegistry | default \"docker.io\" ) .Values.operator.image }}",
+  "image": "{{ printf \"%s/%s\" ( default .Values.global.imageRegistry .Values.localRegistry | default \"docker.io\" ) .Values.operator.image }}",
   "datapath": "/data",
-  "imageRegistry": "{{ .Values.localRegistry | default \"\" }}",
+  "imageRegistry": "{{ default .Values.global.imageRegistry .Values.localRegistry | default \"\" }}",
   "namespaceOverride": "{{ .Values.namespaceOverride | default \"\" }}"
 }
 
