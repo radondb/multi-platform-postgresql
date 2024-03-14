@@ -13,6 +13,7 @@ services:
       PG_MODE: monitor
       AUTOCTL_NODE_PASSWORD: postgres
       EXTERNAL_HOSTNAME: pg15-auto
+      PG_HBA_0: host all all all trust
     healthcheck:
       test: ["CMD", "pgtools", "-a"]
       interval: 10s
@@ -44,6 +45,7 @@ services:
       MONITOR_HOSTNAME: pg15-auto
       AUTOCTL_REPLICATOR_PASSWORD: postgres
       PG_CONFIG_port: 5432
+      PG_HBA_0: host all all all trust
     networks:
       - bitnet
   pg15-readonly:
@@ -72,5 +74,6 @@ services:
       AUTOCTL_REPLICATOR_PASSWORD: postgres
       PG_CONFIG_port: 5432
       PG_STREAMING: sync
+      PG_HBA_0: host all all all trust
     networks:
       - bitnet
