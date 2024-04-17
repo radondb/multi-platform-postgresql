@@ -357,6 +357,7 @@ PGLOG_DIR = "log"
 PRIMARY_FORMATION = " --formation primary "
 FIELD_DELIMITER = "-"
 WAITING_POSTGRESQL_READY_COMMAND = ["pgtools", "-a"]
+POD_READY_COMMAND = ["echo"]
 INIT_FINISH_MESSAGE = "init postgresql finish"
 STOP_FAILED_MESSAGE = "stop auto_failover failed"
 POSTGRESQL_NOT_RUNNING_MESSAGE = "can't connect database."

@@ -232,11 +232,11 @@ def create_statefulset(
                 CONTAINER_NAME] == PODSPEC_CONTAINERS_POSTGRESQL_CONTAINER:
             container["args"] = ["auto_failover"]
             container["env"] = env
-            container["readinessProbe"] = {
+            container["livenessProbe"] = {
                 "initialDelaySeconds": 20,
                 "periodSeconds": 5,
                 "exec": {
-                    "command": WAITING_POSTGRESQL_READY_COMMAND
+                    "command": POD_READY_COMMAND
                 }
             }
         if container[CONTAINER_NAME] == PODSPEC_CONTAINERS_EXPORTER_CONTAINER:
