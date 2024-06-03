@@ -55,7 +55,7 @@ function get_build_cmd() {
 			docker buildx rm multi-platform
 		fi
 		# create a new builder instance
-		docker buildx create --use --name multi-platform --platform=linux/amd64,linux/arm64 > /dev/null
+		docker buildx create --use --bootstrap --name multi-platform --platform=linux/amd64,linux/arm64 > /dev/null
 
 		temp=($(echo $image | tr "/" " "))
 		if [ ${#temp[@]} == 1 ]; then
