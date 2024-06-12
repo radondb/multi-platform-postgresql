@@ -5,7 +5,7 @@
   "template_name": "radondb-postgres-operator",
   "template_image": "radondb/radondb-postgres-operator:v1.4.0",
   "template_enablePrometheusMonitor": "false",
-  "template_prometheusMonitorLabels": "{}",
+  "template_prometheusMonitorLabels": "{app.kubernetes.io/vendor: kubesphere}",
   "template_imageRegistry": "",
   "template_namespaceOverride": "",
 
