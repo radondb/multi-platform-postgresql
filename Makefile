@@ -67,6 +67,6 @@ format:
 
 depends:
 	sudo pip install yapf paramiko kubernetes kopf
-	docker run --privileged --rm tonistiigi/binfmt --install all
+	docker run --privileged --rm tonistiigi/binfmt:master --install all
 	@echo "TODO ubuntu: apt install jq curl"
 	@echo "build helm-package need helm environment."
