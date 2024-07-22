@@ -282,7 +282,7 @@ virtual_server {main_vip} {port} {{
 
     {real_main_servers}
 }}
-virtual_server {read_vip} {port} {{
+virtual_server fwmark 1 {{
     delay_loop 10
     lb_algo lc
     lb_kind DR
