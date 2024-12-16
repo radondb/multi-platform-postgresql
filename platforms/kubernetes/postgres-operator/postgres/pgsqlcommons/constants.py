@@ -151,6 +151,7 @@ LABEL_SUBNODE_READONLY = "readonly"
 LABEL_ROLE = "role"
 LABEL_ROLE_PRIMARY = "primary"
 LABEL_ROLE_STANDBY = "standby"
+LABEL_ROLE_UNKNOWN = "unknown"
 
 # other label
 LABEL_STATEFULSET_NAME = "statefulset"

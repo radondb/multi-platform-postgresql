@@ -302,6 +302,9 @@ def correct_postgresql_role(
         if output == "on" and role != LABEL_ROLE_STANDBY:
             logger.info("set pod " + pod.metadata.name + " to standby")
             patch_body = patch_role_body(LABEL_ROLE_STANDBY)
+        if output != "on" and output != "off" and role != LABEL_ROLE_UNKNOWN:
+            logger.info("set pod " + pod.metadata.name + " to unknown")
+            patch_body = patch_role_body(LABEL_ROLE_UNKNOWN)
 
         if patch_body != None:
             try:
